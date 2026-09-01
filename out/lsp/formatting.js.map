@@ -1,1 +1,0 @@
-{"version":3,"file":"formatting.js","sourceRoot":"","sources":["../../src/lsp/formatting.ts"],"names":[],"mappings":";;AAGA,wCAKC;AALD,SAAgB,cAAc,CAAC,KAAyB;IACtD,OAAO,KAAK,CAAC,GAAG,CAAC,CAAC,IAAI,EAAE,EAAE,CAAC,CAAC;QAC1B,KAAK,EAAE,IAAI,CAAC,KAAK;QACjB,OAAO,EAAE,IAAI,CAAC,OAAO;KACtB,CAAC,CAAC,CAAC;AACN,CAAC"}

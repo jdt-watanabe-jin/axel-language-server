@@ -1,1 +1,0 @@
-{"version":3,"file":"hover.js","sourceRoot":"","sources":["../../src/lsp/hover.ts"],"names":[],"mappings":";;AAGA,gCAOC;AAVD,qDAAoE;AAGpE,SAAgB,UAAU,CAAC,KAAoB;IAC7C,OAAO;QACL,QAAQ,EAAE;YACR,IAAI,EAAE,iBAAU,CAAC,QAAQ;YACzB,KAAK,EAAE,KAAK,CAAC,QAAQ;SACtB;KACF,CAAC;AACJ,CAAC"}
