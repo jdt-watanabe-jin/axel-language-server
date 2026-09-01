@@ -89,6 +89,31 @@ suite('buildSymbolIndex', () => {
     );
   });
 
+  test('indexes function prototypes as functions', () => {
+    const index = buildSymbolIndex(parser.parse([
+      'class string {',
+      'public:',
+      '  int Length();',
+      '  int IsNull();',
+      '  string Mid(int cpos, int clen);',
+      '};'
+    ].join('\n')).rootNode, uri);
+
+    assert.deepStrictEqual(
+      index.declarations.filter((declaration) => ['Length', 'IsNull', 'Mid'].includes(declaration.name)).map((declaration) => ({
+        name: declaration.name,
+        kind: declaration.kind,
+        detail: declaration.detail,
+        containerName: declaration.containerName
+      })),
+      [
+        { name: 'Length', kind: 'function', detail: 'int Length()', containerName: 'string' },
+        { name: 'IsNull', kind: 'function', detail: 'int IsNull()', containerName: 'string' },
+        { name: 'Mid', kind: 'function', detail: 'string Mid(int cpos, int clen)', containerName: 'string' }
+      ]
+    );
+  });
+
   test('indexes each supported declaration kind', () => {
     const index = buildSymbolIndex(parser.parse([
       '#define N 100',

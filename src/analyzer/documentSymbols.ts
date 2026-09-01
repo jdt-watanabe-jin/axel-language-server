@@ -16,10 +16,7 @@ export function collectDocumentSymbols(
   const nestedGuiMethods = nestableGuiMethods(options);
 
   for (const child of rootNode.namedChildren) {
-    const symbol = symbolFromNode(child, { nestedGuiMethods });
-    if (symbol !== null) {
-      symbols.push(symbol);
-    }
+    symbols.push(...symbolsFromNode(child, { nestedGuiMethods }));
   }
 
   return attachGuiSymbols(symbols, options);
@@ -49,6 +46,44 @@ function symbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): Analys
   }
 
   return null;
+}
+
+function symbolsFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol[] {
+  const anonymousEnumMembers = anonymousEnumMemberSymbolsFromFieldDeclaration(node);
+  if (anonymousEnumMembers !== undefined) {
+    return anonymousEnumMembers;
+  }
+
+  const symbol = symbolFromNode(node, context);
+  if (symbol !== null) {
+    return [symbol];
+  }
+
+  if (!isTransparentSymbolContainer(node)) {
+    return [];
+  }
+
+  return node.namedChildren.flatMap((child) => symbolsFromNode(child, context));
+}
+
+function anonymousEnumMemberSymbolsFromFieldDeclaration(node: Parser.SyntaxNode): AnalysisSymbol[] | undefined {
+  if (node.type !== 'field_declaration') {
+    return undefined;
+  }
+
+  const typeNode = node.childForFieldName('type');
+  if (typeNode?.type !== 'enum_specifier' || typeNode.childForFieldName('name') !== null) {
+    return undefined;
+  }
+
+  return enumMemberSymbolsFromNode(typeNode, '');
+}
+
+function isTransparentSymbolContainer(node: Parser.SyntaxNode): boolean {
+  return node.type === 'preproc_if'
+    || node.type === 'preproc_ifdef'
+    || node.type === 'preproc_else'
+    || node.type === 'preproc_elif';
 }
 
 function includeSymbolFromNode(node: Parser.SyntaxNode): AnalysisSymbol | null {
@@ -95,7 +130,7 @@ function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolConte
     return null;
   }
 
-  const kind = declarationKind(node.type, context.containerKind);
+  const kind = declarationKind(node.type, context.containerKind, node);
   return {
     name: nameNode.text,
     kind,
@@ -141,10 +176,7 @@ function childSymbolsFromTypeNode(
     return [];
   }
 
-  return bodyNode.namedChildren.flatMap((child) => {
-    const symbol = symbolFromNode(child, { ...context, containerKind: kind });
-    return symbol === null ? [] : [symbol];
-  });
+  return bodyNode.namedChildren.flatMap((child) => symbolsFromNode(child, { ...context, containerKind: kind }));
 }
 
 function enumMemberSymbolsFromNode(enumNode: Parser.SyntaxNode, enumName: string): AnalysisSymbol[] {
@@ -175,8 +207,20 @@ function enumMemberSymbolFromNode(enumerator: Parser.SyntaxNode, enumName: strin
   }];
 }
 
-function declarationKind(type: string, containerKind?: AnalysisSymbolKind): AnalysisSymbolKind {
+function declarationKind(
+  type: string,
+  containerKind?: AnalysisSymbolKind,
+  node?: Parser.SyntaxNode
+): AnalysisSymbolKind {
   if (type === 'function_definition') {
+    return containerKind === undefined ? 'function' : 'method';
+  }
+
+  if (
+    (type === 'object_definition' || type === 'field_declaration')
+    && node !== undefined
+    && containsFunctionDeclarator(node)
+  ) {
     return containerKind === undefined ? 'function' : 'method';
   }
 
@@ -185,6 +229,11 @@ function declarationKind(type: string, containerKind?: AnalysisSymbolKind): Anal
   }
 
   return containerKind === undefined ? 'variable' : 'field';
+}
+
+function containsFunctionDeclarator(node: Parser.SyntaxNode): boolean {
+  return node.type === 'function_declarator'
+    || node.namedChildren.some(containsFunctionDeclarator);
 }
 
 function typeKind(type: string): AnalysisSymbolKind {

@@ -103,6 +103,84 @@ suite('collectDocumentSymbols', () => {
     }]);
   });
 
+  test('adds class method prototypes as nested method symbols', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse([
+      'class string {',
+      'public:',
+      '  int Length();',
+      '  int IsNull();',
+      '  string Mid(int cpos, int clen);',
+      '};'
+    ].join('\n'));
+
+    const symbols = collectDocumentSymbols(tree.rootNode);
+
+    assert.deepStrictEqual(symbols.map(symbolSummary), [{
+      name: 'string',
+      kind: 'class',
+      children: [
+        { name: 'Length', kind: 'method' },
+        { name: 'IsNull', kind: 'method' },
+        { name: 'Mid', kind: 'method' }
+      ]
+    }]);
+  });
+
+  test('adds symbols nested inside preprocessor conditionals', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse([
+      '#ifndef _AXEL_STRING_H',
+      '#define _AXEL_STRING_H',
+      'class string {',
+      'public:',
+      '  int Length();',
+      '#if __AXEL_INTERNAL__',
+      '  int64 GetHash();',
+      '#endif',
+      '};',
+      '#endif'
+    ].join('\n'));
+
+    const symbols = collectDocumentSymbols(tree.rootNode);
+
+    assert.deepStrictEqual(symbols.map(symbolSummary), [{
+      name: '_AXEL_STRING_H',
+      kind: 'macro'
+    }, {
+      name: 'string',
+      kind: 'class',
+      children: [
+        { name: 'Length', kind: 'method' },
+        { name: 'GetHash', kind: 'method' }
+      ]
+    }]);
+  });
+
+  test('adds anonymous enum members without an empty parent symbol', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse([
+      'class string {',
+      'public:',
+      '  enum {',
+      '    NoCase = 1 << 0,',
+      '    Reverse = 1 << 1,',
+      '  };',
+      '};'
+    ].join('\n'));
+
+    const symbols = collectDocumentSymbols(tree.rootNode);
+
+    assert.deepStrictEqual(symbols.map(symbolSummary), [{
+      name: 'string',
+      kind: 'class',
+      children: [
+        { name: 'NoCase', kind: 'enumMember' },
+        { name: 'Reverse', kind: 'enumMember' }
+      ]
+    }]);
+  });
+
   test('adds include symbols from preprocessor include nodes', () => {
     const parser = createAxelParser();
     const tree = parser.parse('#include "gui.h"\n#include <system.h>\n');

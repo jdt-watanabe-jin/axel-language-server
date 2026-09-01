@@ -878,7 +878,11 @@ function declarationKind(type: string, declaratorNode?: Parser.SyntaxNode): Anal
     return 'function';
   }
 
-  if (type === 'object_definition' && declaratorNode !== undefined && containsFunctionDeclarator(declaratorNode)) {
+  if (
+    (type === 'object_definition' || type === 'field_declaration')
+    && declaratorNode !== undefined
+    && containsFunctionDeclarator(declaratorNode)
+  ) {
     return 'function';
   }
 
