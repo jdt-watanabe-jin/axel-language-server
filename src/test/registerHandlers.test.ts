@@ -723,6 +723,86 @@ suite('registerHandlers', () => {
     )));
   });
 
+  test('logs completion request timing when logger supports info', () => {
+    let completionHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
+    const infoMessages: string[] = [];
+    const connection = {
+      onInitialize: () => undefined,
+      onDidChangeWatchedFiles: () => undefined,
+      languages: {
+        diagnostics: {
+          on: () => undefined
+        },
+        semanticTokens: {
+          on: () => undefined
+        }
+      },
+      onHover: () => undefined,
+      onCompletion: (handler: typeof completionHandler) => {
+        completionHandler = handler;
+      },
+      onDefinition: () => undefined,
+      onReferences: () => undefined,
+      onPrepareRename: () => undefined,
+      onRenameRequest: () => undefined,
+      onCodeAction: () => undefined,
+      onSignatureHelp: () => undefined,
+      onDocumentSymbol: () => undefined,
+      console: {
+        error: () => undefined
+      }
+    };
+    const documents = {
+      get: () => createTestDocument('int value;'),
+      onDidOpen: () => undefined,
+      onDidChangeContent: () => undefined,
+      onDidClose: () => undefined
+    };
+    const analyzer = {
+      analyzeDocument: () => ({
+        uri: 'file:///main.axl',
+        version: 1,
+        diagnostics: [],
+        symbols: [],
+        declarations: [],
+        references: [],
+        scopes: [],
+        includes: [],
+        scriptExecutions: [],
+        guiClasses: [],
+        guiMethods: []
+      }),
+      findIncludePathCompletions: () => [],
+      findScriptExecutionPathCompletions: () => [],
+      listVisibleDeclarations: () => [],
+      findVisibleGuiClasses: () => []
+    };
+
+    registerHandlers({
+      connection: connection as never,
+      documents: documents as never,
+      analyzer,
+      logger: {
+        info: (message) => infoMessages.push(message),
+        error: () => undefined
+      }
+    });
+
+    completionHandler?.({
+      textDocument: { uri: 'file:///main.axl' },
+      position: { line: 0, character: 4 }
+    });
+
+    assert.ok(infoMessages.some((message) => (
+      message.includes('operation=lsp.completion')
+      && message.includes('uri=file:///main.axl')
+      && message.includes('version=1')
+      && message.includes('line=0')
+      && message.includes('character=4')
+      && /durationMs=\d+/.test(message)
+    )));
+  });
+
   test('preserves logger method receiver when logging semantic token timing', () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const sentMessages: string[] = [];

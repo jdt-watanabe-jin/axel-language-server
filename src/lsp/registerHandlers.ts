@@ -88,288 +88,326 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.languages.diagnostics.on((params) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return toDocumentDiagnosticReport([]);
-    }
+    return measureLspRequest(context, 'lsp.diagnostics', documentRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return toDocumentDiagnosticReport([]);
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      return toDocumentDiagnosticReport(analysis.diagnostics);
-    } catch (error: unknown) {
-      context.logger.error(`Diagnostics failed: ${getErrorMessage(error)}`);
-      return toDocumentDiagnosticReport([]);
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        return toDocumentDiagnosticReport(analysis.diagnostics);
+      } catch (error: unknown) {
+        context.logger.error(`Diagnostics failed: ${getErrorMessage(error)}`);
+        return toDocumentDiagnosticReport([]);
+      }
+    });
   });
 
   context.connection.onHover((params: HoverParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return null;
-    }
+    return measureLspRequest(context, 'lsp.hover', positionRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return null;
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      const hover = getHover({
-        analysis,
-        position: params.position,
-        workspaceIndex: context.analyzer
-      });
-      return hover === null ? null : toLspHover(hover);
-    } catch (error: unknown) {
-      context.logger.error(`Hover failed: ${getErrorMessage(error)}`);
-      return null;
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        const hover = getHover({
+          analysis,
+          position: params.position,
+          workspaceIndex: context.analyzer
+        });
+        return hover === null ? null : toLspHover(hover);
+      } catch (error: unknown) {
+        context.logger.error(`Hover failed: ${getErrorMessage(error)}`);
+        return null;
+      }
+    });
   });
 
   context.connection.onCompletion((params: CompletionParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.completion', positionRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      const text = document.getText();
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text
-      });
-      return getCompletions({
-        analysis,
-        text,
-        position: params.position,
-        workspaceIndex: context.analyzer
-      }).map(toLspCompletionItem);
-    } catch (error: unknown) {
-      context.logger.error(`Completion failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        const text = document.getText();
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text
+        });
+        return getCompletions({
+          analysis,
+          text,
+          position: params.position,
+          workspaceIndex: context.analyzer
+        }).map(toLspCompletionItem);
+      } catch (error: unknown) {
+        context.logger.error(`Completion failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   context.connection.onDefinition((params: DefinitionParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.definition', positionRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      return toLspDefinitionLocations(getDefinitions({
-        analysis,
-        position: params.position,
-        workspaceIndex: context.analyzer
-      }));
-    } catch (error: unknown) {
-      context.logger.error(`Definition failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        return toLspDefinitionLocations(getDefinitions({
+          analysis,
+          position: params.position,
+          workspaceIndex: context.analyzer
+        }));
+      } catch (error: unknown) {
+        context.logger.error(`Definition failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   context.connection.onReferences((params: ReferenceParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.references', {
+      ...positionRequestDetails(params, document),
+      includeDeclaration: params.context.includeDeclaration
+    }, () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      return toLspReferenceLocations(getReferences({
-        analysis,
-        position: params.position,
-        includeDeclaration: params.context.includeDeclaration,
-        workspaceIndex: context.analyzer
-      }));
-    } catch (error: unknown) {
-      context.logger.error(`References failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        return toLspReferenceLocations(getReferences({
+          analysis,
+          position: params.position,
+          includeDeclaration: params.context.includeDeclaration,
+          workspaceIndex: context.analyzer
+        }));
+      } catch (error: unknown) {
+        context.logger.error(`References failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   const refactorConnection = context.connection as RefactorHandlerConnection;
 
   refactorConnection.onPrepareRename?.((params: PrepareRenameParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return null;
-    }
+    return measureLspRequest(context, 'lsp.prepareRename', positionRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return null;
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      return prepareRename({
-        analysis,
-        position: params.position,
-        workspaceIndex: context.analyzer
-      });
-    } catch (error: unknown) {
-      context.logger.error(`Prepare rename failed: ${getErrorMessage(error)}`);
-      return null;
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        return prepareRename({
+          analysis,
+          position: params.position,
+          workspaceIndex: context.analyzer
+        });
+      } catch (error: unknown) {
+        context.logger.error(`Prepare rename failed: ${getErrorMessage(error)}`);
+        return null;
+      }
+    });
   });
 
   refactorConnection.onRenameRequest?.((params: RenameParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return null;
-    }
+    return measureLspRequest(context, 'lsp.rename', {
+      ...positionRequestDetails(params, document),
+      newNameLength: params.newName.length
+    }, () => {
+      if (document === undefined) {
+        return null;
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      const result = getRenameEdits({
-        analysis,
-        position: params.position,
-        newName: params.newName,
-        workspaceIndex: context.analyzer
-      });
-      return 'reason' in result ? null : toLspWorkspaceEdit(result);
-    } catch (error: unknown) {
-      context.logger.error(`Rename failed: ${getErrorMessage(error)}`);
-      return null;
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        const result = getRenameEdits({
+          analysis,
+          position: params.position,
+          newName: params.newName,
+          workspaceIndex: context.analyzer
+        });
+        return 'reason' in result ? null : toLspWorkspaceEdit(result);
+      } catch (error: unknown) {
+        context.logger.error(`Rename failed: ${getErrorMessage(error)}`);
+        return null;
+      }
+    });
   });
 
   refactorConnection.onCodeAction?.((params: CodeActionParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.codeAction', rangeRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      return toLspCodeActions(getCodeActions({
-        analysis,
-        range: params.range,
-        diagnostics: analysis.diagnostics,
-        workspaceIndex: context.analyzer
-      }));
-    } catch (error: unknown) {
-      context.logger.error(`Code action failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        return toLspCodeActions(getCodeActions({
+          analysis,
+          range: params.range,
+          diagnostics: analysis.diagnostics,
+          workspaceIndex: context.analyzer
+        }));
+      } catch (error: unknown) {
+        context.logger.error(`Code action failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   const formattingConnection = context.connection as FormattingHandlerConnection;
 
   formattingConnection.onDocumentFormatting?.((params: DocumentFormattingParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.formatting', {
+      ...documentRequestDetails(params, document),
+      insertSpaces: Boolean(params.options.insertSpaces),
+      tabSize: params.options.tabSize
+    }, () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      return toLspTextEdits(getFormattingEdits({
-        text: document.getText(),
-        options: {
-          insertSpaces: Boolean(params.options.insertSpaces),
-          tabSize: params.options.tabSize
-        }
-      }));
-    } catch (error: unknown) {
-      context.logger.error(`Formatting failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        return toLspTextEdits(getFormattingEdits({
+          text: document.getText(),
+          options: {
+            insertSpaces: Boolean(params.options.insertSpaces),
+            tabSize: params.options.tabSize
+          }
+        }));
+      } catch (error: unknown) {
+        context.logger.error(`Formatting failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   formattingConnection.onDocumentRangeFormatting?.((params: DocumentRangeFormattingParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.rangeFormatting', {
+      ...rangeRequestDetails(params, document),
+      insertSpaces: Boolean(params.options.insertSpaces),
+      tabSize: params.options.tabSize
+    }, () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      return toLspTextEdits(getFormattingEdits({
-        text: document.getText(),
-        options: {
-          insertSpaces: Boolean(params.options.insertSpaces),
-          tabSize: params.options.tabSize
-        },
-        range: params.range
-      }));
-    } catch (error: unknown) {
-      context.logger.error(`Range formatting failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        return toLspTextEdits(getFormattingEdits({
+          text: document.getText(),
+          options: {
+            insertSpaces: Boolean(params.options.insertSpaces),
+            tabSize: params.options.tabSize
+          },
+          range: params.range
+        }));
+      } catch (error: unknown) {
+        context.logger.error(`Range formatting failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   context.connection.onSignatureHelp((params: SignatureHelpParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return null;
-    }
+    return measureLspRequest(context, 'lsp.signatureHelp', positionRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return null;
+      }
 
-    try {
-      const text = document.getText();
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text
-      });
-      const signatureHelp = getSignatureHelp({
-        analysis,
-        text,
-        position: params.position,
-        workspaceIndex: context.analyzer
-      });
-      return signatureHelp === null ? null : toLspSignatureHelp(signatureHelp);
-    } catch (error: unknown) {
-      context.logger.error(`Signature help failed: ${getErrorMessage(error)}`);
-      return null;
-    }
+      try {
+        const text = document.getText();
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text
+        });
+        const signatureHelp = getSignatureHelp({
+          analysis,
+          text,
+          position: params.position,
+          workspaceIndex: context.analyzer
+        });
+        return signatureHelp === null ? null : toLspSignatureHelp(signatureHelp);
+      } catch (error: unknown) {
+        context.logger.error(`Signature help failed: ${getErrorMessage(error)}`);
+        return null;
+      }
+    });
   });
 
   context.connection.onDocumentSymbol((params: DocumentSymbolParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return [];
-    }
+    return measureLspRequest(context, 'lsp.documentSymbol', documentRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return [];
+      }
 
-    try {
-      const analysis = analyzeForInteractiveRequest(context, {
-        uri: document.uri,
-        version: document.version,
-        text: document.getText()
-      });
-      return analysis.symbols.map(toLspDocumentSymbol);
-    } catch (error: unknown) {
-      context.logger.error(`Document symbols failed: ${getErrorMessage(error)}`);
-      return [];
-    }
+      try {
+        const analysis = analyzeForInteractiveRequest(context, {
+          uri: document.uri,
+          version: document.version,
+          text: document.getText()
+        });
+        return analysis.symbols.map(toLspDocumentSymbol);
+      } catch (error: unknown) {
+        context.logger.error(`Document symbols failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
   });
 
   context.connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    if (document === undefined) {
-      return toLspSemanticTokens([]);
-    }
+    return measureLspRequest(context, 'lsp.semanticTokens', documentRequestDetails(params, document), () => {
+      if (document === undefined) {
+        return toLspSemanticTokens([]);
+      }
 
-    return measureDurationMs(toAnalysisLogger(context.logger), 'lsp.semanticTokens', { uri: document.uri }, () => {
       try {
         const analysis = analyzeForInteractiveRequest(context, {
           uri: document.uri,
@@ -442,6 +480,58 @@ function analyzeForInteractiveRequest(
 ): AnalyzedDocument {
   return context.analyzer.analyzeForegroundDocument?.(input)
     ?? context.analyzer.analyzeDocument(input);
+}
+
+type LogDetails = Record<string, string | number | boolean | undefined>;
+
+function measureLspRequest<T>(
+  context: HandlerRegistrationContext,
+  operation: string,
+  details: LogDetails,
+  work: () => T
+): T {
+  return measureDurationMs(toAnalysisLogger(context.logger), operation, details, work);
+}
+
+function documentRequestDetails(
+  params: { textDocument: { uri: string } },
+  document: TextDocument | undefined
+): LogDetails {
+  return {
+    uri: params.textDocument.uri,
+    version: document?.version,
+    documentMissing: document === undefined ? true : undefined
+  };
+}
+
+function positionRequestDetails(
+  params: { textDocument: { uri: string }; position: { line: number; character: number } },
+  document: TextDocument | undefined
+): LogDetails {
+  return {
+    ...documentRequestDetails(params, document),
+    line: params.position.line,
+    character: params.position.character
+  };
+}
+
+function rangeRequestDetails(
+  params: {
+    textDocument: { uri: string };
+    range: {
+      start: { line: number; character: number };
+      end: { line: number; character: number };
+    };
+  },
+  document: TextDocument | undefined
+): LogDetails {
+  return {
+    ...documentRequestDetails(params, document),
+    startLine: params.range.start.line,
+    startCharacter: params.range.start.character,
+    endLine: params.range.end.line,
+    endCharacter: params.range.end.character
+  };
 }
 
 function toAnalysisLogger(logger: ServerLogger): { info(message: string): void; error(message: string): void } {
