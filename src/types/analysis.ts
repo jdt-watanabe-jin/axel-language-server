@@ -159,11 +159,12 @@ export type AnalysisSemanticTokenType =
   | 'variable';
 
 export type AnalysisSemanticTokenModifier = 'declaration';
+export type AnalysisInactiveSemanticTokenModifier = AnalysisSemanticTokenModifier | 'inactive';
 
 export interface AnalysisSemanticToken {
   range: AnalysisRange;
   tokenType: AnalysisSemanticTokenType;
-  modifiers: AnalysisSemanticTokenModifier[];
+  modifiers: AnalysisInactiveSemanticTokenModifier[];
 }
 
 export interface AnalysisScope {
@@ -209,6 +210,11 @@ export interface AnalysisKnownGuiClass {
   kind: AnalysisGuiClassKind;
 }
 
+export interface AnalysisPreprocessorSymbol {
+  name: string;
+  value?: string;
+}
+
 export type AnalysisIncludeKind = 'quote' | 'angle' | 'bare' | 'expression';
 
 export interface AnalysisInclude {
@@ -243,6 +249,7 @@ export interface AnalyzeDocumentInput {
   text: string;
   knownGuiClasses?: readonly AnalysisKnownGuiClass[];
   knownGuiClassNames?: readonly string[];
+  preprocessorSymbols?: readonly AnalysisPreprocessorSymbol[];
 }
 
 export interface AnalyzedDocument {
@@ -257,4 +264,5 @@ export interface AnalyzedDocument {
   scriptExecutions: AnalysisScriptExecution[];
   guiClasses: AnalysisGuiClass[];
   guiMethods: AnalysisGuiMethod[];
+  inactiveRanges?: AnalysisRange[];
 }

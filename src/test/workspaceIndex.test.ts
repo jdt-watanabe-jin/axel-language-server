@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
+import { collectSemanticTokens } from '../analyzer/semanticTokens';
 import { WorkspaceIndex } from '../analyzer/workspaceIndex';
 
 suite('WorkspaceIndex', () => {
@@ -159,6 +160,38 @@ suite('WorkspaceIndex', () => {
       index.findVisibleDeclarations(mainUri, 'ForcedDependency').map((declaration) => declaration.detail),
       ['class']
     );
+  });
+
+  test('uses forced include macros when marking inactive semantic tokens', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const forcedPath = path.join(tempDir, 'forced.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(forcedPath, '#define ENABLE_FEATURE 1');
+    const lines = [
+      '#ifdef ENABLE_FEATURE',
+      'int activeValue;',
+      '#else',
+      'int inactiveValue;',
+      '#endif'
+    ];
+
+    const index = new WorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
+    const analysis = index.indexOpenDocument({ uri: mainUri, version: 1, text: lines.join('\n') });
+
+    const tokens = collectSemanticTokens(analysis);
+    assert.ok(tokens.some((token) => (
+      token.range.start.line === 1
+      && token.range.start.character === lines[1].indexOf('activeValue')
+      && token.modifiers.includes('declaration')
+      && !token.modifiers.includes('inactive')
+    )));
+    assert.ok(tokens.some((token) => (
+      token.range.start.line === 3
+      && token.range.start.character === lines[3].indexOf('inactiveValue')
+      && token.modifiers.includes('declaration')
+      && token.modifiers.includes('inactive')
+    )));
   });
 
   test('returns duplicate declarations from multiple forced includes deterministically', () => {

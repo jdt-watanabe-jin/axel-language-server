@@ -6,6 +6,7 @@ import type {
   AnalysisDiagnostic,
   AnalysisGuiClass,
   AnalysisPosition,
+  AnalysisPreprocessorSymbol,
   AnalysisRange,
   AnalysisResolvedInclude,
   AnalysisResolvedScriptExecution,
@@ -132,7 +133,7 @@ export class WorkspaceIndex {
       filePath: filePathFromUri(input.uri)
     });
     this.indexResolvedIncludes(initialAnalysis, new Set([input.uri]));
-    const analysis = this.withWorkspaceDiagnostics(this.reanalyzeWithVisibleGuiClasses(input, initialAnalysis));
+    const analysis = this.withWorkspaceDiagnostics(this.reanalyzeWithVisibleContext(input, initialAnalysis));
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
       analysis
@@ -347,7 +348,7 @@ export class WorkspaceIndex {
     });
     this.indexResolvedIncludes(initialAnalysis, new Set([...visitedUris, uri]));
     const analysis = this.withWorkspaceDiagnostics(
-      this.reanalyzeWithVisibleGuiClasses({ uri, version: 0, text }, initialAnalysis)
+      this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis)
     );
     this.documents.set(uri, {
       analysis,
@@ -420,7 +421,7 @@ export class WorkspaceIndex {
       }));
   }
 
-  private reanalyzeWithVisibleGuiClasses(
+  private reanalyzeWithVisibleContext(
     input: AnalyzeDocumentInput,
     initialAnalysis: AnalyzedDocument
   ): AnalyzedDocument {
@@ -434,13 +435,15 @@ export class WorkspaceIndex {
         name: entry.guiClass.name,
         kind: entry.guiClass.kind
       }));
-    if (knownGuiClasses.length === 0) {
+    const preprocessorSymbols = this.collectVisiblePreprocessorSymbols(input.uri);
+    if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0) {
       return initialAnalysis;
     }
 
     const analysis = this.analyzer.analyzeDocument({
       ...input,
-      knownGuiClasses
+      knownGuiClasses,
+      preprocessorSymbols
     });
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
@@ -565,7 +568,7 @@ export class WorkspaceIndex {
       });
       this.replaceResolvedIncludeEdgesAndEnqueue(initialAnalysis);
       const analysis = this.withWorkspaceDiagnostics(
-        this.reanalyzeWithVisibleGuiClasses({ uri, version: 0, text }, initialAnalysis)
+        this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis)
       );
       this.documents.set(uri, {
         analysis,
@@ -682,6 +685,17 @@ export class WorkspaceIndex {
         .map((guiClass) => ({ uri, guiClass })));
   }
 
+  private collectVisiblePreprocessorSymbols(sourceUri: string): AnalysisPreprocessorSymbol[] {
+    return this.collectVisibleUris(sourceUri)
+      .flatMap((uri) => (this.documents.get(uri)?.analysis.declarations ?? []))
+      .filter((declaration) => declaration.kind === 'macro')
+      .sort(compareDeclarations)
+      .map((declaration) => ({
+        name: declaration.name,
+        value: macroValueFromDetail(declaration)
+      }));
+  }
+
   private getForcedIncludeFiles(): string[] {
     this.forcedIncludeFileCache ??= collectForcedIncludeFiles({
       forcedIncludeRoots: this.forcedIncludeRoots,
@@ -718,6 +732,16 @@ function compareDeclarations(left: AnalysisDeclaration, right: AnalysisDeclarati
     || left.selectionRange.start.character - right.selectionRange.start.character
     || left.selectionRange.end.line - right.selectionRange.end.line
     || left.selectionRange.end.character - right.selectionRange.end.character;
+}
+
+function macroValueFromDetail(declaration: AnalysisDeclaration): string | undefined {
+  const prefix = `#define ${declaration.name}`;
+  if (!declaration.detail.startsWith(prefix)) {
+    return undefined;
+  }
+
+  const rest = declaration.detail.slice(prefix.length).trim();
+  return rest.startsWith('(') ? undefined : rest || undefined;
 }
 
 interface GuiClassEntry {

@@ -6,12 +6,13 @@ import { collectSyntaxDiagnostics } from './diagnostics';
 import { collectDocumentSymbols } from './documentSymbols';
 import { buildGuiIndex, collectExternalGuiMethods } from './guiIndex';
 import { collectIncludes, collectScriptExecutions } from './includeResolver';
+import { collectInactivePreprocessorRanges } from './preprocessorEvaluation';
 import { buildScopeIndex } from './scopeIndex';
 import { buildSymbolIndex } from './symbolIndex';
 
 interface CachedAnalysis {
   version: number;
-  guiClassContextKey: string;
+  analysisContextKey: string;
   analysis: AnalyzedDocument;
 }
 
@@ -26,9 +27,9 @@ export class DocumentAnalyzer {
   }
 
   public analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
-    const guiClassContextKey = guiClassContextKeyFromInput(input);
+    const analysisContextKey = analysisContextKeyFromInput(input);
     const cached = this.cache.get(input.uri);
-    if (cached?.version === input.version && cached.guiClassContextKey === guiClassContextKey) {
+    if (cached?.version === input.version && cached.analysisContextKey === analysisContextKey) {
       return cached.analysis;
     }
 
@@ -57,12 +58,13 @@ export class DocumentAnalyzer {
         includes,
         scriptExecutions,
         guiClasses,
-        guiMethods
+        guiMethods,
+        inactiveRanges: collectInactivePreprocessorRanges(tree.rootNode, input.preprocessorSymbols)
       };
 
       this.cache.set(input.uri, {
         version: input.version,
-        guiClassContextKey,
+        analysisContextKey,
         analysis
       });
 
@@ -80,11 +82,16 @@ export class DocumentAnalyzer {
   }
 }
 
-function guiClassContextKeyFromInput(input: AnalyzeDocumentInput): string {
-  return Array.from(knownGuiClassMapFromInput(input))
+function analysisContextKeyFromInput(input: AnalyzeDocumentInput): string {
+  const guiClassKey = Array.from(knownGuiClassMapFromInput(input))
     .sort(([leftName], [rightName]) => leftName.localeCompare(rightName))
     .map(([name, kind]) => `${name}:${kind}`)
     .join('\u0000');
+  const preprocessorKey = [...(input.preprocessorSymbols ?? [])]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((symbol) => `${symbol.name}=${symbol.value ?? ''}`)
+    .join('\u0000');
+  return `${guiClassKey}\u0001${preprocessorKey}`;
 }
 
 function knownGuiClassMapFromInput(input: AnalyzeDocumentInput): ReadonlyMap<string, AnalysisGuiClassKind> {

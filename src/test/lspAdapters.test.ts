@@ -65,6 +65,7 @@ suite('LSP adapters', () => {
     });
     assert.ok(SEMANTIC_TOKEN_LEGEND.tokenTypes.includes(SemanticTokenTypes.function));
     assert.ok(SEMANTIC_TOKEN_LEGEND.tokenModifiers.includes(SemanticTokenModifiers.declaration));
+    assert.ok(SEMANTIC_TOKEN_LEGEND.tokenModifiers.includes('inactive'));
   });
 
   test('converts analyzer completions to LSP completions', () => {
@@ -313,15 +314,19 @@ suite('LSP adapters', () => {
     const tokens: AnalysisSemanticToken[] = [
       semanticToken(1, 4, 8, 'function', ['declaration']),
       semanticToken(2, 2, 7, 'variable', []),
-      semanticToken(2, 12, 16, 'macro', [])
+      semanticToken(2, 12, 16, 'macro', []),
+      semanticToken(3, 0, 8, 'function', ['declaration', 'inactive'])
     ];
 
     const lsp = toLspSemanticTokens(tokens);
+    const declarationAndInactive = (1 << SEMANTIC_TOKEN_LEGEND.tokenModifiers.indexOf('declaration'))
+      | (1 << SEMANTIC_TOKEN_LEGEND.tokenModifiers.indexOf('inactive'));
 
     assert.deepStrictEqual(lsp.data, [
       1, 4, 4, SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('function'), 1,
       1, 2, 5, SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('variable'), 0,
-      0, 10, 4, SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('macro'), 0
+      0, 10, 4, SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('macro'), 0,
+      1, 0, 8, SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('function'), declarationAndInactive
     ]);
   });
 });

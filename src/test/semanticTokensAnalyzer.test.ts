@@ -180,6 +180,56 @@ suite('collectSemanticTokens', () => {
 
     assertToken(tokens, 1, lines[1].indexOf('test'), 'function', []);
   });
+
+  test('marks semantic tokens in inactive preprocessor branches', () => {
+    const lines = [
+      '#define ENABLED 1',
+      '#if ENABLED',
+      'int activeValue;',
+      '#else',
+      'int inactiveValue;',
+      '#endif',
+      '#ifdef MISSING',
+      'void inactiveFunction() {}',
+      '#endif'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    const tokens = collectSemanticTokens(analysis);
+
+    assertToken(tokens, 2, lines[2].indexOf('activeValue'), 'variable', ['declaration']);
+    assertToken(tokens, 4, lines[4].indexOf('inactiveValue'), 'variable', ['declaration', 'inactive']);
+    assertToken(tokens, 7, lines[7].indexOf('inactiveFunction'), 'function', ['declaration', 'inactive']);
+  });
+
+  test('evaluates undef and elif preprocessor branches for inactive semantic tokens', () => {
+    const lines = [
+      '#define FIRST',
+      '#undef FIRST',
+      '#if defined(FIRST)',
+      'int inactiveFirst;',
+      '#elif !defined(SECOND)',
+      'int activeFallback;',
+      '#else',
+      'int inactiveElse;',
+      '#endif'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    const tokens = collectSemanticTokens(analysis);
+
+    assertToken(tokens, 3, lines[3].indexOf('inactiveFirst'), 'variable', ['declaration', 'inactive']);
+    assertToken(tokens, 5, lines[5].indexOf('activeFallback'), 'variable', ['declaration']);
+    assertToken(tokens, 7, lines[7].indexOf('inactiveElse'), 'variable', ['declaration', 'inactive']);
+  });
 });
 
 function assertToken(
@@ -187,7 +237,7 @@ function assertToken(
   line: number,
   character: number,
   tokenType: ReturnType<typeof collectSemanticTokens>[number]['tokenType'],
-  modifiers: ReturnType<typeof collectSemanticTokens>[number]['modifiers']
+  modifiers: readonly string[]
 ): void {
   assert.ok(tokens.some((token) => (
     token.range.start.line === line
