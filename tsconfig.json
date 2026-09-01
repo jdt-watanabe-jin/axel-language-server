@@ -5,7 +5,6 @@
 			"ES2024"
 		],
 		"module": "commonjs",
-		"moduleResolution": "node",
 		"sourceMap": true,
 		"strict": true,
 		"outDir": "out",
