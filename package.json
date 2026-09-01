@@ -1,0 +1,40 @@
+{
+	"name": "axel-language-server",
+	"description": "AXEL language server",
+	"version": "1.0.0",
+	"author": "JinWatanabe",
+	"main": "out/server.js",
+	"files": [
+		"out/",
+		"src/",
+		"package.json"
+	],
+	"license": "MIT",
+	"engines": {
+		"node": "*"
+	},
+	"dependencies": {
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.11",
+		"tree-sitter": "^0.22.4",
+		"tree-sitter-axel": "git+https://github.com/jdt-watanabe-jin/tree-sitter-axel.git#v0.1.0",
+		"tree-sitter-cli": "^0.24.5"
+	},
+	"scripts": {
+		"build": "tsc",
+		"test": "mocha --ui tdd out/test/**/*.test.js",
+		"test:watch": "mocha --ui tdd out/test/**/*.test.js --watch",
+		"prepare": "npm run build",
+		"lint": "eslint"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.13.0",
+		"@stylistic/eslint-plugin": "^2.9.0",
+		"@types/mocha": "^10.0.6",
+		"@types/node": "^22",
+		"eslint": "^9.13.0",
+		"mocha": "^10.3.0",
+		"typescript": "^5.9.2",
+		"typescript-eslint": "^8.39.0"
+	}
+}

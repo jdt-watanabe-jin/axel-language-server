@@ -1,0 +1,47 @@
+#define HOVER_COUNT 3
+
+enum HoverMode {
+  HoverModeIdle,
+  HoverModeRunning = 2
+};
+
+class GCWidget {
+  string text;
+  void SetCaption(string caption) {}
+  void SetChecked(int checked) {}
+  int IsChecked() {}
+  void OnCreate() {}
+};
+
+class GCDialog : public GCWidget {};
+class GCCheckBox : public GCWidget {};
+class GCRadioButton : public GCWidget {};
+class GCGroupBox : public GCWidget {};
+
+class DATE {
+  double LapTime() {}
+};
+
+class mydialog : public GCDialog {
+  GCRadioButton One;
+  GCRadioButton Two;
+  GCCheckBox Check1 { OnCreate() { text = "Check1"; } };
+  GCGroupBox box {
+    GCCheckBox Two;
+  };
+};
+
+void mydialog::OnCreate()
+{
+  text = "Hover Regression";
+  One.SetChecked(1);
+  box.Two.SetChecked(1);
+
+  DATE timer;
+  timer.LapTime();
+
+  HoverMode mode;
+  mode = HoverModeRunning;
+
+  int count = HOVER_COUNT;
+}
