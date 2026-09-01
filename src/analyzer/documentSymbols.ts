@@ -49,7 +49,7 @@ function symbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): Analys
 }
 
 function symbolsFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol[] {
-  const anonymousEnumMembers = anonymousEnumMemberSymbolsFromFieldDeclaration(node);
+  const anonymousEnumMembers = anonymousEnumMemberSymbolsFromNode(node);
   if (anonymousEnumMembers !== undefined) {
     return anonymousEnumMembers;
   }
@@ -66,7 +66,11 @@ function symbolsFromNode(node: Parser.SyntaxNode, context: SymbolContext): Analy
   return node.namedChildren.flatMap((child) => symbolsFromNode(child, context));
 }
 
-function anonymousEnumMemberSymbolsFromFieldDeclaration(node: Parser.SyntaxNode): AnalysisSymbol[] | undefined {
+function anonymousEnumMemberSymbolsFromNode(node: Parser.SyntaxNode): AnalysisSymbol[] | undefined {
+  if (node.type === 'enum_specifier') {
+    return node.childForFieldName('name') === null ? enumMemberSymbolsFromNode(node, '') : undefined;
+  }
+
   if (node.type !== 'field_declaration') {
     return undefined;
   }
@@ -75,7 +79,6 @@ function anonymousEnumMemberSymbolsFromFieldDeclaration(node: Parser.SyntaxNode)
   if (typeNode?.type !== 'enum_specifier' || typeNode.childForFieldName('name') !== null) {
     return undefined;
   }
-
   return enumMemberSymbolsFromNode(typeNode, '');
 }
 

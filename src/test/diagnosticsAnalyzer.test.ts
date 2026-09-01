@@ -10,6 +10,20 @@ suite('collectSyntaxDiagnostics', () => {
     assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode), []);
   });
 
+  test('does not report missing identifiers for class anonymous enums', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse(`
+class Json {
+  enum {
+    COMPACT,
+    INDENT,
+  };
+};
+`);
+
+    assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode), []);
+  });
+
   test('reports parser ERROR nodes as syntax errors', () => {
     const parser = createAxelParser();
     const tree = parser.parse('void main( {');
