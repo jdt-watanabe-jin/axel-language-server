@@ -14,6 +14,8 @@ export function toLspDocumentSymbol(symbol: AnalysisSymbol): DocumentSymbol {
 
 function toLspSymbolKind(kind: AnalysisSymbolKind): SymbolKind {
   switch (kind) {
+    case 'operator':
+      return SymbolKind.Operator;
     case 'function':
       return SymbolKind.Function;
     case 'method':

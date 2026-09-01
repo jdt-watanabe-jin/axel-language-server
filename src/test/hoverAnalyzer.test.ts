@@ -24,6 +24,30 @@ suite('getHover', () => {
     });
   });
 
+  test('returns qualified hover for method and operator declarations', () => {
+    const text = [
+      'class FILEIter {',
+      '  int Next();',
+      '  int operator++ ();',
+      '};'
+    ].join('\n');
+    const analysis = analyze(text);
+
+    const nextHover = getHover({
+      analysis,
+      position: { line: 1, character: 6 },
+      workspaceIndex: {}
+    });
+    const operatorHover = getHover({
+      analysis,
+      position: { line: 2, character: 6 },
+      workspaceIndex: {}
+    });
+
+    assert.strictEqual(nextHover?.plainText, 'int FILEIter::Next()');
+    assert.strictEqual(operatorHover?.plainText, 'int FILEIter::operator++ ()');
+  });
+
   test('resolves a local reference to its declaration', () => {
     const analysis = analyze('void main() { int local; local = 1; }');
 

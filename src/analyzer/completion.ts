@@ -93,6 +93,7 @@ const BUILTIN_TYPE_NAMES = [
   'char',
   'short',
   'int',
+  'int64',
   'long',
   'float',
   'double',

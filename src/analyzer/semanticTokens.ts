@@ -76,6 +76,10 @@ function tokenFromReference(
 }
 
 function tokenTypeFromDeclaration(declaration: AnalysisDeclaration): AnalysisSemanticTokenType | undefined {
+  if (isOperatorName(declaration.name)) {
+    return 'operator';
+  }
+
   switch (declaration.kind) {
     case 'class':
       return 'class';
@@ -174,6 +178,10 @@ function isFunctionLikeVariableDeclaration(
   return reference.call === true
     && declaration.kind === 'variable'
     && declaration.detail.includes(`${declaration.name}(`);
+}
+
+function isOperatorName(name: string): boolean {
+  return name.startsWith('operator');
 }
 
 function findImplicitGuiMemberDeclaration(

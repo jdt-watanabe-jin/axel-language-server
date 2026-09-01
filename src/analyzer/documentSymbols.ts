@@ -130,7 +130,7 @@ function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolConte
     return null;
   }
 
-  const kind = declarationKind(node.type, context.containerKind, node);
+  const kind = declarationKind(node.type, nameNode.text, context.containerKind, node);
   return {
     name: nameNode.text,
     kind,
@@ -209,18 +209,27 @@ function enumMemberSymbolFromNode(enumerator: Parser.SyntaxNode, enumName: strin
 
 function declarationKind(
   type: string,
+  name: string,
   containerKind?: AnalysisSymbolKind,
   node?: Parser.SyntaxNode
 ): AnalysisSymbolKind {
   if (type === 'function_definition') {
+    if (isOperatorName(name)) {
+      return 'operator';
+    }
+
     return containerKind === undefined ? 'function' : 'method';
   }
 
   if (
     (type === 'object_definition' || type === 'field_declaration')
     && node !== undefined
-    && containsFunctionDeclarator(node)
+    && (containsFunctionDeclarator(node) || containsOperatorDeclarator(node))
   ) {
+    if (isOperatorName(name)) {
+      return 'operator';
+    }
+
     return containerKind === undefined ? 'function' : 'method';
   }
 
@@ -234,6 +243,15 @@ function declarationKind(
 function containsFunctionDeclarator(node: Parser.SyntaxNode): boolean {
   return node.type === 'function_declarator'
     || node.namedChildren.some(containsFunctionDeclarator);
+}
+
+function containsOperatorDeclarator(node: Parser.SyntaxNode): boolean {
+  return node.type === 'operator_declarator'
+    || node.namedChildren.some(containsOperatorDeclarator);
+}
+
+function isOperatorName(name: string): boolean {
+  return name.startsWith('operator');
 }
 
 function typeKind(type: string): AnalysisSymbolKind {

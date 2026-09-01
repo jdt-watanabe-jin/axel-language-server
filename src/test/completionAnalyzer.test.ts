@@ -96,7 +96,7 @@ suite('getCompletions', () => {
 
     const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
 
-    assertCompletionNames(completions, ['LocalType', 'ForcedWidget', 'int', 'string']);
+    assertCompletionNames(completions, ['LocalType', 'ForcedWidget', 'int', 'int64', 'string']);
   });
 
   test('returns GUI base classes after an inheritance access specifier', () => {

@@ -881,7 +881,7 @@ function declarationKind(type: string, declaratorNode?: Parser.SyntaxNode): Anal
   if (
     (type === 'object_definition' || type === 'field_declaration')
     && declaratorNode !== undefined
-    && containsFunctionDeclarator(declaratorNode)
+    && (containsFunctionDeclarator(declaratorNode) || containsOperatorDeclarator(declaratorNode))
   ) {
     return 'function';
   }
@@ -896,6 +896,11 @@ function declarationKind(type: string, declaratorNode?: Parser.SyntaxNode): Anal
 function containsFunctionDeclarator(node: Parser.SyntaxNode): boolean {
   return node.type === 'function_declarator'
     || node.namedChildren.some(containsFunctionDeclarator);
+}
+
+function containsOperatorDeclarator(node: Parser.SyntaxNode): boolean {
+  return node.type === 'operator_declarator'
+    || node.namedChildren.some(containsOperatorDeclarator);
 }
 
 function typeKind(type: string): AnalysisDeclarationKind {

@@ -507,6 +507,10 @@ function findLocalDeclaration(
 }
 
 function hoverForDeclaration(declaration: AnalysisDeclaration): AnalysisHover {
+  if (declaration.kind === 'function' && declaration.containerName !== undefined) {
+    return hoverFromText(hoverTextForMemberDeclaration(declaration));
+  }
+
   const plainText = declaration.detail === declaration.kind
     ? `${declaration.detail} ${declaration.name}`
     : declaration.detail;
@@ -538,10 +542,19 @@ function hoverTextForMemberDeclaration(declaration: AnalysisDeclaration): string
     return declaration.detail.replace(memberSignatureText, `${declaration.containerName}::${memberSignatureText}`);
   }
 
+  const spacedMemberSignature = new RegExp(`${escapeRegExp(declaration.name)}(\\s*\\()`);
+  if (spacedMemberSignature.test(declaration.detail)) {
+    return declaration.detail.replace(spacedMemberSignature, `${declaration.containerName}::${declaration.name}$1`);
+  }
+
   const memberNameText = declaration.name;
   return declaration.detail.endsWith(memberNameText)
     ? `${declaration.detail.slice(0, -memberNameText.length)}${declaration.containerName}::${memberNameText}`
     : hoverTextForDeclaration(declaration);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function hoverFromText(plainText: string, language = 'axel'): AnalysisHover {

@@ -168,6 +168,7 @@ const BUILTIN_TYPE_NAMES = new Set([
   'char',
   'short',
   'int',
+  'int64',
   'long',
   'float',
   'double',

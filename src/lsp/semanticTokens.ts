@@ -18,7 +18,8 @@ export const SEMANTIC_TOKEN_LEGEND: SemanticTokensLegend = {
     'property',
     'struct',
     'type',
-    'variable'
+    'variable',
+    'operator'
   ],
   tokenModifiers: [
     'declaration',

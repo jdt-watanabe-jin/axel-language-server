@@ -127,6 +127,30 @@ suite('collectDocumentSymbols', () => {
     }]);
   });
 
+  test('adds operator prototypes as nested operator symbols', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse([
+      'class FileIter {',
+      'public:',
+      '  int Next();',
+      '  int operator++ ();',
+      '  icoord operator + (ipoint);',
+      '};'
+    ].join('\n'));
+
+    const symbols = collectDocumentSymbols(tree.rootNode);
+
+    assert.deepStrictEqual(symbols.map(symbolSummary), [{
+      name: 'FileIter',
+      kind: 'class',
+      children: [
+        { name: 'Next', kind: 'method' },
+        { name: 'operator++', kind: 'operator' },
+        { name: 'operator +', kind: 'operator' }
+      ]
+    }]);
+  });
+
   test('adds symbols nested inside preprocessor conditionals', () => {
     const parser = createAxelParser();
     const tree = parser.parse([

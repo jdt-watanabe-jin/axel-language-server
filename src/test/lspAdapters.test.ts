@@ -64,6 +64,7 @@ suite('LSP adapters', () => {
       full: true
     });
     assert.ok(SEMANTIC_TOKEN_LEGEND.tokenTypes.includes(SemanticTokenTypes.function));
+    assert.ok(SEMANTIC_TOKEN_LEGEND.tokenTypes.includes(SemanticTokenTypes.operator));
     assert.ok(SEMANTIC_TOKEN_LEGEND.tokenModifiers.includes(SemanticTokenModifiers.declaration));
     assert.ok(SEMANTIC_TOKEN_LEGEND.tokenModifiers.includes('inactive'));
   });
@@ -193,6 +194,28 @@ suite('LSP adapters', () => {
     assert.strictEqual(lsp.name, 'main');
     assert.strictEqual(lsp.kind, SymbolKind.Function);
     assert.strictEqual(lsp.detail, 'function');
+  });
+
+  test('converts operator analyzer symbols to LSP operators', () => {
+    const symbol: AnalysisSymbol = {
+      name: 'operator++',
+      kind: 'operator',
+      detail: 'operator',
+      range: {
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 16 }
+      },
+      selectionRange: {
+        start: { line: 0, character: 4 },
+        end: { line: 0, character: 14 }
+      }
+    };
+
+    const lsp = toLspDocumentSymbol(symbol);
+
+    assert.strictEqual(lsp.name, 'operator++');
+    assert.strictEqual(lsp.kind, SymbolKind.Operator);
+    assert.strictEqual(lsp.detail, 'operator');
   });
 
   test('converts enum member analyzer symbols to LSP enum members', () => {

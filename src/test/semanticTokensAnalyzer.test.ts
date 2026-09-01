@@ -164,6 +164,27 @@ suite('collectSemanticTokens', () => {
     assertNoToken(tokens, 2, lines[2].indexOf('OnCreate'), 'variable');
   });
 
+  test('tokens operator declarations separately from methods', () => {
+    const lines = [
+      'class FileIter {',
+      '  int Next();',
+      '  int operator++ ();',
+      '};'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///fileiter.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    const tokens = collectSemanticTokens(analysis);
+
+    assertToken(tokens, 1, lines[1].indexOf('Next'), 'function', ['declaration']);
+    assertToken(tokens, 2, lines[2].indexOf('operator++'), 'operator', ['declaration']);
+    assertNoToken(tokens, 2, lines[2].indexOf('operator++'), 'function');
+    assertNoToken(tokens, 2, lines[2].indexOf('operator++'), 'method');
+  });
+
   test('tokens AXEL execution file names as functions', () => {
     const lines = [
       'void main() {',

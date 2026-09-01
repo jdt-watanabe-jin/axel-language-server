@@ -24,6 +24,7 @@ export interface AnalysisDiagnostic {
 }
 
 export type AnalysisSymbolKind =
+  | 'operator'
   | 'function'
   | 'method'
   | 'parameter'
@@ -47,7 +48,7 @@ export interface AnalysisSymbol {
   children?: AnalysisSymbol[];
 }
 
-export type AnalysisDeclarationKind = AnalysisSymbolKind;
+export type AnalysisDeclarationKind = Exclude<AnalysisSymbolKind, 'operator'>;
 
 export interface AnalysisDeclaration {
   id: AnalysisSymbolId;
@@ -152,6 +153,7 @@ export type AnalysisSemanticTokenType =
   | 'function'
   | 'macro'
   | 'method'
+  | 'operator'
   | 'parameter'
   | 'property'
   | 'struct'

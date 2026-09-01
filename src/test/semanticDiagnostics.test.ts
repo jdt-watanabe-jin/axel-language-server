@@ -374,6 +374,7 @@ suite('WorkspaceIndex semantic diagnostics', () => {
       version: 1,
       text: [
         'bool flag;',
+        'int64 hash;',
         'natural length;',
         'ipoint origin;',
         'class MyDialog : public GCDialog { GCText input; };'

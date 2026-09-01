@@ -114,6 +114,27 @@ suite('buildSymbolIndex', () => {
     );
   });
 
+  test('indexes spaced operator prototypes as functions', () => {
+    const index = buildSymbolIndex(parser.parse([
+      'class icoord {',
+      'public:',
+      '  icoord operator + (ipoint);',
+      '};'
+    ].join('\n')).rootNode, uri);
+
+    assert.deepStrictEqual(
+      index.declarations.filter((declaration) => declaration.name === 'operator +').map((declaration) => ({
+        name: declaration.name,
+        kind: declaration.kind,
+        detail: declaration.detail,
+        containerName: declaration.containerName
+      })),
+      [
+        { name: 'operator +', kind: 'function', detail: 'icoord operator + (ipoint)', containerName: 'icoord' }
+      ]
+    );
+  });
+
   test('indexes each supported declaration kind', () => {
     const index = buildSymbolIndex(parser.parse([
       '#define N 100',
