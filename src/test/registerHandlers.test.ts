@@ -6,6 +6,7 @@ suite('registerHandlers', () => {
     const calls: string[] = [];
     const connection = {
       onInitialize: () => calls.push('initialize'),
+      onDidChangeConfiguration: () => calls.push('configuration'),
       onDidChangeWatchedFiles: () => calls.push('watchedFiles'),
       languages: {
         diagnostics: {
@@ -63,6 +64,7 @@ suite('registerHandlers', () => {
       'change',
       'close',
       'codeAction',
+      'configuration',
       'completion',
       'definition',
       'diagnostics',
@@ -78,7 +80,7 @@ suite('registerHandlers', () => {
       'semanticTokens',
       'signatureHelp',
       'watchedFiles'
-    ]);
+    ].sort());
   });
 
   test('indexes opened and changed documents through foreground analysis when available', () => {
@@ -258,6 +260,90 @@ suite('registerHandlers', () => {
       { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } },
       { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } }
     ]);
+  });
+
+  test('sends inactive ranges after hover reanalyzes a document', () => {
+    let hoverHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
+    const inactiveRanges = [{
+      start: { line: 3, character: 0 },
+      end: { line: 3, character: 18 }
+    }];
+    const notifications: unknown[] = [];
+    const connection = {
+      onInitialize: () => undefined,
+      onDidChangeConfiguration: () => undefined,
+      onDidChangeWatchedFiles: () => undefined,
+      sendNotification: (method: string, params: unknown) => {
+        notifications.push({ method, params });
+      },
+      languages: {
+        diagnostics: {
+          on: () => undefined
+        },
+        semanticTokens: {
+          on: () => undefined
+        }
+      },
+      onHover: (handler: typeof hoverHandler) => {
+        hoverHandler = handler;
+      },
+      onCompletion: () => undefined,
+      onDefinition: () => undefined,
+      onReferences: () => undefined,
+      onPrepareRename: () => undefined,
+      onRenameRequest: () => undefined,
+      onCodeAction: () => undefined,
+      onSignatureHelp: () => undefined,
+      onDocumentSymbol: () => undefined,
+      console: {
+        error: () => undefined
+      }
+    };
+    const documents = {
+      get: () => createTestDocument('#if SEMVER_TEST\nint value;\n#endif'),
+      onDidOpen: () => undefined,
+      onDidChangeContent: () => undefined,
+      onDidClose: () => undefined
+    };
+    const analyzer = {
+      analyzeDocument: () => {
+        throw new Error('full analysis should not run');
+      },
+      analyzeForegroundDocument: (input: { uri: string; version: number }) => ({
+        uri: input.uri,
+        version: input.version,
+        diagnostics: [],
+        symbols: [],
+        declarations: [],
+        references: [],
+        scopes: [],
+        includes: [],
+        scriptExecutions: [],
+        guiClasses: [],
+        guiMethods: [],
+        inactiveRanges
+      })
+    };
+
+    registerHandlers({
+      connection: connection as never,
+      documents: documents as never,
+      analyzer,
+      logger: { error: () => undefined }
+    });
+
+    hoverHandler?.({
+      textDocument: { uri: 'file:///main.axl' },
+      position: { line: 1, character: 4 }
+    });
+
+    assert.deepStrictEqual(notifications, [{
+      method: 'axel/inactiveRanges',
+      params: {
+        uri: 'file:///main.axl',
+        ranges: inactiveRanges
+      }
+    }]);
   });
 
   test('returns workspace diagnostics for document diagnostic requests', () => {
@@ -569,6 +655,116 @@ suite('registerHandlers', () => {
       includeRoots: ['C:\\axel'],
       forcedIncludeRoots: ['C:\\forced']
     });
+  });
+
+  test('applies changed configuration and reindexes open documents', () => {
+    let configurationHandler: ((params: { settings?: unknown }) => void) | undefined;
+    const configuredOptions: unknown[] = [];
+    const analyzedTexts: string[] = [];
+    const notifications: unknown[] = [];
+    const inactiveRanges = [{
+      start: { line: 3, character: 0 },
+      end: { line: 3, character: 18 }
+    }];
+    const connection = {
+      onInitialize: () => undefined,
+      onDidChangeConfiguration: (handler: (params: { settings?: unknown }) => void) => {
+        configurationHandler = handler;
+      },
+      onDidChangeWatchedFiles: () => undefined,
+      sendNotification: (method: string, params: unknown) => {
+        notifications.push({ method, params });
+      },
+      languages: {
+        diagnostics: {
+          on: () => undefined,
+          refresh: () => notifications.push({ method: 'diagnostics/refresh' })
+        },
+        semanticTokens: {
+          on: () => undefined,
+          refresh: () => notifications.push({ method: 'semanticTokens/refresh' })
+        }
+      },
+      onHover: () => undefined,
+      onCompletion: () => undefined,
+      onDefinition: () => undefined,
+      onReferences: () => undefined,
+      onPrepareRename: () => undefined,
+      onRenameRequest: () => undefined,
+      onCodeAction: () => undefined,
+      onSignatureHelp: () => undefined,
+      onDocumentSymbol: () => undefined,
+      console: {
+        error: () => undefined
+      }
+    };
+    const documents = {
+      all: () => [createTestDocument('#if SEMVER_TEST\nint value;\n#endif')],
+      get: () => undefined,
+      onDidOpen: () => undefined,
+      onDidChangeContent: () => undefined,
+      onDidClose: () => undefined
+    };
+    const analyzer = {
+      analyzeDocument: () => ({
+        uri: 'file:///missing.axl',
+        version: 0,
+        diagnostics: [],
+        symbols: [],
+        declarations: [],
+        references: [],
+        scopes: [],
+        includes: [],
+        scriptExecutions: [],
+        guiClasses: [],
+        guiMethods: []
+      }),
+      analyzeForegroundDocument: (input: { text: string; uri: string; version: number }) => {
+        analyzedTexts.push(input.text);
+        return {
+          uri: input.uri,
+          version: input.version,
+          diagnostics: [],
+          symbols: [],
+          declarations: [],
+          references: [],
+          scopes: [],
+          includes: [],
+          scriptExecutions: [],
+          guiClasses: [],
+          guiMethods: [],
+          inactiveRanges
+        };
+      },
+      configure: (options: unknown) => configuredOptions.push(options)
+    };
+
+    registerHandlers({
+      connection: connection as never,
+      documents: documents as never,
+      analyzer,
+      logger: { error: () => undefined }
+    });
+
+    configurationHandler?.({
+      settings: {
+        defines: ['SEMVER_TEST']
+      }
+    });
+
+    assert.deepStrictEqual(configuredOptions, [{ defines: ['SEMVER_TEST'] }]);
+    assert.deepStrictEqual(analyzedTexts, ['#if SEMVER_TEST\nint value;\n#endif']);
+    assert.deepStrictEqual(notifications, [
+      {
+        method: 'axel/inactiveRanges',
+        params: {
+          uri: 'file:///main.axl',
+          ranges: inactiveRanges
+        }
+      },
+      { method: 'semanticTokens/refresh' },
+      { method: 'diagnostics/refresh' }
+    ]);
   });
 
   test('returns empty completion list when analysis fails', () => {

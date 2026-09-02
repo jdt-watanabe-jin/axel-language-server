@@ -75,6 +75,14 @@ suite('workspaceIndexOptionsFromEnvironment', () => {
 
     assert.strictEqual(options.maxNumberOfProblems, 25);
   });
+
+  test('keeps configured default defines', () => {
+    const options = mergeWorkspaceIndexOptions({}, {
+      defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1']
+    });
+
+    assert.deepStrictEqual(options.defines, ['NDEBUG', 'MY_CUSTOM_MACRO=1']);
+  });
 });
 
 function withPathDelimiter<T>(delimiter: string, callback: () => T): T {

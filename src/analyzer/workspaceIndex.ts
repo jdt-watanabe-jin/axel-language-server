@@ -23,6 +23,7 @@ import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logg
 
 export interface WorkspaceIndexOptions extends ForcedIncludeOptions {
   includeRoots?: string[];
+  defines?: string[];
   analyzer?: DocumentAnalyzer;
   maxNumberOfProblems?: number;
   logger?: AnalysisLogger;
@@ -41,6 +42,7 @@ export class WorkspaceIndex {
   private includeRoots: string[];
   private forcedIncludeRoots: string[];
   private forcedIncludeFiles: string[];
+  private defines: string[];
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
@@ -59,6 +61,7 @@ export class WorkspaceIndex {
     this.includeRoots = normalizePaths(options.includeRoots ?? []);
     this.forcedIncludeRoots = normalizePaths(options.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(options.forcedIncludeFiles ?? []);
+    this.defines = options.defines ?? [];
     this.maxNumberOfProblems = options.maxNumberOfProblems;
   }
 
@@ -66,14 +69,17 @@ export class WorkspaceIndex {
     const merged = mergeWorkspaceIndexOptions({
       includeRoots: this.includeRoots,
       forcedIncludeRoots: this.forcedIncludeRoots,
-      forcedIncludeFiles: this.forcedIncludeFiles
+      forcedIncludeFiles: this.forcedIncludeFiles,
+      defines: this.defines
     }, options);
 
     this.includeRoots = normalizePaths(merged.includeRoots ?? []);
     this.forcedIncludeRoots = normalizePaths(merged.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(merged.forcedIncludeFiles ?? []);
+    this.defines = merged.defines ?? [];
     this.maxNumberOfProblems = merged.maxNumberOfProblems;
     this.forcedIncludeFileCache = undefined;
+    this.clearCachedAnalysis();
   }
 
   public analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
@@ -695,14 +701,17 @@ export class WorkspaceIndex {
   }
 
   private collectVisiblePreprocessorSymbols(sourceUri: string): AnalysisPreprocessorSymbol[] {
-    return this.collectVisibleUris(sourceUri)
+    return [
+      ...defaultPreprocessorSymbols(this.defines),
+      ...this.collectVisibleUris(sourceUri)
       .flatMap((uri) => (this.documents.get(uri)?.analysis.declarations ?? []))
       .filter((declaration) => declaration.kind === 'macro')
       .sort(compareDeclarations)
       .map((declaration) => ({
         name: declaration.name,
         value: macroValueFromDetail(declaration)
-      }));
+      }))
+    ];
   }
 
   private getForcedIncludeFiles(): string[] {
@@ -732,6 +741,18 @@ export class WorkspaceIndex {
       ...this.forcedIncludeFiles,
       ...(this.forcedIncludeFileCache ?? [])
     ])).sort();
+  }
+
+  private clearCachedAnalysis(): void {
+    for (const uri of this.documents.keys()) {
+      this.analyzer.clear(uri);
+    }
+
+    this.documents.clear();
+    this.includeGraph.clear();
+    this.reverseIncludeGraph.clear();
+    this.pendingBackgroundDocuments.clear();
+    this.backgroundIndexingScheduled = false;
   }
 }
 
@@ -772,6 +793,26 @@ function compareRanges(left: AnalysisRange, right: AnalysisRange): number {
 
 function normalizePaths(paths: string[]): string[] {
   return paths.map((filePath) => path.normalize(filePath));
+}
+
+function defaultPreprocessorSymbols(defines: readonly string[]): AnalysisPreprocessorSymbol[] {
+  return defines
+    .map(preprocessorSymbolFromDefine)
+    .filter((symbol): symbol is AnalysisPreprocessorSymbol => symbol !== undefined);
+}
+
+function preprocessorSymbolFromDefine(define: string): AnalysisPreprocessorSymbol | undefined {
+  const trimmed = define.trim();
+  const match = trimmed.match(/^([A-Za-z_$][0-9A-Za-z_$]*)(?:\s*=\s*(.*))?$/);
+  if (match === null) {
+    return undefined;
+  }
+
+  const value = match[2]?.trim();
+  return {
+    name: match[1],
+    ...(value === undefined || value === '' ? {} : { value })
+  };
 }
 
 function includePathCompletions(roots: string[], prefix: string): string[] {

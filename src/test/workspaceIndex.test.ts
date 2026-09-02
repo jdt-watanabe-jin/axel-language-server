@@ -203,6 +203,59 @@ suite('WorkspaceIndex', () => {
     ]);
   });
 
+  test('uses configured default defines when collecting inactive ranges', () => {
+    const index = new WorkspaceIndex({ defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1'] });
+    const lines = [
+      '#ifdef NDEBUG',
+      'int releaseValue;',
+      '#else',
+      'int debugValue;',
+      '#endif',
+      '#if MY_CUSTOM_MACRO',
+      'int customValue;',
+      '#else',
+      'int fallbackValue;',
+      '#endif'
+    ];
+
+    const analysis = index.indexOpenDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.inactiveRanges, [
+      { start: { line: 3, character: 0 }, end: { line: 3, character: 15 } },
+      { start: { line: 8, character: 0 }, end: { line: 8, character: 18 } }
+    ]);
+  });
+
+  test('reanalyzes cached documents after configured default defines change', () => {
+    const index = new WorkspaceIndex();
+    const input = {
+      uri: 'file:///main.axl',
+      version: 1,
+      text: [
+        '#if SEMVER_TEST',
+        'int activeWhenConfigured;',
+        '#else',
+        'int inactiveWhenConfigured;',
+        '#endif'
+      ].join('\n')
+    };
+
+    const before = index.indexOpenDocument(input);
+    index.configure({ defines: ['SEMVER_TEST'] });
+    const after = index.indexOpenDocument(input);
+
+    assert.deepStrictEqual(before.inactiveRanges, [
+      { start: { line: 1, character: 0 }, end: { line: 1, character: 25 } }
+    ]);
+    assert.deepStrictEqual(after.inactiveRanges, [
+      { start: { line: 3, character: 0 }, end: { line: 3, character: 27 } }
+    ]);
+  });
+
   test('keeps declarations visible from guarded forced include files', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
     const mainPath = path.join(tempDir, 'main.axl');

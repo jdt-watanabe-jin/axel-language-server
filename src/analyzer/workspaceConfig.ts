@@ -24,6 +24,7 @@ export function mergeWorkspaceIndexOptions(
   }
 
   const maxNumberOfProblems = overrides.maxNumberOfProblems ?? base.maxNumberOfProblems;
+  const defines = overrides.defines ?? base.defines;
   return {
     includeRoots: normalizePaths(overrides.includeRoots ?? base.includeRoots ?? []),
     forcedIncludeRoots: normalizePaths(overrides.forcedIncludeRoots ?? base.forcedIncludeRoots ?? []),
@@ -31,6 +32,7 @@ export function mergeWorkspaceIndexOptions(
       ...(base.forcedIncludeFiles ?? []),
       ...(overrides.forcedIncludeFiles ?? [])
     ]),
+    ...(defines === undefined ? {} : { defines }),
     ...(maxNumberOfProblems === undefined ? {} : { maxNumberOfProblems })
   };
 }
@@ -60,6 +62,7 @@ function isWorkspaceIndexOptions(value: unknown): value is WorkspaceIndexOptions
   return isOptionalStringArray(candidate.includeRoots)
     && isOptionalStringArray(candidate.forcedIncludeRoots)
     && isOptionalStringArray(candidate.forcedIncludeFiles)
+    && isOptionalStringArray(candidate.defines)
     && isOptionalPositiveNumber(candidate.maxNumberOfProblems);
 }
 

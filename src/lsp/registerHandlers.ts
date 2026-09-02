@@ -78,6 +78,10 @@ interface FormattingHandlerConnection {
   onDocumentRangeFormatting?(handler: (params: DocumentRangeFormattingParams) => unknown): void;
 }
 
+interface ConfigurationHandlerConnection {
+  onDidChangeConfiguration?(handler: (params: { settings?: unknown }) => void): void;
+}
+
 interface RefactorHandlerConnection {
   onPrepareRename?(handler: (params: PrepareRenameParams) => unknown): void;
   onRenameRequest?(handler: (params: RenameParams) => unknown): void;
@@ -89,6 +93,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     context.analyzer.configure?.(params.initializationOptions);
     return createInitializeResult();
   });
+  registerConfigurationChangeHandlers(context);
   registerDocumentLifecycleHandlers(context);
   registerWatchedFileHandlers(context);
   registerBackgroundRefreshHandlers(context);
@@ -441,6 +446,18 @@ function registerWatchedFileHandlers(context: HandlerRegistrationContext): void 
   });
 }
 
+function registerConfigurationChangeHandlers(context: HandlerRegistrationContext): void {
+  const connection = context.connection as ConfigurationHandlerConnection;
+  connection.onDidChangeConfiguration?.((params) => {
+    context.analyzer.configure?.(params.settings);
+    for (const document of context.documents.all()) {
+      indexDocument(context, document);
+    }
+    context.connection.languages.semanticTokens.refresh();
+    context.connection.languages.diagnostics.refresh();
+  });
+}
+
 function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext): void {
   context.documents.onDidOpen((event) => {
     indexDocument(context, event.document);
@@ -457,12 +474,11 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext):
 
 function indexDocument(context: HandlerRegistrationContext, document: TextDocument): void {
   try {
-    const analysis = analyzeForInteractiveRequest(context, {
+    analyzeForInteractiveRequest(context, {
       uri: document.uri,
       version: document.version,
       text: document.getText()
     });
-    sendInactiveRanges(context, analysis);
   } catch (error: unknown) {
     context.logger.error(`Workspace indexing failed: ${getErrorMessage(error)}`);
   }
@@ -494,8 +510,10 @@ function analyzeForInteractiveRequest(
   context: HandlerRegistrationContext,
   input: AnalyzeDocumentInput
 ): AnalyzedDocument {
-  return context.analyzer.analyzeForegroundDocument?.(input)
+  const analysis = context.analyzer.analyzeForegroundDocument?.(input)
     ?? context.analyzer.analyzeDocument(input);
+  sendInactiveRanges(context, analysis);
+  return analysis;
 }
 
 function analyzeForDiagnosticRequest(
