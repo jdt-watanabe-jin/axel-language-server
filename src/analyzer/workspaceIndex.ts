@@ -638,7 +638,7 @@ export class WorkspaceIndex {
 
     while (pending.length > 0) {
       const uri = pending.pop();
-      if (uri === undefined || visibleUris.has(uri)) {
+      if (uri === undefined || uri === sourceUri || visibleUris.has(uri)) {
         continue;
       }
 
@@ -668,7 +668,7 @@ export class WorkspaceIndex {
 
     while (pending.length > 0) {
       const uri = pending.pop();
-      if (uri === undefined || visibleUris.has(uri)) {
+      if (uri === undefined || uri === sourceUri || visibleUris.has(uri)) {
         continue;
       }
 

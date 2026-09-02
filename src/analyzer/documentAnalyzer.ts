@@ -1,5 +1,17 @@
 import type * as Parser from 'tree-sitter';
-import type { AnalysisGuiClassKind, AnalyzeDocumentInput, AnalyzedDocument } from '../types/analysis';
+import type {
+  AnalysisDiagnostic,
+  AnalysisGuiClass,
+  AnalysisGuiClassKind,
+  AnalysisGuiMethod,
+  AnalysisGuiPart,
+  AnalysisPosition,
+  AnalysisRange,
+  AnalysisScope,
+  AnalysisSymbol,
+  AnalyzeDocumentInput,
+  AnalyzedDocument
+} from '../types/analysis';
 import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logger';
 import { createAxelParser } from './axelParser';
 import { collectSyntaxDiagnostics } from './diagnostics';
@@ -42,6 +54,7 @@ export class DocumentAnalyzer {
         ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
         ...guiClasses.map((guiClass) => guiClass.name)
       ]);
+      const inactiveRanges = collectInactivePreprocessorRanges(tree.rootNode, input.preprocessorSymbols);
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode);
       const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
       const scopes = buildScopeIndex(tree.rootNode, input.uri, symbolIndex.declarations);
@@ -50,16 +63,16 @@ export class DocumentAnalyzer {
       const analysis: AnalyzedDocument = {
         uri: input.uri,
         version: input.version,
-        diagnostics: syntaxDiagnostics,
-        symbols: collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }),
-        declarations: symbolIndex.declarations,
-        references: symbolIndex.references,
-        scopes,
-        includes,
-        scriptExecutions,
-        guiClasses,
-        guiMethods,
-        inactiveRanges: collectInactivePreprocessorRanges(tree.rootNode, input.preprocessorSymbols)
+        diagnostics: syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, inactiveRanges)),
+        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), inactiveRanges),
+        declarations: symbolIndex.declarations.filter((declaration) => !startsInInactiveRange(declaration.selectionRange, inactiveRanges)),
+        references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
+        scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
+        includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
+        scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, inactiveRanges)),
+        guiClasses: filterGuiClassesForInactiveRanges(guiClasses, inactiveRanges),
+        guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, inactiveRanges)),
+        inactiveRanges
       };
 
       this.cache.set(input.uri, {
@@ -107,4 +120,85 @@ function knownGuiClassMapFromInput(input: AnalyzeDocumentInput): ReadonlyMap<str
   }
 
   return classes;
+}
+
+function filterSymbolsForInactiveRanges(
+  symbols: readonly AnalysisSymbol[],
+  inactiveRanges: readonly AnalysisRange[]
+): AnalysisSymbol[] {
+  return symbols.flatMap((symbol) => {
+    if (startsInInactiveRange(symbol.selectionRange, inactiveRanges)) {
+      return [];
+    }
+
+    const children = symbol.children === undefined
+      ? undefined
+      : filterSymbolsForInactiveRanges(symbol.children, inactiveRanges);
+    return [{
+      ...symbol,
+      ...(children === undefined ? {} : { children })
+    }];
+  });
+}
+
+function filterScopesForInactiveRanges(
+  scopes: readonly AnalysisScope[],
+  inactiveRanges: readonly AnalysisRange[]
+): AnalysisScope[] {
+  return scopes.filter((scope) => (
+    scope.id === 'global' || !startsInInactiveRange(scope.range, inactiveRanges)
+  ));
+}
+
+function filterGuiClassesForInactiveRanges(
+  guiClasses: readonly AnalysisGuiClass[],
+  inactiveRanges: readonly AnalysisRange[]
+): AnalysisGuiClass[] {
+  return guiClasses
+    .filter((guiClass) => !startsInInactiveRange(guiClass.range, inactiveRanges))
+    .map((guiClass) => ({
+      ...guiClass,
+      parts: filterGuiPartsForInactiveRanges(guiClass.parts, inactiveRanges),
+      methods: guiClass.methods.filter((method) => !startsInInactiveRange(method.range, inactiveRanges))
+    }));
+}
+
+function filterGuiPartsForInactiveRanges(
+  parts: readonly AnalysisGuiPart[],
+  inactiveRanges: readonly AnalysisRange[]
+): AnalysisGuiPart[] {
+  return parts
+    .filter((part) => !startsInInactiveRange(part.selectionRange ?? part.range, inactiveRanges))
+    .map((part) => ({
+      ...part,
+      parts: filterGuiPartsForInactiveRanges(part.parts, inactiveRanges),
+      methods: filterGuiMethodsForInactiveRanges(part.methods, inactiveRanges)
+    }));
+}
+
+function filterGuiMethodsForInactiveRanges(
+  methods: readonly AnalysisGuiMethod[],
+  inactiveRanges: readonly AnalysisRange[]
+): AnalysisGuiMethod[] {
+  return methods.filter((method) => !startsInInactiveRange(method.selectionRange ?? method.range, inactiveRanges));
+}
+
+function startsInInactiveRange(range: AnalysisRange, inactiveRanges: readonly AnalysisRange[]): boolean {
+  return inactiveRanges.some((inactiveRange) => containsPosition(inactiveRange, range.start));
+}
+
+function intersectsAnyInactiveRange(range: AnalysisDiagnostic['range'], inactiveRanges: readonly AnalysisRange[]): boolean {
+  return inactiveRanges.some((inactiveRange) => rangesIntersect(inactiveRange, range));
+}
+
+function rangesIntersect(left: AnalysisRange, right: AnalysisRange): boolean {
+  return comparePositions(left.start, right.end) < 0 && comparePositions(right.start, left.end) < 0;
+}
+
+function containsPosition(range: AnalysisRange, position: AnalysisPosition): boolean {
+  return comparePositions(range.start, position) <= 0 && comparePositions(position, range.end) < 0;
+}
+
+function comparePositions(left: AnalysisPosition, right: AnalysisPosition): number {
+  return left.line - right.line || left.character - right.character;
 }

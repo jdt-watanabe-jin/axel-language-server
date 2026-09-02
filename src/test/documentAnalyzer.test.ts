@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { DocumentAnalyzer } from '../analyzer/documentAnalyzer';
+import { collectSemanticTokens } from '../analyzer/semanticTokens';
 
 suite('DocumentAnalyzer', () => {
   test('analyzes diagnostics and symbols for a document', () => {
@@ -146,6 +147,33 @@ suite('DocumentAnalyzer', () => {
       && declaration.detail === 'ReusableWidget reusable'
       && declaration.containerName === 'MyDialog'
     )));
+  });
+
+  test('excludes inactive preprocessor regions from language features', () => {
+    const lines = [
+      '#if 0',
+      'int ;',
+      'int inactiveValue;',
+      '#else',
+      'void activeFunction() {}',
+      '#endif'
+    ];
+    const analyzer = new DocumentAnalyzer();
+    const result = analyzer.analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.deepStrictEqual(result.symbols.map((symbol) => symbol.name), ['activeFunction']);
+    assert.deepStrictEqual(result.declarations.map((declaration) => declaration.name), ['activeFunction']);
+    assert.ok(result.references.every((reference) => reference.range.start.line !== 2));
+    assert.deepStrictEqual(collectSemanticTokens(result).map((token) => token.range.start.line), [4]);
+    assert.deepStrictEqual(result.inactiveRanges, [
+      { start: { line: 1, character: 0 }, end: { line: 1, character: 5 } },
+      { start: { line: 2, character: 0 }, end: { line: 2, character: 18 } }
+    ]);
   });
 
   test('emits timing logs when logger is provided', () => {

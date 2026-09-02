@@ -183,6 +183,37 @@ suite('WorkspaceIndex', () => {
     ]);
   });
 
+  test('keeps declarations visible from guarded forced include files', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const forcedPath = path.join(tempDir, 'forced.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(forcedPath, [
+      '#ifndef FORCED_H',
+      '#define FORCED_H',
+      '#define FORCED_VERSION 1',
+      'class ForcedClass {};',
+      '#endif'
+    ].join('\n'));
+
+    const index = new WorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
+    const analysis = index.indexOpenDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        '#if FORCED_VERSION',
+        'ForcedClass value;',
+        '#endif'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.inactiveRanges, []);
+    assert.deepStrictEqual(
+      index.findVisibleDeclarations(mainUri, 'ForcedClass').map((declaration) => declaration.detail),
+      ['class']
+    );
+  });
+
   test('returns duplicate declarations from multiple forced includes deterministically', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
     const forcedDir = path.join(tempDir, 'forced');
