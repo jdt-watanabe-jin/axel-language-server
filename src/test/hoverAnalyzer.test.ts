@@ -48,6 +48,28 @@ suite('getHover', () => {
     assert.strictEqual(operatorHover?.plainText, 'int FILEIter::operator++ ()');
   });
 
+  test('returns destructor hover on the destructor class name', () => {
+    const text = [
+      'CTGen::CTGen() {}',
+      'CTGen::~CTGen() {}'
+    ].join('\n');
+    const analysis = analyze(text);
+
+    const tildeHover = getHover({
+      analysis,
+      position: { line: 1, character: 7 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+    const classNameHover = getHover({
+      analysis,
+      position: { line: 1, character: 9 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.strictEqual(tildeHover?.plainText, 'CTGen::~CTGen()');
+    assert.strictEqual(classNameHover?.plainText, 'CTGen::~CTGen()');
+  });
+
   test('resolves a local reference to its declaration', () => {
     const analysis = analyze('void main() { int local; local = 1; }');
 

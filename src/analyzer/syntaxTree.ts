@@ -53,7 +53,7 @@ export function findSmallestNamedNodeAtPosition(
 }
 
 export function getDeclaratorName(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
-  const named = node.childForFieldName('name');
+  const named = nameFieldNode(node);
   if (named !== null) {
     return named;
   }
@@ -71,7 +71,7 @@ function findInnermostDeclaratorName(node: Parser.SyntaxNode): Parser.SyntaxNode
     return node;
   }
 
-  const named = node.childForFieldName('name');
+  const named = nameFieldNode(node);
   if (named !== null) {
     return named;
   }
@@ -89,6 +89,17 @@ function findInnermostDeclaratorName(node: Parser.SyntaxNode): Parser.SyntaxNode
   }
 
   return null;
+}
+
+function nameFieldNode(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+  for (let index = node.childCount - 1; index >= 0; index -= 1) {
+    const child = node.child(index);
+    if (child !== null && child.isNamed && node.fieldNameForChild(index) === 'name') {
+      return child;
+    }
+  }
+
+  return node.childForFieldName('name');
 }
 
 function isNameNode(node: Parser.SyntaxNode): boolean {

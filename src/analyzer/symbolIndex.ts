@@ -298,13 +298,24 @@ function declaratorNames(node: Parser.SyntaxNode): DeclaratorName[] {
 
 function declaratorNameNode(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
   if (node.type === 'qualified_declarator') {
-    return node.childForFieldName('name');
+    return nameFieldNode(node);
   }
 
   const nameNode = isDeclaratorNameNode(node) ? node : getDeclaratorName(node);
   return nameNode?.type === 'qualified_declarator'
-    ? nameNode.childForFieldName('name')
+    ? nameFieldNode(nameNode)
     : nameNode;
+}
+
+function nameFieldNode(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+  for (let index = node.childCount - 1; index >= 0; index -= 1) {
+    const child = node.child(index);
+    if (child !== null && child.isNamed && node.fieldNameForChild(index) === 'name') {
+      return child;
+    }
+  }
+
+  return node.childForFieldName('name');
 }
 
 function declaratorNameFromNode(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
@@ -401,7 +412,7 @@ function declaratorNodes(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
 }
 
 function addIdentifierKeys(node: Parser.SyntaxNode, exclusionKeys: Set<string>): void {
-  if (node.type === 'identifier') {
+  if (node.type === 'identifier' || node.type === 'class_name') {
     exclusionKeys.add(rangeKey(nodeToAnalysisRange(node)));
   }
 
@@ -457,7 +468,7 @@ function declarationFromNode(
   declarationDetail: DeclarationDetail = { detail: kind },
   containerName = containerNames.at(-1)
 ): AnalysisDeclaration {
-  const selectionRange = nodeToAnalysisRange(nameNode);
+  const selectionRange = declarationSelectionRange(nameNode);
   return {
     id: declarationId(uri, selectionRange, nameNode.text),
     name: nameNode.text,
@@ -471,6 +482,32 @@ function declarationFromNode(
     ...(declarationDetail.baseName === undefined ? {} : { baseName: declarationDetail.baseName }),
     ...(declarationDetail.signature === undefined ? {} : { signature: declarationDetail.signature })
   };
+}
+
+function declarationSelectionRange(nameNode: Parser.SyntaxNode): ReturnType<typeof nodeToAnalysisRange> {
+  const range = nodeToAnalysisRange(nameNode);
+  const parent = nameNode.parent;
+  if (parent === null) {
+    return range;
+  }
+
+  for (let index = 1; index < parent.childCount; index += 1) {
+    const child = parent.child(index);
+    const previous = parent.child(index - 1);
+    if (
+      child?.id === nameNode.id
+      && previous?.text === '~'
+      && parent.fieldNameForChild(index) === 'name'
+      && parent.fieldNameForChild(index - 1) === 'name'
+    ) {
+      return {
+        start: nodeToAnalysisRange(previous).start,
+        end: range.end
+      };
+    }
+  }
+
+  return range;
 }
 
 function baseNameFromTypeSpecifier(node: Parser.SyntaxNode): string | undefined {
