@@ -33,6 +33,7 @@ interface IndexedDocument {
   filePath?: string;
   version?: number;
   mtimeMs?: number;
+  workspaceDiagnosticsComplete?: boolean;
 }
 
 export class WorkspaceIndex {
@@ -90,7 +91,8 @@ export class WorkspaceIndex {
       this.documents.set(input.uri, {
         analysis,
         version: input.version,
-        filePath: filePathFromUri(input.uri)
+        filePath: filePathFromUri(input.uri),
+        workspaceDiagnosticsComplete: false
       });
       this.enqueueKnownForcedIncludeFiles();
       this.replaceResolvedIncludeEdgesAndEnqueue(analysis);
@@ -122,7 +124,7 @@ export class WorkspaceIndex {
 
   public indexOpenDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
     const cached = this.documents.get(input.uri);
-    if (cached?.version === input.version) {
+    if (cached?.version === input.version && cached.workspaceDiagnosticsComplete === true) {
       return cached.analysis;
     }
 
@@ -130,13 +132,15 @@ export class WorkspaceIndex {
     this.documents.set(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
-      filePath: filePathFromUri(input.uri)
+      filePath: filePathFromUri(input.uri),
+      workspaceDiagnosticsComplete: false
     });
     this.indexResolvedIncludes(initialAnalysis, new Set([input.uri]));
     const analysis = this.withWorkspaceDiagnostics(this.reanalyzeWithVisibleContext(input, initialAnalysis));
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
-      analysis
+      analysis,
+      workspaceDiagnosticsComplete: true
     });
     return analysis;
   }
@@ -327,7 +331,7 @@ export class WorkspaceIndex {
     const stat = fs.statSync(normalizedPath);
     const cached = this.documents.get(uri);
 
-    if (cached?.mtimeMs === stat.mtimeMs) {
+    if (cached?.mtimeMs === stat.mtimeMs && cached.workspaceDiagnosticsComplete === true) {
       this.indexResolvedIncludes(cached.analysis, new Set([...visitedUris, uri]));
       return cached.analysis;
     }
@@ -344,7 +348,8 @@ export class WorkspaceIndex {
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
-      mtimeMs: stat.mtimeMs
+      mtimeMs: stat.mtimeMs,
+      workspaceDiagnosticsComplete: false
     });
     this.indexResolvedIncludes(initialAnalysis, new Set([...visitedUris, uri]));
     const analysis = this.withWorkspaceDiagnostics(
@@ -353,7 +358,8 @@ export class WorkspaceIndex {
     this.documents.set(uri, {
       analysis,
       filePath: normalizedPath,
-      mtimeMs: stat.mtimeMs
+      mtimeMs: stat.mtimeMs,
+      workspaceDiagnosticsComplete: true
     });
     return analysis;
   }
@@ -447,7 +453,8 @@ export class WorkspaceIndex {
     });
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
-      analysis
+      analysis,
+      workspaceDiagnosticsComplete: false
     });
     this.indexResolvedIncludes(analysis, new Set([input.uri]));
     return analysis;
@@ -564,7 +571,8 @@ export class WorkspaceIndex {
       this.documents.set(uri, {
         analysis: initialAnalysis,
         filePath: normalizedPath,
-        mtimeMs: stat.mtimeMs
+        mtimeMs: stat.mtimeMs,
+        workspaceDiagnosticsComplete: false
       });
       this.replaceResolvedIncludeEdgesAndEnqueue(initialAnalysis);
       const analysis = this.withWorkspaceDiagnostics(
@@ -573,7 +581,8 @@ export class WorkspaceIndex {
       this.documents.set(uri, {
         analysis,
         filePath: normalizedPath,
-        mtimeMs: stat.mtimeMs
+        mtimeMs: stat.mtimeMs,
+        workspaceDiagnosticsComplete: true
       });
     });
   }

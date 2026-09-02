@@ -101,7 +101,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = analyzeForDiagnosticRequest(context, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -496,6 +496,13 @@ function analyzeForInteractiveRequest(
 ): AnalyzedDocument {
   return context.analyzer.analyzeForegroundDocument?.(input)
     ?? context.analyzer.analyzeDocument(input);
+}
+
+function analyzeForDiagnosticRequest(
+  context: HandlerRegistrationContext,
+  input: AnalyzeDocumentInput
+): AnalyzedDocument {
+  return context.analyzer.analyzeDocument(input);
 }
 
 type LogDetails = Record<string, string | number | boolean | undefined>;

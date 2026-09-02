@@ -57,6 +57,26 @@ suite('WorkspaceIndex', () => {
     assert.deepStrictEqual(index.findDeclarations('includedValue'), []);
   });
 
+  test('full analysis adds workspace diagnostics after foreground analysis cached the same version', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const uri = pathToFileURL(mainPath).toString();
+    const index = new WorkspaceIndex();
+    const input = {
+      uri,
+      version: 1,
+      text: '#include "missing.h"\nint value;'
+    };
+
+    const foreground = index.analyzeForegroundDocument(input);
+    const full = index.analyzeDocument(input);
+
+    assert.deepStrictEqual(foreground.diagnostics, []);
+    assert.deepStrictEqual(full.diagnostics.map((diagnostic) => diagnostic.message), [
+      "Include file not found: 'missing.h'."
+    ]);
+  });
+
   test('foreground analysis emits timing logs when logger is provided', () => {
     const entries: string[] = [];
     const index = new WorkspaceIndex({

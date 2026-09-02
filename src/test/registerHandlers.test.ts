@@ -260,6 +260,100 @@ suite('registerHandlers', () => {
     ]);
   });
 
+  test('returns workspace diagnostics for document diagnostic requests', () => {
+    let diagnosticsHandler: ((params: { textDocument: { uri: string } }) => unknown) | undefined;
+    const workspaceDiagnostic = {
+      severity: 'error' as const,
+      source: 'axel' as const,
+      message: "Include file not found: 'missing.h'.",
+      range: {
+        start: { line: 0, character: 10 },
+        end: { line: 0, character: 19 }
+      }
+    };
+    const connection = {
+      onInitialize: () => undefined,
+      onDidChangeWatchedFiles: () => undefined,
+      languages: {
+        diagnostics: {
+          on: (handler: typeof diagnosticsHandler) => {
+            diagnosticsHandler = handler;
+          }
+        },
+        semanticTokens: {
+          on: () => undefined
+        }
+      },
+      onHover: () => undefined,
+      onCompletion: () => undefined,
+      onDefinition: () => undefined,
+      onReferences: () => undefined,
+      onPrepareRename: () => undefined,
+      onRenameRequest: () => undefined,
+      onCodeAction: () => undefined,
+      onSignatureHelp: () => undefined,
+      onDocumentSymbol: () => undefined,
+      console: {
+        error: () => undefined
+      }
+    };
+    const documents = {
+      get: () => createTestDocument('#include "missing.h"'),
+      onDidOpen: () => undefined,
+      onDidChangeContent: () => undefined,
+      onDidClose: () => undefined
+    };
+    const analyzer = {
+      analyzeDocument: () => ({
+        uri: 'file:///main.axl',
+        version: 1,
+        diagnostics: [workspaceDiagnostic],
+        symbols: [],
+        declarations: [],
+        references: [],
+        scopes: [],
+        includes: [],
+        scriptExecutions: [],
+        guiClasses: [],
+        guiMethods: []
+      }),
+      analyzeForegroundDocument: () => ({
+        uri: 'file:///main.axl',
+        version: 1,
+        diagnostics: [],
+        symbols: [],
+        declarations: [],
+        references: [],
+        scopes: [],
+        includes: [],
+        scriptExecutions: [],
+        guiClasses: [],
+        guiMethods: []
+      })
+    };
+
+    registerHandlers({
+      connection: connection as never,
+      documents: documents as never,
+      analyzer,
+      logger: { error: () => undefined }
+    });
+
+    const result = diagnosticsHandler?.({
+      textDocument: { uri: 'file:///main.axl' }
+    });
+
+    assert.deepStrictEqual(result, {
+      kind: 'full',
+      items: [{
+        severity: 1,
+        source: 'axel',
+        message: "Include file not found: 'missing.h'.",
+        range: workspaceDiagnostic.range
+      }]
+    });
+  });
+
   test('uses foreground analysis for opened documents and semantic tokens', () => {
     const calls: string[] = [];
     let openHandler: ((event: { document: TestDocument }) => void) | undefined;
