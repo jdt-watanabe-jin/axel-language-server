@@ -245,7 +245,11 @@ function definedIdentifier(node: Parser.SyntaxNode, macros: MacroDefinitions): b
 }
 
 function numericMacroValue(definition: MacroDefinition | undefined): number {
-  if (definition?.value === undefined || definition.value === '') {
+  if (definition === undefined) {
+    return 0;
+  }
+
+  if (definition.value === undefined || definition.value === '') {
     return 1;
   }
 

@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { collectSemanticTokens } from '../analyzer/semanticTokens';
 import { WorkspaceIndex } from '../analyzer/workspaceIndex';
 
 suite('WorkspaceIndex', () => {
@@ -162,7 +161,7 @@ suite('WorkspaceIndex', () => {
     );
   });
 
-  test('uses forced include macros when marking inactive semantic tokens', () => {
+  test('uses forced include macros when collecting inactive ranges', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
     const mainPath = path.join(tempDir, 'main.axl');
     const forcedPath = path.join(tempDir, 'forced.h');
@@ -179,19 +178,9 @@ suite('WorkspaceIndex', () => {
     const index = new WorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
     const analysis = index.indexOpenDocument({ uri: mainUri, version: 1, text: lines.join('\n') });
 
-    const tokens = collectSemanticTokens(analysis);
-    assert.ok(tokens.some((token) => (
-      token.range.start.line === 1
-      && token.range.start.character === lines[1].indexOf('activeValue')
-      && token.modifiers.includes('declaration')
-      && !token.modifiers.includes('inactive')
-    )));
-    assert.ok(tokens.some((token) => (
-      token.range.start.line === 3
-      && token.range.start.character === lines[3].indexOf('inactiveValue')
-      && token.modifiers.includes('declaration')
-      && token.modifiers.includes('inactive')
-    )));
+    assert.deepStrictEqual(analysis.inactiveRanges, [
+      { start: { line: 3, character: 0 }, end: { line: 3, character: 18 } }
+    ]);
   });
 
   test('returns duplicate declarations from multiple forced includes deterministically', () => {

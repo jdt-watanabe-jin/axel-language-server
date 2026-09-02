@@ -1,7 +1,7 @@
 import type { SemanticTokens, SemanticTokensLegend } from 'vscode-languageserver/node';
 import type {
   AnalysisSemanticToken,
-  AnalysisInactiveSemanticTokenModifier,
+  AnalysisSemanticTokenModifier,
   AnalysisSemanticTokenType
 } from '../types/analysis';
 
@@ -22,8 +22,7 @@ export const SEMANTIC_TOKEN_LEGEND: SemanticTokensLegend = {
     'operator'
   ],
   tokenModifiers: [
-    'declaration',
-    'inactive'
+    'declaration'
   ]
 };
 
@@ -59,7 +58,7 @@ function tokenTypeIndex(tokenType: AnalysisSemanticTokenType): number {
   return SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf(tokenType);
 }
 
-function tokenModifierBitset(modifiers: readonly AnalysisInactiveSemanticTokenModifier[]): number {
+function tokenModifierBitset(modifiers: readonly AnalysisSemanticTokenModifier[]): number {
   return modifiers.reduce((bitset, modifier) => {
     const index = SEMANTIC_TOKEN_LEGEND.tokenModifiers.indexOf(modifier);
     return index < 0 ? bitset : bitset | (1 << index);

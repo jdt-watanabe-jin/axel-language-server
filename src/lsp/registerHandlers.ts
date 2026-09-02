@@ -15,7 +15,7 @@ import type {
   TextDocuments
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import type { AnalyzeDocumentInput, AnalyzedDocument } from '../types/analysis';
+import type { AnalyzeDocumentInput, AnalyzedDocument, AnalysisRange } from '../types/analysis';
 import { getCodeActions, type WorkspaceCodeActionIndex } from '../analyzer/codeActions';
 import { getCompletions, type WorkspaceCompletionIndex } from '../analyzer/completion';
 import { getFormattingEdits } from '../analyzer/formatting';
@@ -65,6 +65,13 @@ export interface HandlerRegistrationContext {
   analyzer: AnalyzerLike;
   logger: ServerLogger;
 }
+
+interface InactiveRangesParams {
+  uri: string;
+  ranges: AnalysisRange[];
+}
+
+const INACTIVE_RANGES_NOTIFICATION = 'axel/inactiveRanges';
 
 interface FormattingHandlerConnection {
   onDocumentFormatting?(handler: (params: DocumentFormattingParams) => unknown): void;
@@ -450,14 +457,23 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext):
 
 function indexDocument(context: HandlerRegistrationContext, document: TextDocument): void {
   try {
-    analyzeForInteractiveRequest(context, {
+    const analysis = analyzeForInteractiveRequest(context, {
       uri: document.uri,
       version: document.version,
       text: document.getText()
     });
+    sendInactiveRanges(context, analysis);
   } catch (error: unknown) {
     context.logger.error(`Workspace indexing failed: ${getErrorMessage(error)}`);
   }
+}
+
+function sendInactiveRanges(context: HandlerRegistrationContext, analysis: AnalyzedDocument): void {
+  const connection = context.connection as { sendNotification?(method: string, params: InactiveRangesParams): void };
+  connection.sendNotification?.(INACTIVE_RANGES_NOTIFICATION, {
+    uri: analysis.uri,
+    ranges: analysis.inactiveRanges ?? []
+  });
 }
 
 function getErrorMessage(error: unknown): string {

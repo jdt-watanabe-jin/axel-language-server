@@ -36,9 +36,7 @@ export function collectSemanticTokens(
     ...guiMethodDeclarationTokens(analysis)
   ];
 
-  return dedupeAndSort(tokens)
-    .filter(isSingleLineToken)
-    .map((token) => tokenWithInactiveModifier(token, analysis.inactiveRanges ?? []));
+  return dedupeAndSort(tokens).filter(isSingleLineToken);
 }
 
 function tokenFromDeclaration(declaration: AnalysisDeclaration): AnalysisSemanticToken[] {
@@ -414,20 +412,6 @@ function sameRange(left: AnalysisRange, right: AnalysisRange): boolean {
     && left.start.character === right.start.character
     && left.end.line === right.end.line
     && left.end.character === right.end.character;
-}
-
-function tokenWithInactiveModifier(
-  token: AnalysisSemanticToken,
-  inactiveRanges: readonly AnalysisRange[]
-): AnalysisSemanticToken {
-  if (token.modifiers.includes('inactive') || !inactiveRanges.some((range) => contains(range, token.range.start))) {
-    return token;
-  }
-
-  return {
-    ...token,
-    modifiers: [...token.modifiers, 'inactive']
-  };
 }
 
 function dedupeAndSort(tokens: AnalysisSemanticToken[]): AnalysisSemanticToken[] {

@@ -202,7 +202,7 @@ suite('collectSemanticTokens', () => {
     assertToken(tokens, 1, lines[1].indexOf('test'), 'function', []);
   });
 
-  test('marks semantic tokens in inactive preprocessor branches', () => {
+  test('keeps inactive preprocessor branches as document ranges separate from semantic tokens', () => {
     const lines = [
       '#define ENABLED 1',
       '#if ENABLED',
@@ -223,11 +223,16 @@ suite('collectSemanticTokens', () => {
     const tokens = collectSemanticTokens(analysis);
 
     assertToken(tokens, 2, lines[2].indexOf('activeValue'), 'variable', ['declaration']);
-    assertToken(tokens, 4, lines[4].indexOf('inactiveValue'), 'variable', ['declaration', 'inactive']);
-    assertToken(tokens, 7, lines[7].indexOf('inactiveFunction'), 'function', ['declaration', 'inactive']);
+    assert.deepStrictEqual(analysis.inactiveRanges, [
+      { start: { line: 4, character: 0 }, end: { line: 4, character: 18 } },
+      { start: { line: 7, character: 0 }, end: { line: 7, character: 23 } },
+      { start: { line: 7, character: 24 }, end: { line: 7, character: 26 } }
+    ]);
+    assertToken(tokens, 4, lines[4].indexOf('inactiveValue'), 'variable', ['declaration']);
+    assertToken(tokens, 7, lines[7].indexOf('inactiveFunction'), 'function', ['declaration']);
   });
 
-  test('evaluates undef and elif preprocessor branches for inactive semantic tokens', () => {
+  test('evaluates undef and elif preprocessor branches for inactive ranges', () => {
     const lines = [
       '#define FIRST',
       '#undef FIRST',
@@ -247,9 +252,32 @@ suite('collectSemanticTokens', () => {
 
     const tokens = collectSemanticTokens(analysis);
 
-    assertToken(tokens, 3, lines[3].indexOf('inactiveFirst'), 'variable', ['declaration', 'inactive']);
+    assert.deepStrictEqual(analysis.inactiveRanges, [
+      { start: { line: 3, character: 0 }, end: { line: 3, character: 18 } },
+      { start: { line: 7, character: 0 }, end: { line: 7, character: 17 } }
+    ]);
+    assertToken(tokens, 3, lines[3].indexOf('inactiveFirst'), 'variable', ['declaration']);
     assertToken(tokens, 5, lines[5].indexOf('activeFallback'), 'variable', ['declaration']);
-    assertToken(tokens, 7, lines[7].indexOf('inactiveElse'), 'variable', ['declaration', 'inactive']);
+    assertToken(tokens, 7, lines[7].indexOf('inactiveElse'), 'variable', ['declaration']);
+  });
+
+  test('treats undefined identifiers in if expressions as false for inactive ranges', () => {
+    const lines = [
+      '#if MISSING',
+      'int inactiveValue;',
+      '#else',
+      'int activeValue;',
+      '#endif'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.inactiveRanges, [
+      { start: { line: 1, character: 0 }, end: { line: 1, character: 18 } }
+    ]);
   });
 });
 

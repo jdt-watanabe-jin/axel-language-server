@@ -179,6 +179,87 @@ suite('registerHandlers', () => {
     assert.deepStrictEqual(indexedTexts, ['int opened;', 'int changed;']);
   });
 
+  test('sends inactive ranges after opened and changed documents are analyzed', () => {
+    const notifications: unknown[] = [];
+    let openHandler: ((event: { document: TestDocument }) => void) | undefined;
+    let changeHandler: ((event: { document: TestDocument }) => void) | undefined;
+    const inactiveRanges = [{
+      start: { line: 2, character: 0 },
+      end: { line: 3, character: 12 }
+    }];
+    const connection = {
+      onInitialize: () => undefined,
+      onDidChangeWatchedFiles: () => undefined,
+      sendNotification: (method: string, params: unknown) => {
+        notifications.push({ method, params });
+      },
+      languages: {
+        diagnostics: {
+          on: () => undefined
+        },
+        semanticTokens: {
+          on: () => undefined
+        }
+      },
+      onHover: () => undefined,
+      onCompletion: () => undefined,
+      onDefinition: () => undefined,
+      onReferences: () => undefined,
+      onPrepareRename: () => undefined,
+      onRenameRequest: () => undefined,
+      onCodeAction: () => undefined,
+      onSignatureHelp: () => undefined,
+      onDocumentSymbol: () => undefined,
+      console: {
+        error: () => undefined
+      }
+    };
+    const documents = {
+      get: () => undefined,
+      onDidOpen: (handler: (event: { document: TestDocument }) => void) => {
+        openHandler = handler;
+      },
+      onDidChangeContent: (handler: (event: { document: TestDocument }) => void) => {
+        changeHandler = handler;
+      },
+      onDidClose: () => undefined
+    };
+    const analyzer = {
+      analyzeDocument: () => {
+        throw new Error('full analysis should not run');
+      },
+      analyzeForegroundDocument: (input: { uri: string; version: number }) => ({
+        uri: input.uri,
+        version: input.version,
+        diagnostics: [],
+        symbols: [],
+        declarations: [],
+        references: [],
+        scopes: [],
+        includes: [],
+        scriptExecutions: [],
+        guiClasses: [],
+        guiMethods: [],
+        inactiveRanges
+      })
+    };
+
+    registerHandlers({
+      connection: connection as never,
+      documents: documents as never,
+      analyzer,
+      logger: { error: () => undefined }
+    });
+
+    openHandler?.({ document: createTestDocument('int opened;') });
+    changeHandler?.({ document: createTestDocument('int changed;') });
+
+    assert.deepStrictEqual(notifications, [
+      { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } },
+      { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } }
+    ]);
+  });
+
   test('uses foreground analysis for opened documents and semantic tokens', () => {
     const calls: string[] = [];
     let openHandler: ((event: { document: TestDocument }) => void) | undefined;

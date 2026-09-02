@@ -161,12 +161,11 @@ export type AnalysisSemanticTokenType =
   | 'variable';
 
 export type AnalysisSemanticTokenModifier = 'declaration';
-export type AnalysisInactiveSemanticTokenModifier = AnalysisSemanticTokenModifier | 'inactive';
 
 export interface AnalysisSemanticToken {
   range: AnalysisRange;
   tokenType: AnalysisSemanticTokenType;
-  modifiers: AnalysisInactiveSemanticTokenModifier[];
+  modifiers: AnalysisSemanticTokenModifier[];
 }
 
 export interface AnalysisScope {
