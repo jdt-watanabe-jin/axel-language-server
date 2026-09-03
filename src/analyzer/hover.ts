@@ -142,12 +142,12 @@ function findGuiDeclarationHover(
 ): AnalysisHover | null | undefined {
   const guiClass = findVisibleGuiClass(input, declaration.name);
   if (declaration.kind === 'class' && guiClass !== undefined) {
-    return hoverFromText(guiClassText(guiClass));
+    return hoverForDeclarationText(guiClassText(guiClass), declaration.documentation);
   }
 
   const part = findGuiPartForDeclaration(input.analysis.guiClasses, declaration);
   if (part !== undefined) {
-    return hoverFromText(guiPartText(part.ownerName, part.part));
+    return hoverForDeclarationText(guiPartText(part.ownerName, part.part), declaration.documentation);
   }
 
   const method = findGuiMethodForDeclaration(input.analysis, declaration);
@@ -155,7 +155,9 @@ function findGuiDeclarationHover(
     return undefined;
   }
 
-  return isResolvableGuiMethod(input, method) ? hoverFromText(declaration.detail) : null;
+  return isResolvableGuiMethod(input, method)
+    ? hoverForDeclarationText(declaration.detail, declaration.documentation)
+    : null;
 }
 
 function findGuiReferenceHover(input: HoverInput): AnalysisHover | null | undefined {
@@ -193,7 +195,10 @@ function findImplicitGuiReferenceHover(
   const member = findImplicitGuiContextMember(input, context, reference.name);
   const ownerMember = member
     ?? findDeclarationMemberWithoutRecovery(input, context.rootClassName, reference.name, new Set<string>());
-  return ownerMember === undefined ? undefined : hoverFromText(hoverTextForMemberDeclaration(ownerMember));
+  return ownerMember === undefined ? undefined : hoverForDeclarationText(
+    hoverTextForMemberDeclaration(ownerMember),
+    ownerMember.documentation
+  );
 }
 
 function findImplicitGuiContextMember(
@@ -239,7 +244,10 @@ function hoverForImplicitGuiMemberAccess(
   }
 
   const member = findDeclarationMember(input, partPrefix.part.part.typeName, memberName);
-  return member === undefined ? undefined : hoverFromText(hoverTextForMemberDeclaration(member));
+  return member === undefined ? undefined : hoverForDeclarationText(
+    hoverTextForMemberDeclaration(member),
+    member.documentation
+  );
 }
 
 function findGuiTypeReferenceHover(input: HoverInput): AnalysisHover | undefined {
@@ -508,22 +516,23 @@ function findLocalDeclaration(
 
 function hoverForDeclaration(declaration: AnalysisDeclaration): AnalysisHover {
   if (declaration.kind === 'function' && declaration.containerName !== undefined) {
-    return hoverFromText(hoverTextForMemberDeclaration(declaration));
+    return hoverForDeclarationText(hoverTextForMemberDeclaration(declaration), declaration.documentation);
   }
 
   const plainText = declaration.detail === declaration.kind
     ? `${declaration.detail} ${declaration.name}`
     : declaration.detail;
-  return hoverFromText(plainText);
+  return hoverForDeclarationText(plainText, declaration.documentation);
 }
 
 function hoverForReferenceDeclaration(
   declaration: AnalysisDeclaration,
   reference: { memberAccess?: AnalysisMemberAccess }
 ): AnalysisHover {
-  return hoverFromText(reference.memberAccess === undefined
+  const plainText = reference.memberAccess === undefined
     ? hoverTextForDeclaration(declaration)
-    : hoverTextForMemberDeclaration(declaration));
+    : hoverTextForMemberDeclaration(declaration);
+  return hoverForDeclarationText(plainText, declaration.documentation);
 }
 
 function hoverTextForDeclaration(declaration: AnalysisDeclaration): string {
@@ -561,6 +570,17 @@ function hoverFromText(plainText: string, language = 'axel'): AnalysisHover {
   return {
     markdown: `\`\`\`${language}\n${plainText}\n\`\`\``,
     plainText
+  };
+}
+
+function hoverForDeclarationText(plainText: string, documentation: string | undefined): AnalysisHover {
+  if (documentation === undefined) {
+    return hoverFromText(plainText);
+  }
+
+  return {
+    markdown: `\`\`\`axel\n${plainText}\n\`\`\`\n\n${documentation}`,
+    plainText: `${plainText}\n${documentation}`
   };
 }
 

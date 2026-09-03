@@ -23,6 +23,7 @@ interface DeclaratorName {
 
 interface DeclarationDetail {
   detail: string;
+  documentation?: string;
   typeName?: string;
   baseName?: string;
   signature?: AnalysisSignature;
@@ -202,6 +203,7 @@ function macroDeclarationFromNode(
     [],
     {
       detail: normalizeSignatureText(stripTrailingLineComment(node.text)),
+      ...optionalDocumentation(trailingLineCommentText(node.text)),
       ...(node.type === 'preproc_function_def' ? { signature: macroSignatureFromNode(node, nameNode) } : {})
     },
     undefined
@@ -477,6 +479,7 @@ function declarationFromNode(
     range: nodeToAnalysisRange(node),
     selectionRange,
     detail: declarationDetail.detail,
+    ...optionalDocumentation(declarationDetail.documentation ?? leadingDocumentationForNode(node)),
     ...(containerName === undefined ? {} : { containerName }),
     ...(declarationDetail.typeName === undefined ? {} : { typeName: declarationDetail.typeName }),
     ...(declarationDetail.baseName === undefined ? {} : { baseName: declarationDetail.baseName }),
@@ -654,7 +657,71 @@ function normalizeSignatureText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function leadingDocumentationForNode(node: Parser.SyntaxNode): string | undefined {
+  const comments: string[] = [];
+  let nextNode = node;
+  let sibling = previousNamedSibling(node);
+
+  while (sibling?.type === 'comment' && sibling.endPosition.row + 1 === nextNode.startPosition.row) {
+    comments.unshift(sibling.text);
+    nextNode = sibling;
+    sibling = previousNamedSibling(sibling);
+  }
+
+  return documentationFromComments(comments);
+}
+
+function previousNamedSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
+  const siblings = node.parent?.namedChildren;
+  if (siblings === undefined) {
+    return undefined;
+  }
+
+  const index = siblings.findIndex((sibling) => sibling.id === node.id);
+  return index <= 0 ? undefined : siblings[index - 1];
+}
+
+function documentationFromComments(comments: readonly string[]): string | undefined {
+  const lines = comments
+    .flatMap(commentLines)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const documentation = lines.join('\n').trim();
+  return documentation.length === 0 ? undefined : documentation;
+}
+
+function commentLines(text: string): string[] {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('//')) {
+    return [trimmed.replace(/^\/\/\/?(!)?\s?/, '')];
+  }
+
+  return trimmed
+    .replace(/^\/\*+!?/, '')
+    .replace(/\*+\/$/, '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*\*\s?/, ''));
+}
+
+function trailingLineCommentText(text: string): string | undefined {
+  const commentStart = trailingLineCommentStart(text);
+  if (commentStart === undefined) {
+    return undefined;
+  }
+
+  return documentationFromComments([text.slice(commentStart)]);
+}
+
+function optionalDocumentation(documentation: string | undefined): { documentation?: string } {
+  return documentation === undefined ? {} : { documentation };
+}
+
 function stripTrailingLineComment(text: string): string {
+  const commentStart = trailingLineCommentStart(text);
+  return commentStart === undefined ? text : text.slice(0, commentStart);
+}
+
+function trailingLineCommentStart(text: string): number | undefined {
   let quote: '"' | '\'' | undefined;
   let escaped = false;
 
@@ -679,11 +746,11 @@ function stripTrailingLineComment(text: string): string {
     }
 
     if (character === '/' && nextCharacter === '/') {
-      return text.slice(0, index);
+      return index;
     }
   }
 
-  return text;
+  return undefined;
 }
 
 function collectReferences(

@@ -233,6 +233,25 @@ suite('buildSymbolIndex', () => {
     );
   });
 
+  test('records declaration documentation from adjacent and trailing comments', () => {
+    const index = buildSymbolIndex(parser.parse([
+      '// Computes the visible count.',
+      'int count;',
+      '#define DEBUG_LOG 1 // Enables debug output.'
+    ].join('\n')).rootNode, uri);
+
+    assert.deepStrictEqual(
+      index.declarations.filter((declaration) => ['count', 'DEBUG_LOG'].includes(declaration.name)).map((declaration) => ({
+        name: declaration.name,
+        documentation: (declaration as { documentation?: string }).documentation
+      })),
+      [
+        { name: 'count', documentation: 'Computes the visible count.' },
+        { name: 'DEBUG_LOG', documentation: 'Enables debug output.' }
+      ]
+    );
+  });
+
   test('records class base names for inheritance-aware lookup', () => {
     const index = buildSymbolIndex(parser.parse([
       'class Base {};',

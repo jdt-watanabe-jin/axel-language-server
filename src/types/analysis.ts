@@ -58,6 +58,7 @@ export interface AnalysisDeclaration {
   range: AnalysisRange;
   selectionRange: AnalysisRange;
   detail: string;
+  documentation?: string;
   containerName?: string;
   typeName?: string;
   baseName?: string;

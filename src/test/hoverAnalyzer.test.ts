@@ -85,6 +85,31 @@ suite('getHover', () => {
     });
   });
 
+  test('returns declaration documentation when hovering a reference', () => {
+    const analysis = analyze([
+      '// Value shown to users.',
+      'int label;',
+      'void main() { label = 1; }'
+    ].join('\n'));
+
+    const hover = getHover({
+      analysis,
+      position: { line: 2, character: 14 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(hover, {
+      markdown: [
+        '```axel',
+        'int label',
+        '```',
+        '',
+        'Value shown to users.'
+      ].join('\n'),
+      plainText: 'int label\nValue shown to users.'
+    });
+  });
+
   test('does not resolve a reference to a later declaration in the same scope', () => {
     const analysis = analyze('void main() { local = 1; int local; }');
 
@@ -610,7 +635,7 @@ suite('getHover', () => {
     });
   });
 
-  test('omits trailing comments from object-like macro declaration hover text', () => {
+  test('uses trailing comments as object-like macro documentation', () => {
     const analysis = analyze('#define Lctgen_DUMP_DEBUG 1 // debug log flag\nvoid main() { int value = Lctgen_DUMP_DEBUG; }');
 
     const hover = getHover({
@@ -620,8 +645,8 @@ suite('getHover', () => {
     });
 
     assert.deepStrictEqual(hover, {
-      markdown: '```axel\n#define Lctgen_DUMP_DEBUG 1\n```',
-      plainText: '#define Lctgen_DUMP_DEBUG 1'
+      markdown: '```axel\n#define Lctgen_DUMP_DEBUG 1\n```\n\ndebug log flag',
+      plainText: '#define Lctgen_DUMP_DEBUG 1\ndebug log flag'
     });
   });
 
@@ -640,7 +665,7 @@ suite('getHover', () => {
     });
   });
 
-  test('omits trailing comments from function-like macro hover text', () => {
+  test('uses trailing comments as function-like macro documentation', () => {
     const analysis = analyze('#define MAX(a, b) ((a) > (b) ? (a) : (b)) // pick larger\nvoid main() { int value = MAX(1, 2); }');
 
     const hover = getHover({
@@ -650,8 +675,8 @@ suite('getHover', () => {
     });
 
     assert.deepStrictEqual(hover, {
-      markdown: '```axel\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n```',
-      plainText: '#define MAX(a, b) ((a) > (b) ? (a) : (b))'
+      markdown: '```axel\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n```\n\npick larger',
+      plainText: '#define MAX(a, b) ((a) > (b) ? (a) : (b))\npick larger'
     });
   });
 
@@ -1173,7 +1198,7 @@ function assertHoverText(
   expectedPlainText: string
 ): void {
   const hover = getHover({ analysis, position, workspaceIndex });
-  assert.strictEqual(hover?.plainText, expectedPlainText);
+  assert.strictEqual(hover?.plainText.split('\n')[0], expectedPlainText);
 }
 
 function positionFromOffset(text: string, offset: number) {
