@@ -10,6 +10,7 @@ import type {
   AnalysisSemanticTokenType,
   AnalyzedDocument
 } from '../types/analysis';
+import { getBuiltinHover } from './builtins';
 import {
   compareDeclarations,
   contains,
@@ -27,6 +28,8 @@ export function collectSemanticTokens(
   const tokens = [
     ...analysis.declarations.flatMap(tokenFromDeclaration),
     ...analysis.references.flatMap((reference) => tokenFromReference(reference, analysis, workspaceIndex)),
+    ...(analysis.semanticTokenReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, workspaceIndex)),
+    ...(analysis.semanticTokens ?? []),
     ...analysis.scriptExecutions.map((execution) => ({
       range: execution.selectionRange,
       tokenType: 'function' as const,
@@ -130,6 +133,10 @@ function tokenTypeFromReference(
   const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput);
   if (visibleDeclaration !== undefined) {
     return tokenTypeFromReferenceDeclaration(reference, visibleDeclaration);
+  }
+
+  if (reference.call === true && getBuiltinHover(reference.name) !== null) {
+    return 'function';
   }
 
   return undefined;

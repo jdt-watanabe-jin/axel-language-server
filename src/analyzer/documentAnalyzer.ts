@@ -19,6 +19,10 @@ import { collectDocumentSymbols } from './documentSymbols';
 import { buildGuiIndex, collectExternalGuiMethods } from './guiIndex';
 import { collectIncludes, collectScriptExecutions } from './includeResolver';
 import { collectInactivePreprocessorRanges } from './preprocessorEvaluation';
+import {
+  collectPreprocessorSemanticTokenReferences,
+  collectPreprocessorSemanticTokens
+} from './preprocessorSemanticTokens';
 import { buildScopeIndex } from './scopeIndex';
 import { buildSymbolIndex } from './symbolIndex';
 
@@ -60,6 +64,8 @@ export class DocumentAnalyzer {
       const scopes = buildScopeIndex(tree.rootNode, input.uri, symbolIndex.declarations);
       const includes = collectIncludes(tree.rootNode);
       const scriptExecutions = collectScriptExecutions(tree.rootNode);
+      const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
+      const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
       const analysis: AnalyzedDocument = {
         uri: input.uri,
         version: input.version,
@@ -67,6 +73,8 @@ export class DocumentAnalyzer {
         symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), inactiveRanges),
         declarations: symbolIndex.declarations.filter((declaration) => !startsInInactiveRange(declaration.selectionRange, inactiveRanges)),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
+        semanticTokenReferences: preprocessorSemanticTokenReferences.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
+        semanticTokens: preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
         scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
         includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
         scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, inactiveRanges)),

@@ -202,6 +202,50 @@ suite('collectSemanticTokens', () => {
     assertToken(tokens, 1, lines[1].indexOf('test'), 'function', []);
   });
 
+  test('tokens function-like macro parameters in definitions', () => {
+    const lines = [
+      '#define TEST_CASE(name) printf("Test case: %s\\n", name);',
+      '#define ASSERT_EQ(a, b) if ((a) != (b)) { return; }'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    const tokens = collectSemanticTokens(analysis);
+
+    assertToken(tokens, 0, lines[0].indexOf('TEST_CASE'), 'macro', ['declaration']);
+    assertToken(tokens, 0, lines[0].indexOf('name'), 'parameter', ['declaration']);
+    assertToken(tokens, 0, lines[0].lastIndexOf('name'), 'parameter', []);
+    assertToken(tokens, 1, lines[1].indexOf('ASSERT_EQ'), 'macro', ['declaration']);
+    assertToken(tokens, 1, lines[1].indexOf('a'), 'parameter', ['declaration']);
+    assertToken(tokens, 1, lines[1].indexOf('b'), 'parameter', ['declaration']);
+    assertToken(tokens, 1, lines[1].indexOf('a) !='), 'parameter', []);
+    assertToken(tokens, 1, lines[1].indexOf('b))'), 'parameter', []);
+  });
+
+  test('tokens resolved function calls in macro replacement text', () => {
+    const lines = [
+      '#define TEST_CASE(name) printf("Test case: %s\\n", name);',
+      '#define SECTION(name) customLog(name);'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    const tokens = collectSemanticTokens(analysis, {
+      listVisibleDeclarations: () => [
+        declaration('customLog', 'function', 'void customLog(string value)')
+      ]
+    });
+
+    assertToken(tokens, 0, lines[0].indexOf('printf'), 'function', []);
+    assertToken(tokens, 1, lines[1].indexOf('customLog'), 'function', []);
+  });
+
   test('skips semantic tokens in inactive preprocessor branches', () => {
     const lines = [
       '#define ENABLED 1',

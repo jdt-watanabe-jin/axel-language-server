@@ -260,6 +260,8 @@ export interface AnalyzedDocument {
   symbols: AnalysisSymbol[];
   declarations: AnalysisDeclaration[];
   references: AnalysisReference[];
+  semanticTokenReferences?: AnalysisReference[];
+  semanticTokens?: AnalysisSemanticToken[];
   scopes: AnalysisScope[];
   includes: AnalysisInclude[];
   scriptExecutions: AnalysisScriptExecution[];
