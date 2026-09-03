@@ -12,6 +12,13 @@ import type {
 import { getBuiltinHover } from './builtins';
 import { isGuiPartTypeName } from './guiClassKinds';
 import {
+  allGuiMethods,
+  findEnclosingGuiMethodContext,
+  findVisibleGuiClass,
+  resolveGuiPartPath,
+  type GuiResolutionInput
+} from './guiResolution';
+import {
   declarationsInTypeHierarchy,
   findDeclarationMember,
   findLocalDeclaration,
@@ -325,7 +332,7 @@ function isKnownDirectGuiDialogCall(
 ): boolean {
   return reference.call === true
     && (reference.name === 'DoModal' || reference.name === 'DoModless')
-    && findEnclosingGuiMethodContext(analysis, undefined, reference.range.start)?.rootClassName !== undefined;
+    && findEnclosingGuiMethodContext(guiResolutionInput(analysis, undefined, reference.range.start))?.rootClassName !== undefined;
 }
 
 function typeDeclarationName(
@@ -345,7 +352,7 @@ function isKnownImplicitGuiReference(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): boolean {
-  const context = findEnclosingGuiMethodContext(analysis, workspaceIndex, reference.range.start);
+  const context = findEnclosingGuiMethodContext(guiResolutionInput(analysis, workspaceIndex, reference.range.start));
   if (context === undefined) {
     return false;
   }
@@ -441,7 +448,7 @@ function implicitGuiCallableDeclarations(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDeclaration[] {
-  const context = findEnclosingGuiMethodContext(analysis, workspaceIndex, reference.range.start);
+  const context = findEnclosingGuiMethodContext(guiResolutionInput(analysis, workspaceIndex, reference.range.start));
   if (context === undefined) {
     return [];
   }
@@ -533,77 +540,14 @@ function argumentWord(count: number): string {
   return count === 1 ? 'argument' : 'arguments';
 }
 
-interface GuiMethodContext {
-  rootClassName: string;
-  receiverTypeName: string;
-}
-
-function findEnclosingGuiMethodContext(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses' | 'guiMethods'>,
-  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined,
-  position: AnalysisReference['range']['start']
-): GuiMethodContext | undefined {
-  for (const guiClass of analysis.guiClasses) {
-    const classMethod = guiClass.methods.find((method) => containsRange(method.range, { start: position, end: position }));
-    if (classMethod !== undefined) {
-      return { rootClassName: guiClass.name, receiverTypeName: guiClass.name };
-    }
-
-    const partMethod = findEnclosingGuiPartMethod(guiClass.parts, position);
-    if (partMethod !== undefined) {
-      return { rootClassName: guiClass.name, receiverTypeName: partMethod.typeName };
-    }
-  }
-
-  const classResolver = createGuiClassResolver(analysis, workspaceIndex);
-  for (const method of analysis.guiMethods) {
-    if (!containsRange(method.range, { start: position, end: position })) {
-      continue;
-    }
-
-    const rootClassName = method.receiverPath[0];
-    if (rootClassName === undefined) {
-      continue;
-    }
-
-    const rootClass = classResolver.find(rootClassName);
-    const part = rootClass === undefined
-      ? undefined
-      : resolveGuiPartPath(rootClass, classResolver, method.receiverPath.slice(1, -1));
-    return {
-      rootClassName,
-      receiverTypeName: part?.typeName ?? rootClassName
-    };
-  }
-
-  return undefined;
-}
-
-function findEnclosingGuiPartMethod(
-  parts: AnalysisGuiPart[],
-  position: AnalysisReference['range']['start']
-): AnalysisGuiPart | undefined {
-  for (const part of parts) {
-    if (part.methods.some((method) => containsRange(method.range, { start: position, end: position }))) {
-      return part;
-    }
-
-    const child = findEnclosingGuiPartMethod(part.parts, position);
-    if (child !== undefined) {
-      return child;
-    }
-  }
-
-  return undefined;
-}
-
 function findGuiPartByName(
   analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined,
   rootClassName: string,
   name: string
 ): AnalysisGuiPart | undefined {
-  const rootClass = createGuiClassResolver(analysis, workspaceIndex).find(rootClassName);
+  const input = guiResolutionInput(analysis, workspaceIndex, { line: 0, character: 0 });
+  const rootClass = findVisibleGuiClass(input, rootClassName);
   return rootClass === undefined ? undefined : findPart(rootClass.parts, (part) => part.name === name);
 }
 
@@ -615,11 +559,10 @@ function guiReceiverPathDiagnostics(
     return [];
   }
 
-  const classResolver = createGuiClassResolver(analysis, workspaceIndex);
   const diagnostics: AnalysisDiagnostic[] = [];
 
   for (const method of analysis.guiMethods) {
-    const diagnostic = guiReceiverPathDiagnostic(method, classResolver);
+    const diagnostic = guiReceiverPathDiagnostic(analysis, workspaceIndex, method);
     if (diagnostic !== undefined) {
       diagnostics.push(diagnostic);
     }
@@ -629,21 +572,24 @@ function guiReceiverPathDiagnostics(
 }
 
 function guiReceiverPathDiagnostic(
-  method: AnalysisGuiMethod,
-  classResolver: GuiClassResolver
+  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined,
+  method: AnalysisGuiMethod
 ): AnalysisDiagnostic | undefined {
   if (!method.event || method.receiverPath.length < 3 || method.receiverPathSegmentRanges === undefined) {
     return undefined;
   }
 
-  const rootClass = classResolver.find(method.receiverPath[0]);
+  const rootClassName = method.receiverPath[0];
+  const input = guiResolutionInput(analysis, workspaceIndex, method.range.start);
+  const rootClass = findVisibleGuiClass(input, rootClassName);
   if (rootClass === undefined) {
     return undefined;
   }
 
   for (let index = 1; index < method.receiverPath.length - 1; index += 1) {
     const path = method.receiverPath.slice(1, index + 1);
-    if (resolveGuiPartPath(rootClass, classResolver, path) === undefined) {
+    if (resolveGuiPartPath(input, rootClassName, path) === undefined) {
       const segment = method.receiverPath[index];
       return {
         severity: 'error',
@@ -657,70 +603,11 @@ function guiReceiverPathDiagnostic(
   return undefined;
 }
 
-function resolveGuiPartPath(
-  rootClass: AnalysisGuiClass,
-  classResolver: GuiClassResolver,
-  path: string[]
-): AnalysisGuiPart | undefined {
-  let owner: AnalysisGuiClass | undefined = rootClass;
-  let ownerPath: string[] = [];
-  let resolved: AnalysisGuiPart | undefined;
-  const directPart = findPartByPath(rootClass.parts, path);
-  if (directPart !== undefined) {
-    return directPart;
-  }
-
-  for (const segment of path) {
-    if (owner === undefined) {
-      return undefined;
-    }
-
-    const nextPath = [...ownerPath, segment];
-    const part: AnalysisGuiPart | undefined = findPartByPath(owner.parts, nextPath)
-      ?? findPartByPath(owner.parts, [segment]);
-    if (part === undefined) {
-      return undefined;
-    }
-
-    resolved = part;
-    const partClass = classResolver.find(part.typeName);
-    owner = partClass ?? owner;
-    ownerPath = partClass === undefined ? nextPath : [];
-  }
-
-  return resolved;
-}
-
-interface GuiClassResolver {
-  find(name: string): AnalysisGuiClass | undefined;
-}
-
-function createGuiClassResolver(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses'>,
-  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
-): GuiClassResolver {
-  const localClasses = new Map(analysis.guiClasses.map((guiClass) => [guiClass.name, guiClass]));
-  return {
-    find: (name) => {
-      const visibleClasses = workspaceIndex?.findVisibleGuiClasses?.(analysis.uri, name);
-      if (visibleClasses !== undefined) {
-        return visibleClasses.length === 1 ? visibleClasses[0] : undefined;
-      }
-
-      return localClasses.get(name);
-    }
-  };
-}
-
 function hasSyntaxDiagnostics(diagnostics: readonly AnalysisDiagnostic[]): boolean {
   return diagnostics.some((diagnostic) => (
     diagnostic.severity === 'error'
     && (diagnostic.message === 'Syntax error.' || diagnostic.message.startsWith('Missing '))
   ));
-}
-
-function findPartByPath(parts: AnalysisGuiPart[], path: string[]): AnalysisGuiPart | undefined {
-  return findPart(parts, (part) => sameStringArray(part.path, path));
 }
 
 function findPart(
@@ -741,10 +628,6 @@ function findPart(
   return undefined;
 }
 
-function sameStringArray(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((item, index) => item === right[index]);
-}
-
 function doModalOnCreateDiagnostics(
   analysis: Pick<AnalyzedDocument, 'references' | 'guiClasses' | 'guiMethods'>
 ): AnalysisDiagnostic[] {
@@ -753,7 +636,7 @@ function doModalOnCreateDiagnostics(
       .filter((guiClass) => guiClass.kind === 'dialog')
       .map((guiClass) => guiClass.name)
   );
-  const onCreateMethods = allGuiMethods(analysis.guiClasses, analysis.guiMethods)
+  const onCreateMethods = allGuiMethods(analysis)
     .filter((method) => method.name === 'OnCreate' && dialogClassNames.has(method.receiverPath[0]));
 
   return analysis.references
@@ -767,23 +650,6 @@ function doModalOnCreateDiagnostics(
     }));
 }
 
-function allGuiMethods(guiClasses: AnalysisGuiClass[], externalMethods: AnalysisGuiMethod[]): AnalysisGuiMethod[] {
-  return [
-    ...externalMethods,
-    ...guiClasses.flatMap((guiClass) => [
-      ...guiClass.methods,
-      ...guiPartMethods(guiClass.parts)
-    ])
-  ];
-}
-
-function guiPartMethods(parts: AnalysisGuiPart[]): AnalysisGuiMethod[] {
-  return parts.flatMap((part) => [
-    ...part.methods,
-    ...guiPartMethods(part.parts)
-  ]);
-}
-
 function containsRange(container: AnalysisGuiMethod['range'], range: AnalysisReference['range']): boolean {
   return positionBeforeOrEqual(container.start, range.start) && positionBeforeOrEqual(range.end, container.end);
 }
@@ -793,4 +659,28 @@ function positionBeforeOrEqual(
   right: AnalysisReference['range']['start']
 ): boolean {
   return left.line < right.line || (left.line === right.line && left.character <= right.character);
+}
+
+function guiResolutionInput(
+  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses'> & Partial<Pick<AnalyzedDocument, 'guiMethods'>>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined,
+  position: AnalysisReference['range']['start']
+): GuiResolutionInput {
+  return {
+    analysis: {
+      ...analysis,
+      guiMethods: analysis.guiMethods ?? []
+    },
+    position,
+    workspaceIndex: {
+      findGuiClass: (sourceUri, name) => {
+        const visibleClasses = workspaceIndex?.findVisibleGuiClasses?.(sourceUri, name);
+        if (visibleClasses !== undefined) {
+          return visibleClasses.length === 1 ? visibleClasses[0] : undefined;
+        }
+
+        return analysis.guiClasses.find((guiClass) => guiClass.name === name);
+      }
+    }
+  };
 }

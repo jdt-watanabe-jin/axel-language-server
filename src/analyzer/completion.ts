@@ -4,13 +4,11 @@ import type {
   AnalyzedDocument,
   AnalysisGuiClass,
   AnalysisGuiPart,
-  AnalysisPosition,
-  AnalysisRange
+  AnalysisPosition
 } from '../types/analysis';
 import { getBuiltinCompletions } from './builtins';
 import { DIRECT_GUI_BASE_NAMES } from './guiClassKinds';
 import {
-  contains as sharedContains,
   declarationsInTypeHierarchy as sharedDeclarationsInTypeHierarchy,
   isTypeDeclaration as sharedIsTypeDeclaration,
   isVisibleAt as sharedIsVisibleAt,
@@ -19,6 +17,11 @@ import {
   resolveMemberAccessType as sharedResolveMemberAccessType,
   thisReceiverType as sharedThisReceiverType
 } from './resolution';
+import {
+  findEnclosingGuiMethodContext,
+  findVisibleGuiClass,
+  resolveGuiPartPath
+} from './guiResolution';
 
 export interface CompletionInput {
   analysis: AnalyzedDocument;
@@ -535,117 +538,6 @@ function listVisibleDeclarations(input: CompletionInput): AnalysisDeclaration[] 
   return sharedListVisibleDeclarations(input);
 }
 
-interface GuiMethodContext {
-  rootClassName: string;
-  receiverTypeName: string;
-}
-
-function findEnclosingGuiMethodContext(input: CompletionInput): GuiMethodContext | undefined {
-  for (const guiClass of input.analysis.guiClasses) {
-    const classMethod = guiClass.methods.find((method) => contains(method.range, input.position));
-    if (classMethod !== undefined) {
-      return { rootClassName: guiClass.name, receiverTypeName: guiClass.name };
-    }
-
-    const partMethod = findEnclosingGuiPartMethod(guiClass.parts, input.position);
-    if (partMethod !== undefined) {
-      return { rootClassName: guiClass.name, receiverTypeName: partMethod.typeName };
-    }
-  }
-
-  for (const method of input.analysis.guiMethods) {
-    if (!contains(method.range, input.position)) {
-      continue;
-    }
-
-    const rootClassName = method.receiverPath[0];
-    if (rootClassName === undefined) {
-      continue;
-    }
-
-    const partPath = method.receiverPath.slice(1, -1);
-    const part = resolveGuiPartPath(input, rootClassName, partPath);
-    return {
-      rootClassName,
-      receiverTypeName: part?.part.typeName ?? rootClassName
-    };
-  }
-
-  return undefined;
-}
-
-function findEnclosingGuiPartMethod(parts: AnalysisGuiPart[], position: AnalysisPosition): AnalysisGuiPart | undefined {
-  for (const part of parts) {
-    if (part.methods.some((method) => contains(method.range, position))) {
-      return part;
-    }
-
-    const child = findEnclosingGuiPartMethod(part.parts, position);
-    if (child !== undefined) {
-      return child;
-    }
-  }
-
-  return undefined;
-}
-
-interface ResolvedGuiPart {
-  ownerName: string;
-  part: AnalysisGuiPart;
-}
-
-function resolveGuiPartPath(input: CompletionInput, rootClassName: string, path: string[]): ResolvedGuiPart | undefined {
-  let owner = findVisibleGuiClass(input, rootClassName);
-  let ownerPath: string[] = [];
-  let resolved: ResolvedGuiPart | undefined;
-  const rootOwner = owner;
-  if (rootOwner !== undefined) {
-    const directPart = findPartByPath(rootOwner.parts, path);
-    if (directPart !== undefined) {
-      return { ownerName: rootOwner.name, part: directPart };
-    }
-  }
-
-  for (const segment of path) {
-    if (owner === undefined) {
-      return undefined;
-    }
-
-    const nextPath = [...ownerPath, segment];
-    const part = findPartByPath(owner.parts, nextPath) ?? findPartByPath(owner.parts, [segment]);
-    if (part === undefined) {
-      return undefined;
-    }
-
-    resolved = { ownerName: owner.name, part };
-    const partClass = findVisibleGuiClass(input, part.typeName);
-    owner = partClass ?? owner;
-    ownerPath = partClass === undefined ? nextPath : [];
-  }
-
-  return resolved;
-}
-
-function findVisibleGuiClass(input: CompletionInput, name: string): AnalysisGuiClass | undefined {
-  return input.analysis.guiClasses.find((guiClass) => guiClass.name === name)
-    ?? input.workspaceIndex.findGuiClass?.(input.analysis.uri, name);
-}
-
-function findPartByPath(parts: AnalysisGuiPart[], path: string[]): AnalysisGuiPart | undefined {
-  for (const part of parts) {
-    if (sameStringArray(part.path, path)) {
-      return part;
-    }
-
-    const child = findPartByPath(part.parts, path);
-    if (child !== undefined) {
-      return child;
-    }
-  }
-
-  return undefined;
-}
-
 function keywordItems(names: readonly string[]): AnalysisCompletionItem[] {
   return names.map((name) => ({ name, kind: 'keyword' }));
 }
@@ -721,12 +613,4 @@ function memberDetail(declaration: AnalysisDeclaration): string {
 function offsetFromPosition(text: string, position: AnalysisPosition): number {
   const lines = text.split('\n');
   return lines.slice(0, position.line).reduce((sum, line) => sum + line.length + 1, 0) + position.character;
-}
-
-function contains(range: AnalysisRange, position: AnalysisPosition): boolean {
-  return sharedContains(range, position);
-}
-
-function sameStringArray(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((item, index) => item === right[index]);
 }

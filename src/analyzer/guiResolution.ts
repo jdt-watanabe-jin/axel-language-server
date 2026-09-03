@@ -10,7 +10,7 @@ import { contains } from './resolution';
 export interface GuiResolutionInput {
   analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses' | 'guiMethods'>;
   position: AnalysisPosition;
-  workspaceIndex: {
+  workspaceIndex?: {
     findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;
     listVisibleDocuments?(sourceUri: string): AnalyzedDocument[];
   };
@@ -194,14 +194,14 @@ function findVisibleGuiClassEntry(input: GuiResolutionInput, name: string): GuiC
     }
   }
 
-  const guiClass = input.workspaceIndex.findGuiClass?.(input.analysis.uri, name);
+  const guiClass = input.workspaceIndex?.findGuiClass?.(input.analysis.uri, name);
   return guiClass === undefined ? undefined : { guiClass };
 }
 
 function visibleDocuments(input: GuiResolutionInput): AnalyzedDocument[] {
   return [
     input.analysis as AnalyzedDocument,
-    ...(input.workspaceIndex.listVisibleDocuments?.(input.analysis.uri) ?? [])
+    ...(input.workspaceIndex?.listVisibleDocuments?.(input.analysis.uri) ?? [])
   ];
 }
 
