@@ -610,8 +610,38 @@ suite('getHover', () => {
     });
   });
 
+  test('omits trailing comments from object-like macro declaration hover text', () => {
+    const analysis = analyze('#define Lctgen_DUMP_DEBUG 1 // debug log flag\nvoid main() { int value = Lctgen_DUMP_DEBUG; }');
+
+    const hover = getHover({
+      analysis,
+      position: { line: 0, character: 10 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(hover, {
+      markdown: '```axel\n#define Lctgen_DUMP_DEBUG 1\n```',
+      plainText: '#define Lctgen_DUMP_DEBUG 1'
+    });
+  });
+
   test('resolves function-like macro references to their definition', () => {
     const analysis = analyze('#define MAX(a, b) ((a) > (b) ? (a) : (b))\nvoid main() { int value = MAX(1, 2); }');
+
+    const hover = getHover({
+      analysis,
+      position: { line: 1, character: 26 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(hover, {
+      markdown: '```axel\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n```',
+      plainText: '#define MAX(a, b) ((a) > (b) ? (a) : (b))'
+    });
+  });
+
+  test('omits trailing comments from function-like macro hover text', () => {
+    const analysis = analyze('#define MAX(a, b) ((a) > (b) ? (a) : (b)) // pick larger\nvoid main() { int value = MAX(1, 2); }');
 
     const hover = getHover({
       analysis,

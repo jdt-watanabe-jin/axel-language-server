@@ -201,7 +201,7 @@ function macroDeclarationFromNode(
     uri,
     [],
     {
-      detail: normalizeSignatureText(node.text),
+      detail: normalizeSignatureText(stripTrailingLineComment(node.text)),
       ...(node.type === 'preproc_function_def' ? { signature: macroSignatureFromNode(node, nameNode) } : {})
     },
     undefined
@@ -652,6 +652,38 @@ function declaratorText(declaratorNode: Parser.SyntaxNode, nameNode: Parser.Synt
 
 function normalizeSignatureText(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+function stripTrailingLineComment(text: string): string {
+  let quote: '"' | '\'' | undefined;
+  let escaped = false;
+
+  for (let index = 0; index < text.length - 1; index += 1) {
+    const character = text[index];
+    const nextCharacter = text[index + 1];
+
+    if (quote !== undefined) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === quote) {
+        quote = undefined;
+      }
+      continue;
+    }
+
+    if (character === '"' || character === '\'') {
+      quote = character;
+      continue;
+    }
+
+    if (character === '/' && nextCharacter === '/') {
+      return text.slice(0, index);
+    }
+  }
+
+  return text;
 }
 
 function collectReferences(
