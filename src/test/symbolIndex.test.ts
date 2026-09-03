@@ -441,6 +441,26 @@ suite('buildSymbolIndex', () => {
     }]);
   });
 
+  test('records return types before qualified function declarators as type references', () => {
+    const lines = versionOverloadFixture();
+    const line = lines.findIndex((item) => item.includes('static Version Version::makeVersion'));
+    const index = buildSymbolIndex(parser.parse(lines.join('\n')).rootNode, uri);
+
+    assert.deepStrictEqual(index.references.filter((reference) => (
+      reference.name === 'Version'
+      && reference.range.start.line === line
+      && reference.range.start.character === 7
+    )), [{
+      name: 'Version',
+      uri,
+      range: {
+        start: { line, character: 7 },
+        end: { line, character: 14 }
+      },
+      typeReference: true
+    }]);
+  });
+
   test('adds named GUI parts as variable declarations owned by their GUI container', () => {
     const index = buildSymbolIndex(parser.parse([
       'class MyDialog : public GCDialog {',
@@ -477,3 +497,59 @@ suite('buildSymbolIndex', () => {
     );
   });
 });
+
+function versionOverloadFixture(): string[] {
+  return [
+    'enum prerelease {',
+    '  alpha = 0,',
+    '  beta = 1,',
+    '  rc = 2,',
+    '  none = 3,',
+    '};',
+    '',
+    'string alpha_str = "alpha";',
+    'string beta_str = "beta";',
+    'string rc_str = "rc";',
+    '',
+    'class Prerelease {',
+    '  static int length(prerelease t)',
+    '  {',
+    '    if (t == alpha) { return alpha_str.Length(); }',
+    '    else if (t == beta) { return beta_str.Length(); }',
+    '    else if (t == rc) { return rc_str.Length(); }',
+    '    else { return 0; }',
+    '  }',
+    '',
+    '  static string toString(prerelease t)',
+    '  {',
+    '    if (t == alpha) { return alpha_str; }',
+    '    else if (t == beta) { return beta_str; }',
+    '    else if (t == rc) { return rc_str; }',
+    '    else { return ""; }',
+    '  }',
+    '',
+    '  static prerelease fromString(string p_str)',
+    '  {',
+    '    if (p_str == alpha_str) { return alpha; }',
+    '    else if (p_str == beta_str) { return beta; }',
+    '    else if (p_str == rc_str) { return rc; }',
+    '    else { return none; }',
+    '  }',
+    '};',
+    '',
+    'class Version {',
+    'public:',
+    '  Version();',
+    '  static Version makeVersion(int p_major, int p_minor, int p_patch);',
+    '};',
+    '',
+    'Version::Version() {}',
+    '',
+    'static Version Version::makeVersion(int p_major,',
+    '                                    int p_minor,',
+    '                                    int p_patch)',
+    '{',
+    '  return makeVersion(p_major, p_minor, p_patch, none, 0);',
+    '}'
+  ];
+}

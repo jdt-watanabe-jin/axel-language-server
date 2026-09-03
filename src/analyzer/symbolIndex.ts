@@ -838,7 +838,31 @@ function isTypeReferenceNameNode(node: Parser.SyntaxNode): boolean {
     return false;
   }
 
-  return parent.childForFieldName('type') === node || parent.type === 'base_class_clause';
+  return childForFieldNameMatches(parent, 'type', node) || parent.type === 'base_class_clause';
+}
+
+function childForFieldNameMatches(
+  parent: Parser.SyntaxNode,
+  fieldName: string,
+  node: Parser.SyntaxNode
+): boolean {
+  for (let index = 0; index < parent.childCount; index += 1) {
+    const child = parent.child(index);
+    if (child !== null && sameSyntaxNode(child, node) && parent.fieldNameForChild(index) === fieldName) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function sameSyntaxNode(left: Parser.SyntaxNode, right: Parser.SyntaxNode): boolean {
+  return left.id === right.id
+    && left.type === right.type
+    && left.startPosition.row === right.startPosition.row
+    && left.startPosition.column === right.startPosition.column
+    && left.endPosition.row === right.endPosition.row
+    && left.endPosition.column === right.endPosition.column;
 }
 
 function memberReferenceFromNode(

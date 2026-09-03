@@ -119,12 +119,19 @@ function tokenTypeFromReference(
     return reference.call === true ? 'method' : 'property';
   }
 
+  const resolutionInput = { analysis, workspaceIndex, position: reference.range.start };
+  if (reference.typeReference === true) {
+    const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput);
+    if (visibleDeclaration !== undefined) {
+      return tokenTypeFromReferenceDeclaration(reference, visibleDeclaration);
+    }
+  }
+
   const localDeclaration = findLocalDeclaration(analysis, reference.name, reference.range.start);
   if (localDeclaration !== undefined && referenceMatchesDeclarationKind(reference, localDeclaration)) {
     return tokenTypeFromReferenceDeclaration(reference, localDeclaration);
   }
 
-  const resolutionInput = { analysis, workspaceIndex, position: reference.range.start };
   const implicitGuiMember = findImplicitGuiMemberDeclaration(resolutionInput, reference);
   if (implicitGuiMember !== undefined) {
     return tokenTypeFromReferenceDeclaration(reference, implicitGuiMember);

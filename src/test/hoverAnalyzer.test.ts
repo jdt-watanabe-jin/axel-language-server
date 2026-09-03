@@ -70,6 +70,26 @@ suite('getHover', () => {
     assert.strictEqual(classNameHover?.plainText, 'CTGen::~CTGen()');
   });
 
+  test('returns class hover for return types before qualified methods', () => {
+    const text = [
+      'class Version {};',
+      'Version::Version() {}',
+      'static Version Version::makeVersion(int p_major)',
+      '{',
+      '  return makeVersion(p_major);',
+      '}'
+    ].join('\n');
+    const analysis = analyze(text);
+
+    const hover = getHover({
+      analysis,
+      position: { line: 2, character: 'static '.length },
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.strictEqual(hover?.plainText, 'class Version');
+  });
+
   test('resolves a local reference to its declaration', () => {
     const analysis = analyze('void main() { int local; local = 1; }');
 

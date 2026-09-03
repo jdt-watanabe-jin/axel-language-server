@@ -121,6 +121,13 @@ function findDeclarationForReference(input: HoverInput): AnalysisDeclaration | u
     return findMemberDeclaration(input, reference.memberAccess, input.position);
   }
 
+  if (reference.typeReference === true) {
+    const typeDeclaration = visibleDeclarationsByName(input, reference.name).find(isTypeDeclaration);
+    if (typeDeclaration !== undefined) {
+      return typeDeclaration;
+    }
+  }
+
   return findDeclarationByName(input, reference.name, input.position);
 }
 
@@ -289,7 +296,11 @@ function findGuiBaseClassReferenceHover(
 }
 
 function isTypeDeclaration(declaration: AnalysisDeclaration): boolean {
-  return declaration.kind === 'class' || declaration.kind === 'struct' || declaration.kind === 'union';
+  return declaration.kind === 'class'
+    || declaration.kind === 'struct'
+    || declaration.kind === 'union'
+    || declaration.kind === 'enum'
+    || declaration.kind === 'typedef';
 }
 
 function isBeforeDeclarationBody(

@@ -140,6 +140,27 @@ suite('collectSemanticTokens', () => {
     assertToken(tokens, 2, lines[2].indexOf('OnCreate'), 'function', ['declaration']);
   });
 
+  test('tokens return types before qualified methods as classes', () => {
+    const lines = [
+      'class Version {};',
+      'Version::Version() {}',
+      'static Version Version::makeVersion(int p_major)',
+      '{',
+      '  return makeVersion(p_major);',
+      '}'
+    ];
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///semver.axl',
+      version: 1,
+      text: lines.join('\n')
+    });
+
+    const tokens = collectSemanticTokens(analysis);
+
+    assertToken(tokens, 2, lines[2].indexOf('Version'), 'class', []);
+    assertNoToken(tokens, 2, lines[2].indexOf('Version'), 'function');
+  });
+
   test('tokens inline GUI event declarations as methods', () => {
     const lines = [
       'class mydialog : public GCDialog {',
