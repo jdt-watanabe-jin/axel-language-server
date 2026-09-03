@@ -19,6 +19,15 @@ import {
   thisReceiverType,
   visibleDeclarationsByName
 } from './resolution';
+import {
+  allGuiMethods,
+  findEnclosingGuiMethodContext,
+  findVisibleGuiClass,
+  resolveGuiPartPath,
+  resolveLongestGuiPartPath,
+  type GuiMethodContext,
+  type ResolvedGuiPart
+} from './guiResolution';
 
 export interface HoverInput {
   analysis: AnalyzedDocument;
@@ -629,26 +638,6 @@ function hoverForDeclarationText(plainText: string, documentation: string | unde
   };
 }
 
-interface ResolvedGuiPart {
-  ownerName: string;
-  part: AnalysisGuiPart;
-}
-
-interface GuiMethodContext {
-  rootClassName: string;
-  receiverTypeName: string;
-}
-
-interface ResolvedGuiPartPrefix {
-  length: number;
-  part: ResolvedGuiPart;
-}
-
-function findVisibleGuiClass(input: HoverInput, name: string): AnalysisGuiClass | undefined {
-  return input.analysis.guiClasses.find((guiClass) => guiClass.name === name)
-    ?? input.workspaceIndex.findGuiClass?.(input.analysis.uri, name);
-}
-
 function findGuiPartForDeclaration(
   guiClasses: AnalysisGuiClass[],
   declaration: AnalysisDeclaration
@@ -673,79 +662,6 @@ function findGuiMethodForDeclaration(
     .find((method) => method.name === declaration.name && sameRange(method.range, declaration.range));
 }
 
-function findEnclosingGuiMethodContext(input: HoverInput): GuiMethodContext | undefined {
-  for (const guiClass of input.analysis.guiClasses) {
-    const context = findEnclosingGuiMethodContextInClass(input, guiClass);
-    if (context !== undefined) {
-      return context;
-    }
-  }
-
-  for (const method of input.analysis.guiMethods) {
-    const context = guiMethodContextFromReceiverPath(input, method);
-    if (context !== undefined && contains(method.range, input.position)) {
-      return context;
-    }
-  }
-
-  return undefined;
-}
-
-function findEnclosingGuiMethodContextInClass(
-  input: HoverInput,
-  guiClass: AnalysisGuiClass
-): GuiMethodContext | undefined {
-  const classMethod = guiClass.methods.find((method) => contains(method.range, input.position));
-  if (classMethod !== undefined) {
-    return guiMethodContextFromReceiverPath(input, classMethod)
-      ?? { rootClassName: guiClass.name, receiverTypeName: guiClass.name };
-  }
-
-  const partMethod = findEnclosingGuiPartMethod(guiClass.parts, input.position);
-  if (partMethod !== undefined) {
-    return { rootClassName: guiClass.name, receiverTypeName: partMethod.part.typeName };
-  }
-
-  return undefined;
-}
-
-function findEnclosingGuiPartMethod(
-  parts: AnalysisGuiPart[],
-  position: AnalysisPosition
-): { part: AnalysisGuiPart; method: AnalysisGuiMethod } | undefined {
-  for (const part of parts) {
-    const method = part.methods.find((candidate) => contains(candidate.range, position));
-    if (method !== undefined) {
-      return { part, method };
-    }
-
-    const childMethod = findEnclosingGuiPartMethod(part.parts, position);
-    if (childMethod !== undefined) {
-      return childMethod;
-    }
-  }
-
-  return undefined;
-}
-
-function guiMethodContextFromReceiverPath(
-  input: HoverInput,
-  method: AnalysisGuiMethod
-): GuiMethodContext | undefined {
-  const rootClassName = method.receiverPath[0];
-  if (rootClassName === undefined) {
-    return undefined;
-  }
-
-  const partPath = method.receiverPath.slice(1, -1);
-  if (partPath.length === 0) {
-    return { rootClassName, receiverTypeName: rootClassName };
-  }
-
-  const part = resolveGuiPartPath(input, rootClassName, partPath);
-  return part === undefined ? undefined : { rootClassName, receiverTypeName: part.part.typeName };
-}
-
 function isResolvableGuiMethod(input: HoverInput, method: AnalysisGuiMethod): boolean {
   if (!method.event || method.receiverPath.length <= 2) {
     return true;
@@ -754,57 +670,6 @@ function isResolvableGuiMethod(input: HoverInput, method: AnalysisGuiMethod): bo
   const rootName = method.receiverPath[0];
   const partPath = method.receiverPath.slice(1, -1);
   return resolveGuiPartPath(input, rootName, partPath) !== undefined;
-}
-
-function resolveGuiPartPath(input: HoverInput, rootClassName: string, path: string[]): ResolvedGuiPart | undefined {
-  let owner = findVisibleGuiClass(input, rootClassName);
-  let ownerPath: string[] = [];
-  let resolved: ResolvedGuiPart | undefined;
-  const rootOwner = owner;
-  if (rootOwner !== undefined) {
-    const directPart = findPartByPath(rootOwner.parts, path);
-    if (directPart !== undefined) {
-      return { ownerName: rootOwner.name, part: directPart };
-    }
-  }
-
-  for (const segment of path) {
-    if (owner === undefined) {
-      return undefined;
-    }
-
-    const nextPath = [...ownerPath, segment];
-    const part = findPartByPath(owner.parts, nextPath) ?? findPartByPath(owner.parts, [segment]);
-    if (part === undefined) {
-      return undefined;
-    }
-
-    resolved = { ownerName: owner.name, part };
-    const partClass = findVisibleGuiClass(input, part.typeName);
-    owner = partClass ?? owner;
-    ownerPath = partClass === undefined ? nextPath : [];
-  }
-
-  return resolved;
-}
-
-function resolveLongestGuiPartPath(
-  input: HoverInput,
-  rootClassName: string,
-  path: string[]
-): ResolvedGuiPartPrefix | undefined {
-  for (let length = path.length; length > 0; length -= 1) {
-    const part = resolveGuiPartPath(input, rootClassName, path.slice(0, length));
-    if (part !== undefined) {
-      return { length, part };
-    }
-  }
-
-  return undefined;
-}
-
-function findPartByPath(parts: AnalysisGuiPart[], path: string[]): AnalysisGuiPart | undefined {
-  return findPart(parts, (part) => sameStringArray(part.path, path));
 }
 
 function findPartInClass(
@@ -850,17 +715,6 @@ function sameRange(left: AnalysisRange, right: AnalysisRange): boolean {
 
 function samePosition(left: AnalysisPosition, right: AnalysisPosition): boolean {
   return left.line === right.line && left.character === right.character;
-}
-
-function sameStringArray(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((item, index) => item === right[index]);
-}
-
-function allGuiMethods(analysis: Pick<AnalyzedDocument, 'guiClasses' | 'guiMethods'>): AnalysisGuiMethod[] {
-  return [
-    ...analysis.guiMethods,
-    ...analysis.guiClasses.flatMap((guiClass) => guiClass.methods)
-  ];
 }
 
 function segmentIndexAtPosition(

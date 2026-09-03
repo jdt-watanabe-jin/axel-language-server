@@ -504,6 +504,26 @@ suite('navigation', () => {
     ]);
   });
 
+  test('definition on an inherited inline GUI event jumps to the receiver type member', () => {
+    const { analysis, position } = analyzeMarked([
+      'class GCWidget { void OnCreate() {} };',
+      'class GCButtonGroup : public GCWidget {};',
+      'class mydialog : public GCDialog {',
+      '  GCButtonGroup { |OnCreate() {} };',
+      '};'
+    ].join('\n'));
+
+    const definitions = getDefinitions({
+      analysis,
+      position,
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(definitions.map((location) => location.range.start), [
+      { line: 1, character: 6 }
+    ]);
+  });
+
   test('definition on an included GUI part uses the owning GUI class document', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-navigation-'));
     const mainPath = path.join(tempDir, 'main.axl');
