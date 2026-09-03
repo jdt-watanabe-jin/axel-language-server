@@ -180,6 +180,44 @@ suite('getHover', () => {
     });
   });
 
+  test('returns hover for the overload matching the call argument count', () => {
+    const analysis = analyze([
+      'class Version {};',
+      'static Version Version::makeVersion(int major, int minor, int patch, int prerelease, int number) {}',
+      'static Version Version::makeVersion(int major, int minor, int patch) {',
+      '  return makeVersion(major, minor, patch, 0, 0);',
+      '}',
+      'static Version Version::makeVersion(int major) {}',
+      'void main() { Version::makeVersion(1); Version::makeVersion(1, 2, 3); }'
+    ].join('\n'));
+
+    const oneArgumentHover = getHover({
+      analysis,
+      position: { line: 6, character: 23 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+    const threeArgumentHover = getHover({
+      analysis,
+      position: { line: 6, character: 48 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+    const fiveArgumentHover = getHover({
+      analysis,
+      position: { line: 3, character: 9 },
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.strictEqual(oneArgumentHover?.plainText, 'static Version Version::makeVersion(int major)');
+    assert.strictEqual(
+      threeArgumentHover?.plainText,
+      'static Version Version::makeVersion(int major, int minor, int patch)'
+    );
+    assert.strictEqual(
+      fiveArgumentHover?.plainText,
+      'static Version Version::makeVersion(int major, int minor, int patch, int prerelease, int number)'
+    );
+  });
+
   test('returns class hover for a static qualified receiver', () => {
     const analysis = analyze([
       'class myDlg { static void DoModless() {} };',

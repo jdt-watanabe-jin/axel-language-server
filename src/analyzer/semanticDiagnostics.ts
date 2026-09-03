@@ -19,6 +19,8 @@ import {
   type GuiResolutionInput
 } from './guiResolution';
 import {
+  acceptedArgumentCounts,
+  acceptsArgumentCount,
   declarationsInTypeHierarchy,
   findDeclarationMember,
   findLocalDeclaration,
@@ -460,37 +462,7 @@ function implicitGuiCallableDeclarations(
   ].filter((declaration): declaration is AnalysisDeclaration => declaration !== undefined);
 }
 
-interface AcceptedArgumentCounts {
-  min: number;
-  max: number;
-}
-
-function acceptedArgumentCounts(declaration: AnalysisDeclaration): AcceptedArgumentCounts {
-  const parameters = declaration.signature?.parameters ?? [];
-  const restParameterIndex = parameters.findIndex((parameter) => parameter.label.includes('...'));
-  if (restParameterIndex >= 0) {
-    return {
-      min: requiredParameterCount(parameters.slice(0, restParameterIndex)),
-      max: Number.POSITIVE_INFINITY
-    };
-  }
-
-  return {
-    min: requiredParameterCount(parameters),
-    max: parameters.length
-  };
-}
-
-function requiredParameterCount(parameters: NonNullable<AnalysisDeclaration['signature']>['parameters']): number {
-  const firstOptionalIndex = parameters.findIndex((parameter) => parameter.optional === true);
-  return firstOptionalIndex < 0 ? parameters.length : firstOptionalIndex;
-}
-
-function acceptsArgumentCount(counts: AcceptedArgumentCounts, argumentCount: number): boolean {
-  return counts.min <= argumentCount && argumentCount <= counts.max;
-}
-
-function expectedArgumentText(argumentCounts: AcceptedArgumentCounts[]): string {
+function expectedArgumentText(argumentCounts: ReturnType<typeof acceptedArgumentCounts>[]): string {
   if (argumentCounts.every((counts) => counts.min === counts.max)) {
     return exactArgumentCountText(argumentCounts.map((counts) => counts.min));
   }
@@ -508,7 +480,7 @@ function exactArgumentCountText(counts: number[]): string {
   return `${joinAlternatives(uniqueCounts.map((count) => count.toString()))} arguments`;
 }
 
-function argumentCountText(counts: AcceptedArgumentCounts): string {
+function argumentCountText(counts: ReturnType<typeof acceptedArgumentCounts>): string {
   if (counts.max === Number.POSITIVE_INFINITY) {
     return `at least ${counts.min} ${argumentWord(counts.min)}`;
   }

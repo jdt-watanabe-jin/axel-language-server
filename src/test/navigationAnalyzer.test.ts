@@ -253,6 +253,26 @@ suite('navigation', () => {
     ]);
   });
 
+  test('definition on an overloaded static method call jumps to the matching arity', () => {
+    const { analysis, position } = analyzeMarked([
+      'class Version {};',
+      'static Version Version::makeVersion(int major, int minor, int patch, int prerelease, int number) {}',
+      'static Version Version::makeVersion(int major, int minor, int patch) {}',
+      'static Version Version::makeVersion(int major) {}',
+      'void main() { Version::|makeVersion(1, 2, 3); }'
+    ].join('\n'));
+
+    const definitions = getDefinitions({
+      analysis,
+      position,
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(definitions.map((location) => location.range.start), [
+      { line: 2, character: 24 }
+    ]);
+  });
+
   test('definition on a static qualified receiver jumps to the class declaration', () => {
     const { analysis, position } = analyzeMarked([
       'class myDlg { static void DoModless() {} };',

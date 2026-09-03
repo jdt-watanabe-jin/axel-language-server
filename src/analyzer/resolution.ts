@@ -17,37 +17,60 @@ export interface DeclarationResolutionInput {
   workspaceIndex: WorkspaceDeclarationLookup;
 }
 
+export interface DeclarationCallResolution {
+  call?: boolean;
+  argumentCount?: number;
+}
+
+export interface AcceptedArgumentCounts {
+  min: number;
+  max: number;
+}
+
 export function findLocalDeclaration(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
   name: string,
-  position: AnalysisPosition
+  position: AnalysisPosition,
+  callResolution?: DeclarationCallResolution
 ): AnalysisDeclaration | undefined {
+  return selectBestDeclarationForCall(findLocalDeclarations(analysis, name, position), callResolution);
+}
+
+function findLocalDeclarations(
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
+  name: string,
+  position: AnalysisPosition
+): AnalysisDeclaration[] {
   const declarations = new Map(analysis.declarations.map((declaration) => [declaration.id, declaration]));
   let scope = findInnermostScope(analysis.scopes, position);
 
   while (scope !== undefined) {
-    const declaration = scope.declarationIds
+    const candidates = scope.declarationIds
       .map((id) => declarations.get(id))
       .filter((item): item is AnalysisDeclaration => (
         item?.name === name && isVisibleAt(item, position, analysis.uri)
       ))
-      .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start))[0];
-    if (declaration !== undefined) {
-      return declaration;
+      .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start));
+    if (candidates.length > 0) {
+      return candidates;
     }
 
     scope = analysis.scopes.find((item) => item.id === scope?.parentId);
   }
 
-  return undefined;
+  return [];
 }
 
 export function findVisibleDeclaration(
   input: DeclarationResolutionInput,
-  name: string
+  name: string,
+  callResolution?: DeclarationCallResolution
 ): AnalysisDeclaration | undefined {
-  return findLocalDeclaration(input.analysis, name, input.position)
-    ?? input.workspaceIndex.findVisibleDeclarations?.(input.analysis.uri, name)[0];
+  return findLocalDeclaration(input.analysis, name, input.position, callResolution)
+    ?? selectBestDeclarationForCall(
+      input.workspaceIndex.findVisibleDeclarations?.(input.analysis.uri, name) ?? [],
+      callResolution
+    );
 }
 
 export function listVisibleDeclarations(input: DeclarationResolutionInput): AnalysisDeclaration[] {
@@ -114,11 +137,15 @@ export function declarationsInTypeHierarchy(
 export function findDeclarationMember(
   input: DeclarationResolutionInput,
   containerName: string,
-  memberName: string
+  memberName: string,
+  callResolution?: DeclarationCallResolution
 ): AnalysisDeclaration | undefined {
-  return declarationsInTypeHierarchy(input, containerName)
-    .filter((declaration) => declaration.name === memberName)
-    .sort(compareDeclarations)[0];
+  return selectBestDeclarationForCall(
+    declarationsInTypeHierarchy(input, containerName)
+      .filter((declaration) => declaration.name === memberName)
+      .sort(compareDeclarations),
+    callResolution
+  );
 }
 
 export function resolveMemberAccessType(
@@ -142,6 +169,53 @@ export function receiverTypeName(input: DeclarationResolutionInput, receiverName
   return (findLocalDeclaration(input.analysis, receiverName, input.position)
     ?? visibleDeclarationsByName(input, receiverName)[0])
     ?.typeName;
+}
+
+export function selectBestDeclarationForCall<T extends AnalysisDeclaration>(
+  declarations: T[],
+  callResolution: DeclarationCallResolution | undefined
+): T | undefined {
+  if (callResolution?.call === true && callResolution.argumentCount !== undefined) {
+    const argumentCount = callResolution.argumentCount;
+    const callableDeclarations = declarations.filter((declaration) => declaration.signature !== undefined);
+    const matchingDeclaration = callableDeclarations.find((declaration) => (
+      acceptsArgumentCount(acceptedArgumentCounts(declaration), argumentCount)
+    ));
+    if (matchingDeclaration !== undefined) {
+      return matchingDeclaration;
+    }
+
+    if (callableDeclarations.length > 0) {
+      return callableDeclarations[0];
+    }
+  }
+
+  return declarations[0];
+}
+
+export function acceptedArgumentCounts(declaration: AnalysisDeclaration): AcceptedArgumentCounts {
+  const parameters = declaration.signature?.parameters ?? [];
+  const restParameterIndex = parameters.findIndex((parameter) => parameter.label.includes('...'));
+  if (restParameterIndex >= 0) {
+    return {
+      min: requiredParameterCount(parameters.slice(0, restParameterIndex)),
+      max: Number.POSITIVE_INFINITY
+    };
+  }
+
+  return {
+    min: requiredParameterCount(parameters),
+    max: parameters.length
+  };
+}
+
+export function acceptsArgumentCount(counts: AcceptedArgumentCounts, argumentCount: number): boolean {
+  return counts.min <= argumentCount && argumentCount <= counts.max;
+}
+
+function requiredParameterCount(parameters: NonNullable<AnalysisDeclaration['signature']>['parameters']): number {
+  const firstOptionalIndex = parameters.findIndex((parameter) => parameter.optional === true);
+  return firstOptionalIndex < 0 ? parameters.length : firstOptionalIndex;
 }
 
 function recoveredStaticMemberDeclarations(

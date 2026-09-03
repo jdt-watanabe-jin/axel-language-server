@@ -18,6 +18,7 @@ import {
   findLocalDeclaration,
   findVisibleDeclaration,
   isTypeDeclaration,
+  selectBestDeclarationForCall,
   thisReceiverType,
   visibleDeclarationsByName
 } from './resolution';
@@ -176,15 +177,16 @@ function findDeclarationForReference(
   reference: AnalysisReference
 ): AnalysisDeclaration | undefined {
   if (reference.memberAccess !== undefined) {
-    return findMemberDeclaration(input, reference.memberAccess);
+    return findMemberDeclaration(input, reference.memberAccess, reference);
   }
 
-  return findVisibleDeclaration(input, reference.name);
+  return findVisibleDeclaration(input, reference.name, reference);
 }
 
 function findMemberDeclaration(
   input: NavigationInput,
-  memberAccess: AnalysisMemberAccess
+  memberAccess: AnalysisMemberAccess,
+  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
 ): AnalysisDeclaration | undefined {
   let typeName = memberAccess.receiverName === 'this'
     ? thisReceiverType(input)
@@ -192,12 +194,13 @@ function findMemberDeclaration(
       ?? typeDeclarationName(input, memberAccess.receiverName);
   let memberDeclaration: AnalysisDeclaration | undefined;
 
-  for (const memberName of memberAccess.memberNames) {
+  for (const [index, memberName] of memberAccess.memberNames.entries()) {
     if (typeName === undefined) {
       return undefined;
     }
 
-    memberDeclaration = findDeclarationMember(input, typeName, memberName);
+    const isLastMember = index === memberAccess.memberNames.length - 1;
+    memberDeclaration = findDeclarationMember(input, typeName, memberName, isLastMember ? reference : undefined);
     typeName = memberDeclaration?.typeName;
   }
 
@@ -214,7 +217,7 @@ function findImplicitGuiReferenceDeclaration(
   }
 
   if (reference.memberAccess !== undefined) {
-    return findImplicitGuiMemberAccessDeclaration(input, context, reference.memberAccess);
+    return findImplicitGuiMemberAccessDeclaration(input, context, reference);
   }
 
   const part = resolveGuiPartPath(input, context.rootClassName, [reference.name]);
@@ -222,14 +225,14 @@ function findImplicitGuiReferenceDeclaration(
     return findDeclarationForGuiPart(input, part);
   }
 
-  const member = findDeclarationMember(input, context.receiverTypeName, reference.name);
+  const member = findDeclarationMember(input, context.receiverTypeName, reference.name, reference);
   if (member !== undefined) {
     return shouldJumpToGuiReceiverType(context, reference, member)
       ? findVisibleDeclaration(input, context.receiverTypeName) ?? member
       : member;
   }
 
-  return findDeclarationMember(input, context.rootClassName, reference.name);
+  return findDeclarationMember(input, context.rootClassName, reference.name, reference);
 }
 
 function shouldJumpToGuiReceiverType(
@@ -247,8 +250,13 @@ function shouldJumpToGuiReceiverType(
 function findImplicitGuiMemberAccessDeclaration(
   input: NavigationInput,
   context: GuiMethodContext,
-  memberAccess: AnalysisMemberAccess
+  reference: AnalysisReference
 ): AnalysisDeclaration | undefined {
+  const memberAccess = reference.memberAccess;
+  if (memberAccess === undefined) {
+    return undefined;
+  }
+
   const path = [memberAccess.receiverName, ...memberAccess.memberNames];
   const partPrefix = resolveLongestGuiPartPath(input, context.rootClassName, path);
   if (partPrefix === undefined) {
@@ -262,7 +270,7 @@ function findImplicitGuiMemberAccessDeclaration(
   const memberName = path.at(-1);
   return memberName === undefined
     ? undefined
-    : findDeclarationMember(input, partPrefix.part.part.typeName, memberName);
+    : findDeclarationMember(input, partPrefix.part.part.typeName, memberName, reference);
 }
 
 function findGuiReceiverPathDeclaration(input: NavigationInput): AnalysisDeclaration | undefined {
@@ -288,25 +296,30 @@ function findGuiReceiverPathDeclaration(input: NavigationInput): AnalysisDeclara
 function findDeclarationMember(
   input: NavigationInput,
   containerName: string,
-  memberName: string
+  memberName: string,
+  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
 ): AnalysisDeclaration | undefined {
-  return findDeclarationMemberInHierarchy(input, containerName, memberName, new Set<string>());
+  return findDeclarationMemberInHierarchy(input, containerName, memberName, new Set<string>(), reference);
 }
 
 function findDeclarationMemberInHierarchy(
   input: NavigationInput,
   containerName: string,
   memberName: string,
-  visitedContainerNames: Set<string>
+  visitedContainerNames: Set<string>,
+  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
 ): AnalysisDeclaration | undefined {
   if (visitedContainerNames.has(containerName)) {
     return undefined;
   }
 
   visitedContainerNames.add(containerName);
-  const member = visibleDeclarations(input, memberName)
-    .filter((declaration) => declaration.containerName === containerName)
-    .sort(compareDeclarations)[0];
+  const member = selectBestDeclarationForCall(
+    visibleDeclarations(input, memberName)
+      .filter((declaration) => declaration.containerName === containerName)
+      .sort(compareDeclarations),
+    reference
+  );
   if (member !== undefined) {
     return member;
   }
@@ -315,28 +328,32 @@ function findDeclarationMemberInHierarchy(
     .filter(isTypeDeclaration)
     .sort(compareDeclarations)[0]?.baseName;
   if (baseName !== undefined) {
-    const baseMember = findDeclarationMemberInHierarchy(input, baseName, memberName, visitedContainerNames);
+    const baseMember = findDeclarationMemberInHierarchy(input, baseName, memberName, visitedContainerNames, reference);
     if (baseMember !== undefined) {
       return baseMember;
     }
   }
 
-  return findRecoveredGuiDeclarationMember(input, containerName, memberName)
-    ?? findRecoveredStaticMember(input, containerName, memberName);
+  return findRecoveredGuiDeclarationMember(input, containerName, memberName, reference)
+    ?? findRecoveredStaticMember(input, containerName, memberName, reference);
 }
 
 function findRecoveredGuiDeclarationMember(
   input: NavigationInput,
   containerName: string,
-  memberName: string
+  memberName: string,
+  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
 ): AnalysisDeclaration | undefined {
   if (!/^GC[A-Za-z_$][0-9A-Za-z_$]*$/.test(containerName)) {
     return undefined;
   }
 
-  return visibleDeclarations(input, memberName)
-    .filter((declaration) => declaration.containerName === undefined && isRecoveredGuiMember(declaration, memberName))
-    .sort(compareDeclarations)[0];
+  return selectBestDeclarationForCall(
+    visibleDeclarations(input, memberName)
+      .filter((declaration) => declaration.containerName === undefined && isRecoveredGuiMember(declaration, memberName))
+      .sort(compareDeclarations),
+    reference
+  );
 }
 
 function isRecoveredGuiMember(declaration: AnalysisDeclaration, memberName: string): boolean {
@@ -346,14 +363,18 @@ function isRecoveredGuiMember(declaration: AnalysisDeclaration, memberName: stri
 function findRecoveredStaticMember(
   input: NavigationInput,
   containerName: string,
-  memberName: string
+  memberName: string,
+  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
 ): AnalysisDeclaration | undefined {
-  return visibleDeclarations(input, memberName)
-    .filter((declaration) => declaration.containerName === undefined)
-    .filter((declaration) => declaration.detail.startsWith('static '))
-    .filter((declaration) => recoveredStaticMemberOwner(input, declaration)?.name === containerName)
-    .map((declaration) => ({ ...declaration, containerName }))
-    .sort(compareDeclarations)[0];
+  return selectBestDeclarationForCall(
+    visibleDeclarations(input, memberName)
+      .filter((declaration) => declaration.containerName === undefined)
+      .filter((declaration) => declaration.detail.startsWith('static '))
+      .filter((declaration) => recoveredStaticMemberOwner(input, declaration)?.name === containerName)
+      .map((declaration) => ({ ...declaration, containerName }))
+      .sort(compareDeclarations),
+    reference
+  );
 }
 
 function recoveredStaticMemberOwner(

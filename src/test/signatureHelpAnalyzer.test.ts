@@ -144,6 +144,29 @@ suite('getSignatureHelp', () => {
     assert.strictEqual(help?.signatures[0].label, 'void update(int value)');
   });
 
+  test('resolves the overloaded call signature matching the active argument count', () => {
+    const { analysis, text, position } = analyzeMarked([
+      'class Version {',
+      '  static Version makeVersion(int major) {}',
+      '  static Version makeVersion(int major, int minor, int patch, int prerelease = 0, int number = 0) {}',
+      '};',
+      'void main() { Version::makeVersion(1, 2, 3|); }'
+    ].join('\n'));
+
+    const help = getSignatureHelp({
+      analysis,
+      text,
+      position,
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.strictEqual(
+      help?.signatures[0].label,
+      'static Version makeVersion(int major, int minor, int patch, int prerelease = 0, int number = 0)'
+    );
+    assert.strictEqual(help?.activeParameter, 2);
+  });
+
   test('resolves forced-include function signatures', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-signature-help-'));
     const forcedPath = path.join(tempDir, 'forced.h');
