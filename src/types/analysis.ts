@@ -67,6 +67,7 @@ export interface AnalysisDeclaration {
 
 export interface AnalysisParameter {
   label: string;
+  optional?: boolean;
 }
 
 export interface AnalysisSignature {
@@ -112,6 +113,7 @@ export interface AnalysisReference {
   range: AnalysisRange;
   targetId?: AnalysisSymbolId;
   call?: boolean;
+  argumentCount?: number;
   typeReference?: boolean;
   memberAccess?: AnalysisMemberAccess;
 }

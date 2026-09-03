@@ -124,6 +124,184 @@ suite('collectSemanticDiagnostics', () => {
     assert.deepStrictEqual(diagnostics, []);
   });
 
+  test('reports function calls with too many arguments', () => {
+    const rootNode = parser.parse('void helper(int value) {} void main() { helper(1, 2); }').rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
+      "Function 'helper' expects 1 argument, but got 2."
+    ]);
+    assert.deepStrictEqual(diagnostics[0].range, {
+      start: { line: 0, character: 40 },
+      end: { line: 0, character: 46 }
+    });
+  });
+
+  test('reports function calls with too few arguments', () => {
+    const rootNode = parser.parse('void helper(int left, int right) {} void main() { helper(1); }').rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
+      "Function 'helper' expects 2 arguments, but got 1."
+    ]);
+  });
+
+  test('does not report extra arguments for variadic functions', () => {
+    const rootNode = parser.parse('void log(string format, ...) {} void main() { log("value=%d", 1); }').rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics, []);
+  });
+
+  test('does not report omitted default arguments', () => {
+    const rootNode = parser.parse('void configure(int width, int height = 100) {} void main() { configure(640); }').rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics, []);
+  });
+
+  test('reports calls that omit required arguments before default arguments', () => {
+    const rootNode = parser.parse('void configure(int width, int height = 100) {} void main() { configure(); }').rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
+      "Function 'configure' expects 1 or 2 arguments, but got 0."
+    ]);
+  });
+
+  test('accepts calls matching any overload argument count', () => {
+    const rootNode = parser.parse([
+      'void pick(int value) {}',
+      'void pick(int left, int right) {}',
+      'void main() { pick(1); pick(1, 2); }'
+    ].join('\n')).rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics, []);
+  });
+
+  test('reports calls that match no overload argument count', () => {
+    const rootNode = parser.parse([
+      'void pick(int value) {}',
+      'void pick(int left, int right) {}',
+      'void main() { pick(1, 2, 3); }'
+    ].join('\n')).rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
+      "Function 'pick' expects 1 or 2 arguments, but got 3."
+    ]);
+  });
+
+  test('accepts static member calls matching any overload argument count', () => {
+    const rootNode = parser.parse([
+      'class Version {',
+      '  static Version makeVersion(int major, int minor) {}',
+      '  static Version makeVersion(int major) {}',
+      '};',
+      'void main() { Version::makeVersion(1); Version::makeVersion(1, 2); }'
+    ].join('\n')).rootNode;
+    const symbols = buildSymbolIndex(rootNode, uri);
+    const diagnostics = collectSemanticDiagnostics({
+      analysis: {
+        uri,
+        diagnostics: [],
+        declarations: symbols.declarations,
+        references: symbols.references,
+        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
+        includes: [],
+        guiClasses: [],
+        guiMethods: []
+      }
+    });
+
+    assert.deepStrictEqual(diagnostics, []);
+  });
+
   test('reports unresolved GUI receiver path when the root GUI class is known', () => {
     const rootNode = parser.parse([
       'class MyDialog : public GCDialog {',

@@ -3,6 +3,7 @@ import type {
   AnalysisDeclaration,
   AnalysisDeclarationKind,
   AnalysisDocumentUri,
+  AnalysisParameter,
   AnalysisSignature,
   AnalysisReference,
   AnalysisSymbolId
@@ -583,7 +584,7 @@ function signatureFromFunctionDeclarator(
 
   return {
     label,
-    parameters: parameterLabels(parameterList).map((parameterLabel) => ({ label: parameterLabel }))
+    parameters: parametersFromParameterList(parameterList)
   };
 }
 
@@ -602,18 +603,34 @@ function findFunctionParameterList(node: Parser.SyntaxNode): Parser.SyntaxNode |
   return undefined;
 }
 
-function parameterLabels(parameterList: Parser.SyntaxNode): string[] {
-  const labels: string[] = [];
+function parametersFromParameterList(parameterList: Parser.SyntaxNode): AnalysisParameter[] {
+  const parameters: AnalysisParameter[] = [];
   for (let index = 0; index < parameterList.childCount; index += 1) {
     const child = parameterList.child(index);
     if (child?.type === 'parameter_declaration') {
-      labels.push(normalizeSignatureText(child.text));
+      parameters.push({
+        label: normalizeSignatureText(child.text),
+        ...(hasDefaultArgument(child) ? { optional: true } : {})
+      });
     } else if (child?.text === '...') {
-      labels.push('...');
+      parameters.push({ label: '...' });
     }
   }
 
-  return labels;
+  return parameters;
+}
+
+function hasDefaultArgument(parameterNode: Parser.SyntaxNode): boolean {
+  const declaratorNode = parameterNode.childForFieldName('declarator');
+  return declaratorNode !== null && containsNodeOfType(declaratorNode, 'init_declarator');
+}
+
+function containsNodeOfType(node: Parser.SyntaxNode, type: string): boolean {
+  if (node.type === type) {
+    return true;
+  }
+
+  return node.namedChildren.some((child) => containsNodeOfType(child, type));
 }
 
 function functionDetail(
@@ -760,16 +777,16 @@ function collectReferences(
 ): AnalysisReference[] {
   const references: AnalysisReference[] = [];
   const referenceExclusionKeys = new Set(declarationNameKeys);
-  const callTargetKeys = collectCallTargetKeys(rootNode);
+  const callTargetDetails = collectCallTargetDetails(rootNode);
 
   function visit(node: Parser.SyntaxNode): void {
-    const memberReference = memberReferenceFromNode(node, uri, callTargetKeys);
+    const memberReference = memberReferenceFromNode(node, uri, callTargetDetails);
     if (memberReference !== undefined) {
       references.push(memberReference);
       referenceExclusionKeys.add(rangeKey(memberReference.range));
     }
 
-    const qualifiedReference = qualifiedReferenceFromNode(node, uri, callTargetKeys);
+    const qualifiedReference = qualifiedReferenceFromNode(node, uri, callTargetDetails);
     if (qualifiedReference !== undefined) {
       references.push(qualifiedReference);
       referenceExclusionKeys.add(rangeKey(qualifiedReference.range));
@@ -789,7 +806,7 @@ function collectReferences(
           name: node.text,
           uri,
           range,
-          ...(callTargetKeys.has(key) ? { call: true } : {}),
+          ...referenceCallDetails(callTargetDetails.get(key)),
           ...(isTypeReferenceNameNode(node) ? { typeReference: true } : {})
         });
       }
@@ -827,7 +844,7 @@ function isTypeReferenceNameNode(node: Parser.SyntaxNode): boolean {
 function memberReferenceFromNode(
   node: Parser.SyntaxNode,
   uri: AnalysisDocumentUri,
-  callTargetKeys: ReadonlySet<string>
+  callTargetDetails: ReadonlyMap<string, CallTargetDetail>
 ): AnalysisReference | undefined {
   if (node.type !== 'field_expression') {
     return undefined;
@@ -844,7 +861,7 @@ function memberReferenceFromNode(
     name: currentMember.text,
     uri,
     range,
-    ...(callTargetKeys.has(rangeKey(range)) ? { call: true } : {}),
+    ...referenceCallDetails(callTargetDetails.get(rangeKey(range))),
     memberAccess: {
       receiverName: chain.receiverName,
       memberNames: chain.memberNodes.map((memberNode) => memberNode.text)
@@ -900,7 +917,7 @@ function qualifiedReceiverReferenceFromNode(
 function qualifiedReferenceFromNode(
   node: Parser.SyntaxNode,
   uri: AnalysisDocumentUri,
-  callTargetKeys: ReadonlySet<string>
+  callTargetDetails: ReadonlyMap<string, CallTargetDetail>
 ): AnalysisReference | undefined {
   if (node.type !== 'qualified_identifier' || node.parent?.type === 'qualified_identifier') {
     return undefined;
@@ -919,7 +936,7 @@ function qualifiedReferenceFromNode(
     name: currentMember.text,
     uri,
     range,
-    ...(callTargetKeys.has(rangeKey(range)) ? { call: true } : {}),
+    ...referenceCallDetails(callTargetDetails.get(rangeKey(range))),
     memberAccess: {
       receiverName: receiver.text,
       memberNames: memberNodes.map((memberNode) => memberNode.text)
@@ -953,14 +970,20 @@ function isMemberReceiverNode(node: Parser.SyntaxNode | null | undefined): node 
   return node?.type === 'identifier' || node?.type === 'class_name' || node?.type === 'this';
 }
 
-function collectCallTargetKeys(rootNode: Parser.SyntaxNode): Set<string> {
-  const keys = new Set<string>();
+interface CallTargetDetail {
+  argumentCount: number;
+}
+
+function collectCallTargetDetails(rootNode: Parser.SyntaxNode): Map<string, CallTargetDetail> {
+  const details = new Map<string, CallTargetDetail>();
 
   function visit(node: Parser.SyntaxNode): void {
     if (node.type === 'call_expression') {
       const target = callTargetNameNode(node.childForFieldName('function'));
       if (target !== undefined) {
-        keys.add(rangeKey(nodeToAnalysisRange(target)));
+        details.set(rangeKey(nodeToAnalysisRange(target)), {
+          argumentCount: callArgumentCount(node)
+        });
       }
     }
 
@@ -970,7 +993,19 @@ function collectCallTargetKeys(rootNode: Parser.SyntaxNode): Set<string> {
   }
 
   visit(rootNode);
-  return keys;
+  return details;
+}
+
+function referenceCallDetails(detail: CallTargetDetail | undefined): Pick<AnalysisReference, 'call' | 'argumentCount'> {
+  return detail === undefined ? {} : {
+    call: true,
+    argumentCount: detail.argumentCount
+  };
+}
+
+function callArgumentCount(callExpression: Parser.SyntaxNode): number {
+  const argumentsNode = callExpression.childForFieldName('arguments');
+  return argumentsNode === null ? 0 : argumentsNode.namedChildCount;
 }
 
 function callTargetNameNode(node: Parser.SyntaxNode | null): Parser.SyntaxNode | undefined {

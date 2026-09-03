@@ -424,6 +424,7 @@ suite('buildSymbolIndex', () => {
         end: { line: 1, character: 31 }
       },
       call: true,
+      argumentCount: 1,
       memberAccess: {
         receiverName: 'FILE',
         memberNames: ['IsDirectory']

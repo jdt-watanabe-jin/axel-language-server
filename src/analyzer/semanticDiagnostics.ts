@@ -12,6 +12,7 @@ import type {
 import { getBuiltinHover } from './builtins';
 import { isGuiPartTypeName } from './guiClassKinds';
 import {
+  declarationsInTypeHierarchy,
   findDeclarationMember,
   findLocalDeclaration,
   isTypeDeclaration,
@@ -40,6 +41,7 @@ export function collectSemanticDiagnostics(input: SemanticDiagnosticsInput): Ana
     ...duplicateDeclarationDiagnostics(input.analysis),
     ...unresolvedTypeReferenceDiagnostics(input.analysis, workspaceIndex),
     ...unresolvedIdentifierDiagnostics(input.analysis, workspaceIndex),
+    ...callArgumentCountDiagnostics(input.analysis, workspaceIndex),
     ...guiReceiverPathDiagnostics(input.analysis, workspaceIndex),
     ...doModalOnCreateDiagnostics(input.analysis)
   ];
@@ -353,6 +355,182 @@ function isKnownImplicitGuiReference(
     || findDeclarationMember(input, context.receiverTypeName, reference.name) !== undefined
     || findDeclarationMember(input, context.rootClassName, reference.name) !== undefined
     || isGuiPartTypeName(context.receiverTypeName);
+}
+
+function callArgumentCountDiagnostics(
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
+): AnalysisDiagnostic[] {
+  if (hasSyntaxDiagnostics(analysis.diagnostics)) {
+    return [];
+  }
+
+  const diagnostics: AnalysisDiagnostic[] = [];
+  for (const reference of analysis.references) {
+    if (reference.call !== true || reference.argumentCount === undefined) {
+      continue;
+    }
+
+    const argumentCount = reference.argumentCount;
+    const candidates = callableDeclarationsForReference(reference, analysis, workspaceIndex)
+      .filter((declaration) => declaration.signature !== undefined);
+    const argumentCounts = candidates.map(acceptedArgumentCounts);
+    if (argumentCounts.length === 0 || argumentCounts.some((counts) => acceptsArgumentCount(counts, argumentCount))) {
+      continue;
+    }
+
+    const expected = expectedArgumentText(argumentCounts);
+    diagnostics.push({
+      severity: 'error',
+      source: 'axel',
+      message: `Function '${reference.name}' expects ${expected}, but got ${argumentCount}.`,
+      range: reference.range
+    });
+  }
+
+  return diagnostics;
+}
+
+function callableDeclarationsForReference(
+  reference: AnalysisReference,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
+): AnalysisDeclaration[] {
+  if (reference.memberAccess !== undefined) {
+    return callableMemberDeclarationsForReference(reference, analysis, workspaceIndex);
+  }
+
+  const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
+  return [
+    ...visibleDeclarationsByName(input, reference.name),
+    ...implicitGuiCallableDeclarations(reference, analysis, workspaceIndex)
+  ];
+}
+
+function callableMemberDeclarationsForReference(
+  reference: AnalysisReference,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
+): AnalysisDeclaration[] {
+  const memberAccess = reference.memberAccess;
+  if (memberAccess === undefined) {
+    return [];
+  }
+
+  const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
+  const receiverType = memberAccess.receiverName === 'this'
+    ? thisReceiverType(input)
+    : receiverTypeName(input, memberAccess.receiverName)
+      ?? typeDeclarationName(input, memberAccess.receiverName);
+  if (receiverType === undefined) {
+    return [];
+  }
+
+  const parentMembers = memberAccess.memberNames.slice(0, -1);
+  const ownerType = parentMembers.length === 0
+    ? receiverType
+    : resolveMemberAccessType(input, receiverType, parentMembers);
+  return ownerType === undefined
+    ? []
+    : declarationsInTypeHierarchy(input, ownerType)
+      .filter((declaration) => declaration.name === reference.name);
+}
+
+function implicitGuiCallableDeclarations(
+  reference: AnalysisReference,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
+): AnalysisDeclaration[] {
+  const context = findEnclosingGuiMethodContext(analysis, workspaceIndex, reference.range.start);
+  if (context === undefined) {
+    return [];
+  }
+
+  const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
+  return [
+    findDeclarationMember(input, context.receiverTypeName, reference.name),
+    findDeclarationMember(input, context.rootClassName, reference.name)
+  ].filter((declaration): declaration is AnalysisDeclaration => declaration !== undefined);
+}
+
+interface AcceptedArgumentCounts {
+  min: number;
+  max: number;
+}
+
+function acceptedArgumentCounts(declaration: AnalysisDeclaration): AcceptedArgumentCounts {
+  const parameters = declaration.signature?.parameters ?? [];
+  const restParameterIndex = parameters.findIndex((parameter) => parameter.label.includes('...'));
+  if (restParameterIndex >= 0) {
+    return {
+      min: requiredParameterCount(parameters.slice(0, restParameterIndex)),
+      max: Number.POSITIVE_INFINITY
+    };
+  }
+
+  return {
+    min: requiredParameterCount(parameters),
+    max: parameters.length
+  };
+}
+
+function requiredParameterCount(parameters: NonNullable<AnalysisDeclaration['signature']>['parameters']): number {
+  const firstOptionalIndex = parameters.findIndex((parameter) => parameter.optional === true);
+  return firstOptionalIndex < 0 ? parameters.length : firstOptionalIndex;
+}
+
+function acceptsArgumentCount(counts: AcceptedArgumentCounts, argumentCount: number): boolean {
+  return counts.min <= argumentCount && argumentCount <= counts.max;
+}
+
+function expectedArgumentText(argumentCounts: AcceptedArgumentCounts[]): string {
+  if (argumentCounts.every((counts) => counts.min === counts.max)) {
+    return exactArgumentCountText(argumentCounts.map((counts) => counts.min));
+  }
+
+  const texts = uniqueStrings(argumentCounts.map(argumentCountText));
+  return joinAlternatives(texts);
+}
+
+function exactArgumentCountText(counts: number[]): string {
+  const uniqueCounts = Array.from(new Set(counts)).sort((left, right) => left - right);
+  if (uniqueCounts.length === 1) {
+    return `${uniqueCounts[0]} ${argumentWord(uniqueCounts[0])}`;
+  }
+
+  return `${joinAlternatives(uniqueCounts.map((count) => count.toString()))} arguments`;
+}
+
+function argumentCountText(counts: AcceptedArgumentCounts): string {
+  if (counts.max === Number.POSITIVE_INFINITY) {
+    return `at least ${counts.min} ${argumentWord(counts.min)}`;
+  }
+
+  if (counts.min === counts.max) {
+    return `${counts.min} ${argumentWord(counts.min)}`;
+  }
+
+  if (counts.max === counts.min + 1) {
+    return `${counts.min} or ${counts.max} arguments`;
+  }
+
+  return `${counts.min} to ${counts.max} arguments`;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function joinAlternatives(values: string[]): string {
+  if (values.length <= 1) {
+    return values[0] ?? '0 arguments';
+  }
+
+  return `${values.slice(0, -1).join(', ')} or ${values[values.length - 1]}`;
+}
+
+function argumentWord(count: number): string {
+  return count === 1 ? 'argument' : 'arguments';
 }
 
 interface GuiMethodContext {
