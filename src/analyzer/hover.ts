@@ -202,8 +202,11 @@ function findImplicitGuiReferenceHover(
   const member = findImplicitGuiContextMember(input, context, reference.name);
   const ownerMember = member
     ?? findDeclarationMemberWithoutRecovery(input, context.rootClassName, reference.name, new Set<string>());
+  const shouldUseReceiverType = member !== undefined || ownerMember?.containerName === undefined;
   return ownerMember === undefined ? undefined : hoverForDeclarationText(
-    hoverTextForMemberDeclaration(ownerMember),
+    shouldUseReceiverType
+      ? hoverTextForGuiContextMemberDeclaration(ownerMember, context)
+      : hoverTextForMemberDeclaration(ownerMember),
     ownerMember.documentation
   );
 }
@@ -571,6 +574,37 @@ function hoverTextForMemberDeclaration(declaration: AnalysisDeclaration): string
   return declaration.detail.endsWith(memberNameText)
     ? `${declaration.detail.slice(0, -memberNameText.length)}${declaration.containerName}::${memberNameText}`
     : hoverTextForDeclaration(declaration);
+}
+
+function hoverTextForGuiContextMemberDeclaration(
+  declaration: AnalysisDeclaration,
+  context: GuiMethodContext
+): string {
+  const memberSignatureText = `${declaration.name}(`;
+  const ownerSignature = declaration.containerName === undefined
+    ? undefined
+    : `${declaration.containerName}::${memberSignatureText}`;
+  if (ownerSignature !== undefined && declaration.detail.includes(ownerSignature)) {
+    return declaration.detail.replace(ownerSignature, `${context.receiverTypeName}::${memberSignatureText}`);
+  }
+
+  if (declaration.detail.includes(memberSignatureText)) {
+    return declaration.detail.replace(memberSignatureText, `${context.receiverTypeName}::${memberSignatureText}`);
+  }
+
+  if (declaration.containerName !== undefined) {
+    const ownerSpacedMemberSignature = new RegExp(
+      `${escapeRegExp(declaration.containerName)}::${escapeRegExp(declaration.name)}(\\s*\\()`
+    );
+    if (ownerSpacedMemberSignature.test(declaration.detail)) {
+      return declaration.detail.replace(
+        ownerSpacedMemberSignature,
+        `${context.receiverTypeName}::${declaration.name}$1`
+      );
+    }
+  }
+
+  return hoverTextForMemberDeclaration({ ...declaration, containerName: context.receiverTypeName });
 }
 
 function escapeRegExp(text: string): string {

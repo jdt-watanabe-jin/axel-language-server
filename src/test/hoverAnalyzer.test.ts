@@ -1028,6 +1028,27 @@ suite('getHover', () => {
     });
   });
 
+  test('returns the part type hover for an inherited inline GUI event declaration', () => {
+    const { analysis, position } = analyzeMarked([
+      'class GCWidget { void OnCreate() {} };',
+      'class GCButtonGroup : public GCWidget {};',
+      'class mydialog : public GCDialog {',
+      '  GCButtonGroup { |OnCreate() {} };',
+      '};'
+    ].join('\n'));
+
+    const hover = getHover({
+      analysis,
+      position,
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(hover, {
+      markdown: '```axel\nvoid GCButtonGroup::OnCreate()\n```',
+      plainText: 'void GCButtonGroup::OnCreate()'
+    });
+  });
+
   test('resolves implicit inherited GUI properties in an inline GUI event body', () => {
     const { analysis, position } = analyzeMarked([
       'class GCCheckBox : public GCWidget { string text; };',
