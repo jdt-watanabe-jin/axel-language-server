@@ -211,6 +211,40 @@ suite('WorkspaceIndex', () => {
     assert.deepStrictEqual(analysis.diagnostics, []);
   });
 
+  test('handles AXEL string map member macros without syntax diagnostics', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-macro-'));
+    const mainPath = path.join(tempDir, '_common.h');
+    const basePath = path.join(tempDir, '_asxccbase.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(basePath, [
+      '#define define_stringMAP_oneBase(p_class) \\',
+      '  stringMAP mMapL; \\',
+      'public: \\',
+      '  int Add(string key, p_class value) { return 1; } \\',
+      '  int Remove(string key) { return mMapL.Remove(key); }',
+      '#define define_stringMAP_one(p_class) \\',
+      '  define_stringMAP_oneBase(p_class) \\',
+      '  p_class *Find(string key) { return NULL; }'
+    ].join('\n'));
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        '#include "_asxccbase.h"',
+        'class cstringmap_int { define_stringMAP_one(int) };',
+        'class cstringmap_double { define_stringMAP_one(double) };',
+        'class cstringmap_string { define_stringMAP_one(string) };'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(
+      analysis.diagnostics.map((diagnostic) => diagnostic.message),
+      []
+    );
+  });
+
   test('selects visible function-like macro by arity', () => {
     const index = new WorkspaceIndex();
     const uri = 'file:///main.axl';
