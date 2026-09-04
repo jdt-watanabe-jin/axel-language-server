@@ -171,12 +171,10 @@ function scriptExecutionCandidates(input: {
   scriptPath: string;
   includeRoots: string[];
 }): string[] {
-  return includeCandidates({
-    includingFilePath: input.includingFilePath,
-    includePath: input.scriptPath,
-    kind: 'quote',
-    includeRoots: input.includeRoots
-  }).flatMap((candidate) => scriptPathVariants(candidate));
+  const roots = [path.dirname(input.includingFilePath), ...input.includeRoots];
+  return Array.from(new Set(roots
+    .map((root) => path.normalize(path.join(root, input.scriptPath)))
+    .flatMap((candidate) => scriptPathVariants(candidate))));
 }
 
 function scriptPathVariants(filePath: string): string[] {

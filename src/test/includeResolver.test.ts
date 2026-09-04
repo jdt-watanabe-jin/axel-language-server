@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { resolveInclude } from '../analyzer/includeResolver';
+import { resolveInclude, resolveScriptExecution } from '../analyzer/includeResolver';
 
 suite('resolveInclude', () => {
   test('resolves quoted includes from the including file directory before APP_AXELPATH roots', () => {
@@ -79,5 +79,24 @@ suite('resolveInclude', () => {
         path.join(path.dirname(tempDir), 'missing.h')
       ]
     });
+  });
+
+  test('does not use the including file parent directory for script execution', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-script-'));
+    const sourceDir = path.join(tempDir, 'generated');
+    const includeRoot = path.join(tempDir, 'include');
+    fs.mkdirSync(sourceDir);
+    fs.mkdirSync(includeRoot);
+    fs.writeFileSync(path.join(tempDir, 'task.axl'), 'void parent() {}');
+    fs.writeFileSync(path.join(includeRoot, 'task.axl'), 'void configured() {}');
+
+    const result = resolveScriptExecution({
+      includingFilePath: path.join(sourceDir, 'main.axl'),
+      scriptPath: 'task',
+      includeRoots: [includeRoot]
+    });
+
+    assert.strictEqual(result.status, 'resolved');
+    assert.strictEqual(result.filePath, path.join(includeRoot, 'task.axl'));
   });
 });

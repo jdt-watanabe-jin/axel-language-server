@@ -69,7 +69,7 @@ class Json {
     assert.strictEqual(diagnostics[0]?.message, 'Syntax error.');
   });
 
-  test('keeps syntax error when macro arity does not match', () => {
+  test('reports macro arity diagnostics for known malformed invocations', () => {
     const parser = createAxelParser();
     const tree = parser.parse('class C { DEFINE_FIELD(int, string) };');
 
@@ -87,7 +87,15 @@ class Json {
       parseText: (text) => parser.parse(text).rootNode
     });
 
-    assert.strictEqual(diagnostics[0]?.message, 'Syntax error.');
+    assert.deepStrictEqual(diagnostics, [{
+      severity: 'error',
+      source: 'axel',
+      message: "Macro 'DEFINE_FIELD' expects 1 argument but got 2.",
+      range: {
+        start: { line: 0, character: 10 },
+        end: { line: 0, character: 35 }
+      }
+    }]);
   });
 
   test('keeps syntax error when expanded class body code is invalid', () => {

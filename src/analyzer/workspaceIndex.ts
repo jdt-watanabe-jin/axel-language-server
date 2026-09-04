@@ -51,6 +51,7 @@ export class WorkspaceIndex {
   private readonly reverseIncludeGraph = new Map<string, Set<string>>();
   private forcedIncludeFileCache: string[] | undefined;
   private indexingForcedIncludes = false;
+  private forcedIncludesIndexed = false;
   private readonly pendingBackgroundDocuments = new Map<string, string>();
   private backgroundIndexingScheduled = false;
   private readonly backgroundWaiters: (() => void)[] = [];
@@ -166,8 +167,15 @@ export class WorkspaceIndex {
       for (const filePath of this.getForcedIncludeFiles()) {
         this.indexDiskDocumentInternal(filePath, new Set());
       }
+      this.forcedIncludesIndexed = true;
     } finally {
       this.indexingForcedIncludes = false;
+    }
+  }
+
+  private ensureForcedIncludesIndexed(): void {
+    if (!this.forcedIncludesIndexed) {
+      this.indexForcedIncludes();
     }
   }
 
@@ -181,7 +189,7 @@ export class WorkspaceIndex {
   }
 
   public findVisibleDeclarations(sourceUri: string, name: string): AnalysisDeclaration[] {
-    this.indexForcedIncludes();
+    this.ensureForcedIncludesIndexed();
     return this.collectVisibleUris(sourceUri)
       .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
       .filter((declaration) => declaration.name === name)
@@ -189,24 +197,27 @@ export class WorkspaceIndex {
   }
 
   public findVisibleMacroDefinitions(sourceUri: string, name: string): AnalysisMacroDefinition[] {
-    this.indexForcedIncludes();
-    return this.collectVisibleMacroDefinitions(sourceUri)
-      .filter((macro) => macro.name === name)
-      .sort(compareMacroDefinitions);
+    this.ensureForcedIncludesIndexed();
+    return this.collectPositionAwareMacroDefinitions(sourceUri)
+      .filter((macro) => macro.name === name);
   }
 
   public findBestVisibleMacroDefinition(
     sourceUri: string,
     name: string,
-    arity?: number
+    arity?: number,
+    position?: AnalysisPosition
   ): AnalysisMacroDefinition | undefined {
     return this.findVisibleMacroDefinitions(sourceUri, name)
       .filter((macro) => arity === undefined || macro.parameters?.length === arity)
+      .filter((macro) => position === undefined
+        || macro.visibilityStart === undefined
+        || comparePositions(macro.visibilityStart, position) <= 0)
       .at(-1);
   }
 
   public listVisibleDeclarations(sourceUri: string): AnalysisDeclaration[] {
-    this.indexForcedIncludes();
+    this.ensureForcedIncludesIndexed();
     const declarations = [
       ...(this.documents.get(sourceUri)?.analysis.declarations ?? []),
       ...this.collectVisibleUris(sourceUri)
@@ -217,7 +228,7 @@ export class WorkspaceIndex {
   }
 
   public listVisibleDocuments(sourceUri: string): AnalyzedDocument[] {
-    this.indexForcedIncludes();
+    this.ensureForcedIncludesIndexed();
     return [sourceUri, ...this.collectVisibleUris(sourceUri)]
       .map((uri) => this.documents.get(uri)?.analysis)
       .filter((analysis): analysis is AnalyzedDocument => analysis !== undefined);
@@ -225,7 +236,7 @@ export class WorkspaceIndex {
 
   public listReferenceSearchDocuments(sourceUri: string): AnalyzedDocument[] {
     void sourceUri;
-    this.indexForcedIncludes();
+    this.ensureForcedIncludesIndexed();
     return Array.from(this.documents.values())
       .map((document) => document.analysis);
   }
@@ -315,7 +326,7 @@ export class WorkspaceIndex {
   }
 
   public findVisibleGuiClasses(sourceUri: string, name: string): AnalysisGuiClass[] {
-    this.indexForcedIncludes();
+    this.ensureForcedIncludesIndexed();
     return this.collectVisibleGuiClassEntries(sourceUri)
       .filter((entry) => entry.guiClass.name === name)
       .sort(compareGuiClassEntries)
@@ -342,6 +353,7 @@ export class WorkspaceIndex {
   }
 
   public invalidateUri(uri: string): void {
+    this.forcedIncludesIndexed = false;
     const dependents = this.collectDependents(uri);
     for (const dependentUri of dependents) {
       this.documents.delete(dependentUri);
@@ -466,7 +478,8 @@ export class WorkspaceIndex {
         kind: entry.guiClass.kind
       }));
     const preprocessorSymbols = this.collectVisiblePreprocessorSymbols(input.uri);
-    const macroDefinitions = this.collectVisibleMacroDefinitions(input.uri).sort(compareMacroDefinitions);
+    const macroDefinitions = this.collectPositionAwareMacroDefinitions(input.uri)
+      .filter((macro) => macro.uri !== input.uri);
     if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0) {
       return initialAnalysis;
     }
@@ -720,9 +733,70 @@ export class WorkspaceIndex {
         .map((guiClass) => ({ uri, guiClass })));
   }
 
-  private collectVisibleMacroDefinitions(sourceUri: string): AnalysisMacroDefinition[] {
-    return [sourceUri, ...this.collectVisibleUris(sourceUri)]
-      .flatMap((uri) => this.documents.get(uri)?.analysis.macroDefinitions ?? []);
+  private collectPositionAwareMacroDefinitions(sourceUri: string): AnalysisMacroDefinition[] {
+    const definitions: AnalysisMacroDefinition[] = [];
+    const fileStart = { line: 0, character: 0 };
+
+    for (const forcedUri of this.knownForcedIncludeUris()) {
+      this.appendDocumentMacroDefinitions(forcedUri, fileStart, new Set(), definitions);
+    }
+
+    this.appendDocumentMacroDefinitions(sourceUri, undefined, new Set(), definitions);
+    return definitions;
+  }
+
+  private appendDocumentMacroDefinitions(
+    uri: string,
+    visibilityStart: AnalysisPosition | undefined,
+    visitedUris: Set<string>,
+    definitions: AnalysisMacroDefinition[]
+  ): void {
+    if (visitedUris.has(uri)) {
+      return;
+    }
+
+    const analysis = this.documents.get(uri)?.analysis;
+    const includingFilePath = filePathFromUri(uri);
+    if (analysis === undefined) {
+      return;
+    }
+
+    const visited = new Set([...visitedUris, uri]);
+    const events = [
+      ...analysis.macroDefinitions.map((macro) => ({
+        range: macro.range,
+        run: () => definitions.push({
+          ...macro,
+          visibilityStart: visibilityStart ?? macro.range.end
+        })
+      })),
+      ...analysis.includes.map((include) => ({
+        range: include.range,
+        run: () => {
+          if (includingFilePath === undefined) {
+            return;
+          }
+
+          const resolution = resolveInclude({
+            includingFilePath,
+            includeText: includeTextForResolution(include.includePath, include.kind),
+            includeRoots: this.includeRoots
+          });
+          if (resolution.status === 'resolved') {
+            this.appendDocumentMacroDefinitions(
+              resolution.uri,
+              visibilityStart ?? include.range.end,
+              visited,
+              definitions
+            );
+          }
+        }
+      }))
+    ].sort((left, right) => compareRanges(left.range, right.range));
+
+    for (const event of events) {
+      event.run();
+    }
   }
 
   private collectVisiblePreprocessorSymbols(sourceUri: string): AnalysisPreprocessorSymbol[] {
@@ -769,6 +843,7 @@ export class WorkspaceIndex {
   }
 
   private clearCachedAnalysis(): void {
+    this.forcedIncludesIndexed = false;
     for (const uri of this.documents.keys()) {
       this.analyzer.clear(uri);
     }
@@ -782,14 +857,6 @@ export class WorkspaceIndex {
 }
 
 function compareDeclarations(left: AnalysisDeclaration, right: AnalysisDeclaration): number {
-  return left.uri.localeCompare(right.uri)
-    || left.selectionRange.start.line - right.selectionRange.start.line
-    || left.selectionRange.start.character - right.selectionRange.start.character
-    || left.selectionRange.end.line - right.selectionRange.end.line
-    || left.selectionRange.end.character - right.selectionRange.end.character;
-}
-
-function compareMacroDefinitions(left: AnalysisMacroDefinition, right: AnalysisMacroDefinition): number {
   return left.uri.localeCompare(right.uri)
     || left.selectionRange.start.line - right.selectionRange.start.line
     || left.selectionRange.start.character - right.selectionRange.start.character
@@ -822,6 +889,10 @@ function compareRanges(left: AnalysisRange, right: AnalysisRange): number {
     || left.start.character - right.start.character
     || left.end.line - right.end.line
     || left.end.character - right.end.character;
+}
+
+function comparePositions(left: AnalysisPosition, right: AnalysisPosition): number {
+  return left.line - right.line || left.character - right.character;
 }
 
 function normalizePaths(paths: string[]): string[] {

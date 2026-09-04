@@ -44,7 +44,8 @@ export interface WorkspaceDeclarationIndex {
   findBestVisibleMacroDefinition?(
     sourceUri: string,
     name: string,
-    arity?: number
+    arity?: number,
+    position?: AnalysisPosition
   ): AnalysisMacroDefinition | undefined;
   resolveIncludeAtPosition?(sourceUri: string, position: AnalysisPosition): AnalysisResolvedInclude | undefined;
   resolveScriptExecutionAtPosition?(sourceUri: string, position: AnalysisPosition): AnalysisResolvedScriptExecution | undefined;
@@ -72,11 +73,6 @@ export function getHover(input: HoverInput): AnalysisHover | null {
     return hoverForDeclaration(declaration);
   }
 
-  const macroInvocationHover = findMacroInvocationHover(input);
-  if (macroInvocationHover !== undefined) {
-    return macroInvocationHover;
-  }
-
   const reference = findReferenceAtPosition(input.analysis, input.position);
   if (reference === undefined) {
     return null;
@@ -89,6 +85,13 @@ export function getHover(input: HoverInput): AnalysisHover | null {
 
   const referenceDeclaration = findDeclarationForReference(input);
   if (referenceDeclaration !== undefined) {
+    if (referenceDeclaration.kind === 'macro') {
+      const macroInvocationHover = findMacroInvocationHover(input);
+      if (macroInvocationHover !== undefined) {
+        return macroInvocationHover;
+      }
+    }
+
     return hoverForReferenceDeclaration(referenceDeclaration, reference);
   }
 
@@ -111,10 +114,15 @@ function findScriptExecutionHover(input: HoverInput): AnalysisHover | undefined 
 }
 
 function findMacroInvocationHover(input: HoverInput): AnalysisHover | undefined {
-  const invocation = input.analysis.macroInvocations.find((candidate) => (
-    contains(candidate.selectionRange, input.position)
-    || contains(candidate.range, input.position)
-  ));
+  const invocation = input.analysis.macroInvocations
+    .filter((candidate) => (
+      contains(candidate.selectionRange, input.position)
+      || contains(candidate.range, input.position)
+    ))
+    .sort((left, right) => (
+      comparePositions(right.range.start, left.range.start)
+      || comparePositions(left.range.end, right.range.end)
+    ))[0];
   if (invocation === undefined) {
     return undefined;
   }
@@ -122,7 +130,8 @@ function findMacroInvocationHover(input: HoverInput): AnalysisHover | undefined 
   const macro = input.workspaceIndex.findBestVisibleMacroDefinition?.(
     input.analysis.uri,
     invocation.name,
-    invocation.argumentCount
+    invocation.argumentCount,
+    invocation.range.start
   );
   if (macro === undefined || macro.parameters === undefined) {
     return undefined;
@@ -132,7 +141,8 @@ function findMacroInvocationHover(input: HoverInput): AnalysisHover | undefined 
     findMacro: (name, arity) => input.workspaceIndex.findBestVisibleMacroDefinition?.(
       input.analysis.uri,
       name,
-      arity
+      arity,
+      invocation.range.start
     )
   };
   const expansion = expandMacroInvocationText(invocation.rawText, lookup);

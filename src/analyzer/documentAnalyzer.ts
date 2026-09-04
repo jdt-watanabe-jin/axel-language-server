@@ -65,7 +65,10 @@ export class DocumentAnalyzer {
       const activeMacroDefinitions = macroDefinitions.filter((macro) => !startsInInactiveRange(macro.selectionRange, inactiveRanges));
       const visibleMacroDefinitions = [
         ...(input.macroDefinitions ?? []),
-        ...activeMacroDefinitions
+        ...activeMacroDefinitions.map((macro) => ({
+          ...macro,
+          visibilityStart: macro.range.end
+        }))
       ];
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
         uri: input.uri,
@@ -132,7 +135,13 @@ function analysisContextKeyFromInput(input: AnalyzeDocumentInput): string {
       || left.uri.localeCompare(right.uri)
       || left.selectionRange.start.line - right.selectionRange.start.line
       || left.selectionRange.start.character - right.selectionRange.start.character)
-    .map((macro) => `${macro.name}/${macro.parameters?.length ?? -1}=${macro.replacementText}`)
+    .map((macro) => {
+      const parameters = macro.parameters?.map((parameter) => parameter.label).join(',') ?? '-';
+      const visibilityStart = macro.visibilityStart === undefined
+        ? '-'
+        : `${macro.visibilityStart.line}:${macro.visibilityStart.character}`;
+      return `${macro.name}/${parameters}@${visibilityStart}=${macro.replacementText}`;
+    })
     .join('\u0000');
   return `${guiClassKey}\u0001${preprocessorKey}\u0001${macroKey}`;
 }

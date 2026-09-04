@@ -709,32 +709,73 @@ suite('getHover', () => {
   });
 
   test('resolves function-like macro references to their definition', () => {
-    const analysis = analyze('#define MAX(a, b) ((a) > (b) ? (a) : (b))\nvoid main() { int value = MAX(1, 2); }');
+    const index = new WorkspaceIndex();
+    const analysis = index.indexOpenDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: '#define MAX(a, b) ((a) > (b) ? (a) : (b))\nvoid main() { int value = MAX(1, 2); }'
+    });
 
     const hover = getHover({
       analysis,
       position: { line: 1, character: 26 },
-      workspaceIndex: new WorkspaceIndex()
+      workspaceIndex: index
     });
 
     assert.deepStrictEqual(hover, {
-      markdown: '```axel\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n```',
-      plainText: '#define MAX(a, b) ((a) > (b) ? (a) : (b))'
+      markdown: [
+        '```axel',
+        '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
+        '```',
+        '',
+        'Expansion:',
+        '',
+        '```axel',
+        '((1) > (2) ? (1) : (2))',
+        '```'
+      ].join('\n'),
+      plainText: [
+        '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
+        'Expansion:',
+        '((1) > (2) ? (1) : (2))'
+      ].join('\n')
     });
   });
 
   test('uses trailing comments as function-like macro documentation', () => {
-    const analysis = analyze('#define MAX(a, b) ((a) > (b) ? (a) : (b)) // pick larger\nvoid main() { int value = MAX(1, 2); }');
+    const index = new WorkspaceIndex();
+    const analysis = index.indexOpenDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: '#define MAX(a, b) ((a) > (b) ? (a) : (b)) // pick larger\nvoid main() { int value = MAX(1, 2); }'
+    });
 
     const hover = getHover({
       analysis,
       position: { line: 1, character: 26 },
-      workspaceIndex: new WorkspaceIndex()
+      workspaceIndex: index
     });
 
     assert.deepStrictEqual(hover, {
-      markdown: '```axel\n#define MAX(a, b) ((a) > (b) ? (a) : (b))\n```\n\npick larger',
-      plainText: '#define MAX(a, b) ((a) > (b) ? (a) : (b))\npick larger'
+      markdown: [
+        '```axel',
+        '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
+        '```',
+        '',
+        'pick larger',
+        '',
+        'Expansion:',
+        '',
+        '```axel',
+        '((1) > (2) ? (1) : (2))',
+        '```'
+      ].join('\n'),
+      plainText: [
+        '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
+        'pick larger',
+        'Expansion:',
+        '((1) > (2) ? (1) : (2))'
+      ].join('\n')
     });
   });
 

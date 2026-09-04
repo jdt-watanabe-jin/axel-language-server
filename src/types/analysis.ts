@@ -80,6 +80,7 @@ export interface AnalysisMacroDefinition {
   uri: AnalysisDocumentUri;
   range: AnalysisRange;
   selectionRange: AnalysisRange;
+  visibilityStart?: AnalysisPosition;
   detail: string;
   documentation?: string;
   parameters?: AnalysisParameter[];

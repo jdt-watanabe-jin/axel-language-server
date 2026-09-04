@@ -211,6 +211,54 @@ suite('DocumentAnalyzer', () => {
     assert.strictEqual(result.diagnostics[0]?.message, 'Syntax error.');
   });
 
+  test('keeps syntax errors for macro invocations before local definitions', () => {
+    const analyzer = new DocumentAnalyzer();
+    const result = analyzer.analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: [
+        'class C { FIELD(int) };',
+        '#define FIELD(T) T value;'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(result.diagnostics.map((diagnostic) => diagnostic.message), [
+      'Syntax error.'
+    ]);
+  });
+
+  test('invalidates cached diagnostics when macro parameter labels change', () => {
+    const analyzer = new DocumentAnalyzer();
+    const macro = {
+      name: 'FIELD',
+      uri: 'file:///macros.h',
+      range: zeroRange(),
+      selectionRange: zeroRange(),
+      detail: '#define FIELD(T) T value;',
+      parameters: [{ label: 'T' }],
+      replacementText: 'T value;'
+    };
+    const input = {
+      uri: 'file:///main.axl',
+      version: 1,
+      text: 'class C { FIELD(foo()) };'
+    };
+    const first = analyzer.analyzeDocument({
+      ...input,
+      macroDefinitions: [macro]
+    });
+    const second = analyzer.analyzeDocument({
+      ...input,
+      macroDefinitions: [{
+        ...macro,
+        parameters: [{ label: 'U' }]
+      }]
+    });
+
+    assert.ok(first.diagnostics.length > 0);
+    assert.deepStrictEqual(second.diagnostics, []);
+  });
+
   test('emits timing logs when logger is provided', () => {
     const entries: string[] = [];
     const analyzer = new DocumentAnalyzer(undefined, {
@@ -231,3 +279,10 @@ suite('DocumentAnalyzer', () => {
     )));
   });
 });
+
+function zeroRange() {
+  return {
+    start: { line: 0, character: 0 },
+    end: { line: 0, character: 0 }
+  };
+}

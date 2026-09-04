@@ -211,6 +211,28 @@ suite('WorkspaceIndex', () => {
     assert.deepStrictEqual(analysis.diagnostics, []);
   });
 
+  test('keeps syntax errors for macro invocations before their include', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define FIELD(T) T value;');
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        'class C { FIELD(int) };',
+        '#include "macros.h"'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
+      'Syntax error.'
+    ]);
+  });
+
   test('handles AXEL string map member macros without syntax diagnostics', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-macro-'));
     const generatedDir = path.join(tempDir, '_generated');

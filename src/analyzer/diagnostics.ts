@@ -19,50 +19,89 @@ export function collectSyntaxDiagnostics(
     (node) => node.type === 'ERROR' || node.isMissing
   );
 
-  return errorNodes
-    .filter((node) => !shouldSuppressMacroSyntaxError(node, options))
-    .map((node) => ({
-      severity: 'error',
-      source: 'axel',
-      message: node.isMissing ? `Missing ${node.type}.` : 'Syntax error.',
-      range: nodeToAnalysisRange(node)
-    }));
+  return errorNodes.flatMap((node) => diagnosticsForSyntaxNode(node, options));
 }
 
-function shouldSuppressMacroSyntaxError(
+function diagnosticsForSyntaxNode(
   node: Parser.SyntaxNode,
   options: SyntaxDiagnosticOptions
-): boolean {
+): AnalysisDiagnostic[] {
+  const defaultDiagnostic: AnalysisDiagnostic = {
+    severity: 'error',
+    source: 'axel',
+    message: node.isMissing ? `Missing ${node.type}.` : 'Syntax error.',
+    range: nodeToAnalysisRange(node)
+  };
   if (node.isMissing || options.parseText === undefined || options.macroDefinitions === undefined) {
-    return false;
+    return [defaultDiagnostic];
   }
 
   const invocation = macroInvocationCandidateFromErrorNode(node);
   if (invocation === undefined) {
-    return false;
+    return [defaultDiagnostic];
   }
 
-  const macroLookup = createMacroLookup(options.macroDefinitions);
-  const macro = macroLookup.findMacro(invocation.name, invocation.arguments.length);
+  const macroLookup = createMacroLookup(
+    options.macroDefinitions,
+    options.uri,
+    invocation.range.start
+  );
+  const macro = macroLookup.findMacro(invocation.name, invocation.arguments.length)
+    ?? macroLookup.findMacro(invocation.name);
   if (macro === undefined || macro.parameters === undefined) {
-    return false;
+    return [defaultDiagnostic];
   }
 
   const expansion = expandMacroInvocation(invocation, macro, macroLookup);
-  if (expansion.truncated || expansion.diagnostics.length > 0) {
-    return false;
+  if (expansion.diagnostics.length > 0) {
+    return expansion.diagnostics.map((diagnostic) => ({
+      severity: 'error',
+      source: 'axel',
+      message: diagnostic.message,
+      range: invocation.range
+    }));
   }
 
-  return expansionParsesInContext(expansion.expandedText, invocation, options.parseText);
+  if (!expansion.truncated && expansionParsesInContext(expansion.expandedText, invocation, options.parseText)) {
+    return [];
+  }
+
+  return [defaultDiagnostic];
 }
 
-export function createMacroLookup(macros: readonly AnalysisMacroDefinition[]): MacroLookup {
+export function createMacroLookup(
+  macros: readonly AnalysisMacroDefinition[],
+  sourceUri?: AnalysisDocumentUri,
+  position?: AnalysisMacroDefinition['selectionRange']['start']
+): MacroLookup {
   return {
     findMacro: (name, arity) => macros
       .filter((macro) => macro.name === name)
       .filter((macro) => arity === undefined || macro.parameters?.length === arity)
+      .filter((macro) => macroIsVisibleAtPosition(macro, sourceUri, position))
       .at(-1)
   };
+}
+
+function macroIsVisibleAtPosition(
+  macro: AnalysisMacroDefinition,
+  sourceUri: AnalysisDocumentUri | undefined,
+  position: AnalysisMacroDefinition['selectionRange']['start'] | undefined
+): boolean {
+  if (position === undefined) {
+    return true;
+  }
+
+  const visibilityStart = macro.visibilityStart
+    ?? (macro.uri === sourceUri ? macro.range.end : undefined);
+  return visibilityStart === undefined || comparePositions(visibilityStart, position) <= 0;
+}
+
+function comparePositions(
+  left: AnalysisMacroDefinition['selectionRange']['start'],
+  right: AnalysisMacroDefinition['selectionRange']['start']
+): number {
+  return left.line - right.line || left.character - right.character;
 }
 
 function expansionParsesInContext(

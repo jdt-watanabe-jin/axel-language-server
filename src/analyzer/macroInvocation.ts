@@ -16,6 +16,16 @@ export function macroInvocationCandidateFromErrorNode(
     return undefined;
   }
 
+  return macroInvocationCandidateFromNode(node);
+}
+
+export function macroInvocationCandidateFromNode(
+  node: Parser.SyntaxNode
+): MacroInvocationCandidate | undefined {
+  if (node.type !== 'ERROR' && node.type !== 'call_expression') {
+    return undefined;
+  }
+
   const rawText = node.text.trim();
   const parsed = parseMacroInvocationText(rawText);
   if (parsed === undefined) {
@@ -37,11 +47,18 @@ export function collectMacroInvocations(
   rootNode: Parser.SyntaxNode,
   uri: AnalysisDocumentUri
 ): AnalysisMacroInvocation[] {
-  return findNamedNodes(rootNode, (node) => node.type === 'ERROR')
+  const invocations = findNamedNodes(
+    rootNode,
+    (node) => node.type === 'ERROR' || node.type === 'call_expression'
+  )
     .flatMap((node) => {
-      const candidate = macroInvocationCandidateFromErrorNode(node);
+      const candidate = macroInvocationCandidateFromNode(node);
       return candidate === undefined ? [] : [{ ...candidate, uri }];
     });
+  return Array.from(new Map(invocations.map((invocation) => [
+    `${invocation.range.start.line}:${invocation.range.start.character}:${invocation.range.end.line}:${invocation.range.end.character}`,
+    invocation
+  ])).values());
 }
 
 export function parseMacroInvocationText(text: string): { name: string; arguments: string[] } | undefined {
