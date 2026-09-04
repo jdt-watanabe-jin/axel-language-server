@@ -75,6 +75,17 @@ export interface AnalysisSignature {
   parameters: AnalysisParameter[];
 }
 
+export interface AnalysisMacroDefinition {
+  name: string;
+  uri: AnalysisDocumentUri;
+  range: AnalysisRange;
+  selectionRange: AnalysisRange;
+  detail: string;
+  documentation?: string;
+  parameters?: AnalysisParameter[];
+  replacementText: string;
+}
+
 export interface AnalysisSignatureHelp {
   signatures: AnalysisSignature[];
   activeSignature: number;
@@ -263,6 +274,7 @@ export interface AnalyzedDocument {
   symbols: AnalysisSymbol[];
   declarations: AnalysisDeclaration[];
   references: AnalysisReference[];
+  macroDefinitions: AnalysisMacroDefinition[];
   semanticTokenReferences?: AnalysisReference[];
   semanticTokens?: AnalysisSemanticToken[];
   scopes: AnalysisScope[];

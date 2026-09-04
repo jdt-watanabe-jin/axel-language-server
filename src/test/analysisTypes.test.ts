@@ -32,6 +32,7 @@ suite('analysis types', () => {
       symbols: [symbol],
       declarations: [],
       references: [],
+      macroDefinitions: [],
       semanticTokens: [],
       scopes: [],
       includes: [],

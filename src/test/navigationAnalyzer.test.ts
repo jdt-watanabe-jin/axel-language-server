@@ -655,6 +655,7 @@ function recoveredStaticMemberFixture(): {
           memberNames: ['IsDirectory']
         }
       }],
+      macroDefinitions: [],
       scopes: [],
       includes: [],
       scriptExecutions: [],

@@ -18,6 +18,7 @@ import { collectSyntaxDiagnostics } from './diagnostics';
 import { collectDocumentSymbols } from './documentSymbols';
 import { buildGuiIndex, collectExternalGuiMethods } from './guiIndex';
 import { collectIncludes, collectScriptExecutions } from './includeResolver';
+import { collectMacroDefinitions } from './macroIndex';
 import { collectInactivePreprocessorRanges } from './preprocessorEvaluation';
 import {
   collectPreprocessorSemanticTokenReferences,
@@ -64,6 +65,7 @@ export class DocumentAnalyzer {
       const scopes = buildScopeIndex(tree.rootNode, input.uri, symbolIndex.declarations);
       const includes = collectIncludes(tree.rootNode);
       const scriptExecutions = collectScriptExecutions(tree.rootNode);
+      const macroDefinitions = collectMacroDefinitions(tree.rootNode, input.uri);
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
       const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
       const analysis: AnalyzedDocument = {
@@ -73,6 +75,7 @@ export class DocumentAnalyzer {
         symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), inactiveRanges),
         declarations: symbolIndex.declarations.filter((declaration) => !startsInInactiveRange(declaration.selectionRange, inactiveRanges)),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
+        macroDefinitions: macroDefinitions.filter((macro) => !startsInInactiveRange(macro.selectionRange, inactiveRanges)),
         semanticTokenReferences: preprocessorSemanticTokenReferences.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
         semanticTokens: preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
         scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
