@@ -4,3 +4,5 @@ npm-debug.log*
 
 # TypeScript incremental build
 *.tsbuildinfo
+
+.worktrees/
