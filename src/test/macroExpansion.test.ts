@@ -60,6 +60,30 @@ suite('macroExpansion', () => {
     ]);
   });
 
+  test('returns diagnostics for nested wrong arity', () => {
+    const lookup = lookupFrom([
+      macro('ONE', ['value'], 'value'),
+      macro('WRAP', ['value'], 'ONE(value, extra)')
+    ]);
+
+    const result = expandMacroInvocationText('WRAP(count)', lookup);
+
+    assert.deepStrictEqual(result.diagnostics.map((diagnostic) => diagnostic.message), [
+      "Macro 'ONE' expects 1 argument but got 2."
+    ]);
+  });
+
+  test('ignores comments while matching nested invocation parentheses', () => {
+    const lookup = lookupFrom([
+      macro('INNER', ['value'], 'value'),
+      macro('OUTER', ['value'], 'before INNER(value /* ) */) after')
+    ]);
+
+    const result = expandMacroInvocationText('OUTER(count)', lookup);
+
+    assert.strictEqual(result.expandedText, 'before count /* ) */ after');
+  });
+
   test('truncates recursive macro expansion', () => {
     const lookup = lookupFrom([
       macro('A', ['x'], 'A(x)')

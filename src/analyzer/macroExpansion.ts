@@ -136,7 +136,7 @@ function expandNestedInvocations(
 ): MacroExpansionResult {
   const direct = parseMacroInvocationText(text);
   if (direct !== undefined) {
-    const macro = visibleMacros.findMacro(direct.name, direct.arguments.length);
+    const macro = findMacroAllowingArityDiagnostic(visibleMacros, direct.name, direct.arguments.length);
     if (macro !== undefined) {
       return expandKnownMacro(text, macro, direct.arguments, visibleMacros, state);
     }
@@ -152,7 +152,7 @@ function expandNestedInvocations(
     if (parsed === undefined) {
       continue;
     }
-    const macro = visibleMacros.findMacro(parsed.name, parsed.arguments.length);
+    const macro = findMacroAllowingArityDiagnostic(visibleMacros, parsed.name, parsed.arguments.length);
     if (macro === undefined) {
       continue;
     }
@@ -303,8 +303,26 @@ function skipWhitespace(text: string, start: number): number {
 function findMatchingCloseParen(text: string, openParenIndex: number): number {
   let depth = 0;
   let quote: string | undefined;
+  let blockComment = false;
+  let lineComment = false;
   for (let index = openParenIndex; index < text.length; index += 1) {
     const character = text[index];
+    const next = text[index + 1];
+
+    if (lineComment) {
+      if (character === '\n' || character === '\r') {
+        lineComment = false;
+      }
+      continue;
+    }
+
+    if (blockComment) {
+      if (character === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
 
     if (quote !== undefined) {
       if (character === '\\') {
@@ -312,6 +330,18 @@ function findMatchingCloseParen(text: string, openParenIndex: number): number {
       } else if (character === quote) {
         quote = undefined;
       }
+      continue;
+    }
+
+    if (character === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
       continue;
     }
 
