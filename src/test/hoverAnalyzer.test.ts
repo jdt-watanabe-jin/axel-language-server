@@ -830,6 +830,32 @@ suite('getHover', () => {
     assert.ok(hover?.plainText.includes('Expansion:\nint value;\nint *Find(string key) { return NULL; }'));
   });
 
+  test('does not use later local definitions or includes for macro hover', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-hover-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define DECLARE_MEMBER(T) T includedValue;');
+    const index = new WorkspaceIndex();
+    const analysis = index.indexOpenDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        'class Container { DECLARE_MEMBER(int) };',
+        '#define DECLARE_MEMBER(T) T localValue;',
+        '#include "macros.h"'
+      ].join('\n')
+    });
+
+    const hover = getHover({
+      analysis,
+      position: { line: 0, character: 20 },
+      workspaceIndex: index
+    });
+
+    assert.strictEqual(hover, null);
+  });
+
   test('prefers a local declaration over a built-in name', () => {
     const analysis = analyze('void main() { int printf; printf = 1; }');
 

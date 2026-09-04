@@ -69,7 +69,7 @@ export class DocumentAnalyzer {
           ...macro,
           visibilityStart: macro.range.end
         }))
-      ];
+      ].sort(compareMacroVisibility);
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
         uri: input.uri,
         macroDefinitions: visibleMacroDefinitions,
@@ -240,4 +240,12 @@ function containsPosition(range: AnalysisRange, position: AnalysisPosition): boo
 
 function comparePositions(left: AnalysisPosition, right: AnalysisPosition): number {
   return left.line - right.line || left.character - right.character;
+}
+
+function compareMacroVisibility(
+  left: { visibilityStart?: AnalysisPosition },
+  right: { visibilityStart?: AnalysisPosition }
+): number {
+  const fileStart = { line: 0, character: 0 };
+  return comparePositions(left.visibilityStart ?? fileStart, right.visibilityStart ?? fileStart);
 }

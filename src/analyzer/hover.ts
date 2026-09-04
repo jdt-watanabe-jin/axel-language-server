@@ -4,6 +4,7 @@ import type {
   AnalysisGuiClass,
   AnalysisGuiMethod,
   AnalysisMacroDefinition,
+  AnalysisMacroInvocation,
   AnalysisGuiPart,
   AnalysisHover,
   AnalysisMemberAccess,
@@ -86,9 +87,9 @@ export function getHover(input: HoverInput): AnalysisHover | null {
   const referenceDeclaration = findDeclarationForReference(input);
   if (referenceDeclaration !== undefined) {
     if (referenceDeclaration.kind === 'macro') {
-      const macroInvocationHover = findMacroInvocationHover(input);
-      if (macroInvocationHover !== undefined) {
-        return macroInvocationHover;
+      const invocation = findMacroInvocationAtPosition(input);
+      if (invocation !== undefined) {
+        return hoverForMacroInvocation(input, invocation) ?? null;
       }
     }
 
@@ -113,8 +114,8 @@ function findScriptExecutionHover(input: HoverInput): AnalysisHover | undefined 
   return execution === undefined ? undefined : hoverFromText(`axel: ${execution.filePath}`, 'text');
 }
 
-function findMacroInvocationHover(input: HoverInput): AnalysisHover | undefined {
-  const invocation = input.analysis.macroInvocations
+function findMacroInvocationAtPosition(input: HoverInput): AnalysisMacroInvocation | undefined {
+  return input.analysis.macroInvocations
     .filter((candidate) => (
       contains(candidate.selectionRange, input.position)
       || contains(candidate.range, input.position)
@@ -123,10 +124,12 @@ function findMacroInvocationHover(input: HoverInput): AnalysisHover | undefined 
       comparePositions(right.range.start, left.range.start)
       || comparePositions(left.range.end, right.range.end)
     ))[0];
-  if (invocation === undefined) {
-    return undefined;
-  }
+}
 
+function hoverForMacroInvocation(
+  input: HoverInput,
+  invocation: AnalysisMacroInvocation
+): AnalysisHover | undefined {
   const macro = input.workspaceIndex.findBestVisibleMacroDefinition?.(
     input.analysis.uri,
     invocation.name,

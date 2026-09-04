@@ -233,6 +233,71 @@ suite('WorkspaceIndex', () => {
     ]);
   });
 
+  test('uses an included macro that supersedes an earlier local definition', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define DECLARE_MEMBER(T) T includedValue;');
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        '#define DECLARE_MEMBER(T) T',
+        '#include "macros.h"',
+        'class Container { DECLARE_MEMBER(int) };'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.diagnostics, []);
+  });
+
+  test('uses a local macro that supersedes an earlier included definition', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define DECLARE_MEMBER(T) T');
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        '#include "macros.h"',
+        '#define DECLARE_MEMBER(T) T localValue;',
+        'class Container { DECLARE_MEMBER(int) };'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.diagnostics, []);
+  });
+
+  test('keeps syntax errors before later local definitions and includes', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define DECLARE_MEMBER(T) T includedValue;');
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        'class Container { DECLARE_MEMBER(int) };',
+        '#define DECLARE_MEMBER(T) T localValue;',
+        '#include "macros.h"'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
+      'Syntax error.'
+    ]);
+  });
+
   test('handles AXEL string map member macros without syntax diagnostics', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-macro-'));
     const generatedDir = path.join(tempDir, '_generated');
