@@ -205,11 +205,9 @@ export class WorkspaceIndex {
   public findBestVisibleMacroDefinition(
     sourceUri: string,
     name: string,
-    arity?: number,
     position?: AnalysisPosition
   ): AnalysisMacroDefinition | undefined {
     return this.findVisibleMacroDefinitions(sourceUri, name)
-      .filter((macro) => arity === undefined || macro.parameters?.length === arity)
       .filter((macro) => position === undefined
         || macro.visibilityStart === undefined
         || comparePositions(macro.visibilityStart, position) <= 0)

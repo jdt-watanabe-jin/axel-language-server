@@ -3,7 +3,7 @@ import type { MacroInvocationCandidate } from './macroInvocation';
 import { parseMacroInvocationText } from './macroInvocation';
 
 export interface MacroLookup {
-  findMacro(name: string, arity?: number): AnalysisMacroDefinition | undefined;
+  findMacro(name: string): AnalysisMacroDefinition | undefined;
 }
 
 export interface MacroExpansionStep {
@@ -57,7 +57,7 @@ export function expandMacroInvocationText(
     };
   }
 
-  const macro = findMacroAllowingArityDiagnostic(visibleMacros, invocation.name, invocation.arguments.length);
+  const macro = visibleMacros.findMacro(invocation.name);
   if (macro === undefined) {
     return {
       expandedText: text,
@@ -136,7 +136,7 @@ function expandNestedInvocations(
 ): MacroExpansionResult {
   const direct = parseMacroInvocationText(text);
   if (direct !== undefined) {
-    const macro = findMacroAllowingArityDiagnostic(visibleMacros, direct.name, direct.arguments.length);
+    const macro = visibleMacros.findMacro(direct.name);
     if (macro !== undefined) {
       return expandKnownMacro(text, macro, direct.arguments, visibleMacros, state);
     }
@@ -152,7 +152,7 @@ function expandNestedInvocations(
     if (parsed === undefined) {
       continue;
     }
-    const macro = findMacroAllowingArityDiagnostic(visibleMacros, parsed.name, parsed.arguments.length);
+    const macro = visibleMacros.findMacro(parsed.name);
     if (macro === undefined) {
       continue;
     }
@@ -257,14 +257,6 @@ function findNestedInvocationTexts(text: string): { text: string; start: number;
     index = nameEnd;
   }
   return results.reverse();
-}
-
-function findMacroAllowingArityDiagnostic(
-  visibleMacros: MacroLookup,
-  name: string,
-  arity: number
-): AnalysisMacroDefinition | undefined {
-  return visibleMacros.findMacro(name, arity) ?? visibleMacros.findMacro(name);
 }
 
 function skipQuotedText(text: string, start: number, quote: string): number {

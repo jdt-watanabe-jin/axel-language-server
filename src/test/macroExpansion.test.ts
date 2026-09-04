@@ -60,6 +60,20 @@ suite('macroExpansion', () => {
     ]);
   });
 
+  test('uses the latest macro definition by name before validating arity', () => {
+    const lookup = lookupFrom([
+      macro('REPLACE', ['value'], 'value'),
+      macro('REPLACE', ['left', 'right'], 'left + right')
+    ]);
+
+    const result = expandMacroInvocationText('REPLACE(value)', lookup);
+
+    assert.deepStrictEqual(result.diagnostics.map((diagnostic) => diagnostic.message), [
+      "Macro 'REPLACE' expects 2 argument but got 1."
+    ]);
+    assert.strictEqual(result.expandedText, 'REPLACE(value)');
+  });
+
   test('returns diagnostics for nested wrong arity', () => {
     const lookup = lookupFrom([
       macro('ONE', ['value'], 'value'),
@@ -109,9 +123,9 @@ function macro(name: string, parameters: string[], replacementText: string): Ana
 
 function lookupFrom(macros: AnalysisMacroDefinition[]): MacroLookup {
   return {
-    findMacro: (name, arity) => macros.find((macro) => (
-      macro.name === name && (arity === undefined || macro.parameters?.length === arity)
-    ))
+    findMacro: (name) => macros
+      .filter((macro) => macro.name === name)
+      .at(-1)
   };
 }
 

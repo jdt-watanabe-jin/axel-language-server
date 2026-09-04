@@ -45,7 +45,6 @@ export interface WorkspaceDeclarationIndex {
   findBestVisibleMacroDefinition?(
     sourceUri: string,
     name: string,
-    arity?: number,
     position?: AnalysisPosition
   ): AnalysisMacroDefinition | undefined;
   resolveIncludeAtPosition?(sourceUri: string, position: AnalysisPosition): AnalysisResolvedInclude | undefined;
@@ -133,7 +132,6 @@ function hoverForMacroInvocation(
   const macro = input.workspaceIndex.findBestVisibleMacroDefinition?.(
     input.analysis.uri,
     invocation.name,
-    invocation.argumentCount,
     invocation.range.start
   );
   if (macro === undefined || macro.parameters === undefined) {
@@ -141,10 +139,9 @@ function hoverForMacroInvocation(
   }
 
   const lookup: MacroLookup = {
-    findMacro: (name, arity) => input.workspaceIndex.findBestVisibleMacroDefinition?.(
+    findMacro: (name) => input.workspaceIndex.findBestVisibleMacroDefinition?.(
       input.analysis.uri,
       name,
-      arity,
       invocation.range.start
     )
   };

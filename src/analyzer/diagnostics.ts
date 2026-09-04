@@ -46,8 +46,7 @@ function diagnosticsForSyntaxNode(
     options.uri,
     invocation.range.start
   );
-  const macro = macroLookup.findMacro(invocation.name, invocation.arguments.length)
-    ?? macroLookup.findMacro(invocation.name);
+  const macro = macroLookup.findMacro(invocation.name);
   if (macro === undefined || macro.parameters === undefined) {
     return [defaultDiagnostic];
   }
@@ -75,9 +74,8 @@ export function createMacroLookup(
   position?: AnalysisMacroDefinition['selectionRange']['start']
 ): MacroLookup {
   return {
-    findMacro: (name, arity) => macros
+    findMacro: (name) => macros
       .filter((macro) => macro.name === name)
-      .filter((macro) => arity === undefined || macro.parameters?.length === arity)
       .filter((macro) => macroIsVisibleAtPosition(macro, sourceUri, position))
       .at(-1)
   };

@@ -254,6 +254,29 @@ suite('WorkspaceIndex', () => {
     assert.deepStrictEqual(analysis.diagnostics, []);
   });
 
+  test('reports included macro arity after it supersedes an earlier local definition', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define M(A, B) A value; B otherValue;');
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        '#define M(A) A value;',
+        '#include "macros.h"',
+        'class Container { M(int) };'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
+      "Macro 'M' expects 2 argument but got 1."
+    ]);
+  });
+
   test('uses a local macro that supersedes an earlier included definition', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
     const mainPath = path.join(tempDir, 'main.axl');
@@ -334,21 +357,20 @@ suite('WorkspaceIndex', () => {
     );
   });
 
-  test('selects visible function-like macro by arity', () => {
+  test('selects the latest visible macro definition by name', () => {
     const index = new WorkspaceIndex();
     const uri = 'file:///main.axl';
     index.indexOpenDocument({
       uri,
       version: 1,
       text: [
-        '#define ONE(a) a',
-        '#define TWO(a, b) a + b',
+        '#define REPLACE(a) a',
+        '#define REPLACE(a, b) a + b',
         'void main() {}'
       ].join('\n')
     });
 
-    assert.strictEqual(index.findBestVisibleMacroDefinition(uri, 'TWO', 1), undefined);
-    assert.strictEqual(index.findBestVisibleMacroDefinition(uri, 'TWO', 2)?.replacementText, 'a + b');
+    assert.strictEqual(index.findBestVisibleMacroDefinition(uri, 'REPLACE')?.replacementText, 'a + b');
   });
 
   test('finds declarations from includes resolved by forced include files', () => {

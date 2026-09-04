@@ -856,6 +856,32 @@ suite('getHover', () => {
     assert.strictEqual(hover, null);
   });
 
+  test('does not show an older matching-arity expansion after an included redefinition', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-hover-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, '#define M(A, B) A value; B otherValue;');
+    const index = new WorkspaceIndex();
+    const analysis = index.indexOpenDocument({
+      uri: mainUri,
+      version: 1,
+      text: [
+        '#define M(A) A staleValue;',
+        '#include "macros.h"',
+        'class Container { M(int) };'
+      ].join('\n')
+    });
+
+    const hover = getHover({
+      analysis,
+      position: { line: 2, character: 18 },
+      workspaceIndex: index
+    });
+
+    assert.strictEqual(hover, null);
+  });
+
   test('prefers a local declaration over a built-in name', () => {
     const analysis = analyze('void main() { int printf; printf = 1; }');
 
