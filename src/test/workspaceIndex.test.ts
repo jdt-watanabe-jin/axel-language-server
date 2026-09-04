@@ -213,7 +213,9 @@ suite('WorkspaceIndex', () => {
 
   test('handles AXEL string map member macros without syntax diagnostics', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-macro-'));
-    const mainPath = path.join(tempDir, '_common.h');
+    const generatedDir = path.join(tempDir, '_generated');
+    fs.mkdirSync(generatedDir);
+    const mainPath = path.join(generatedDir, '_common.h');
     const basePath = path.join(tempDir, '_asxccbase.h');
     const mainUri = pathToFileURL(mainPath).toString();
     fs.writeFileSync(basePath, [

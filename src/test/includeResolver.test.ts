@@ -24,6 +24,25 @@ suite('resolveInclude', () => {
     assert.strictEqual(result.filePath, path.join(sourceDir, 'types.h'));
   });
 
+  test('resolves quoted includes from the including file parent directory before APP_AXELPATH roots', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-include-'));
+    const sourceDir = path.join(tempDir, 'generated');
+    const includeRoot = path.join(tempDir, 'include');
+    fs.mkdirSync(sourceDir);
+    fs.mkdirSync(includeRoot);
+    fs.writeFileSync(path.join(tempDir, 'types.h'), 'int parentType;');
+    fs.writeFileSync(path.join(includeRoot, 'types.h'), 'int pathType;');
+
+    const result = resolveInclude({
+      includingFilePath: path.join(sourceDir, 'main.axl'),
+      includeText: '"types.h"',
+      includeRoots: [includeRoot]
+    });
+
+    assert.strictEqual(result.status, 'resolved');
+    assert.strictEqual(result.filePath, path.join(tempDir, 'types.h'));
+  });
+
   test('resolves angle includes from APP_AXELPATH roots without using the including file directory', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-include-'));
     const sourceDir = path.join(tempDir, 'src');
@@ -55,7 +74,10 @@ suite('resolveInclude', () => {
       status: 'unresolved',
       reason: 'not-found',
       includePath: 'missing.h',
-      candidates: [path.join(tempDir, 'missing.h')]
+      candidates: [
+        path.join(tempDir, 'missing.h'),
+        path.join(path.dirname(tempDir), 'missing.h')
+      ]
     });
   });
 });

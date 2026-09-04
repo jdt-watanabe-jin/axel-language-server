@@ -154,7 +154,9 @@ function includeCandidates(input: {
   const candidates: string[] = [];
 
   if (input.kind === 'quote') {
-    candidates.push(path.normalize(path.join(path.dirname(input.includingFilePath), input.includePath)));
+    const includingDirectory = path.dirname(input.includingFilePath);
+    candidates.push(path.normalize(path.join(includingDirectory, input.includePath)));
+    candidates.push(path.normalize(path.join(path.dirname(includingDirectory), input.includePath)));
   }
 
   for (const root of input.includeRoots) {
