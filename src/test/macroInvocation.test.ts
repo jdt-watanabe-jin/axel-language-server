@@ -26,6 +26,16 @@ suite('macroInvocation', () => {
     assert.strictEqual(parseMacroInvocationText('M('), undefined);
   });
 
+  test('rejects malformed argument delimiters', () => {
+    assert.strictEqual(parseMacroInvocationText('M(a])'), undefined);
+    assert.strictEqual(parseMacroInvocationText('M(a[1)'), undefined);
+  });
+
+  test('does not close invocations with parentheses inside comments', () => {
+    assert.strictEqual(parseMacroInvocationText('M(a /* )'), undefined);
+    assert.strictEqual(parseMacroInvocationText('M(a // )'), undefined);
+  });
+
   test('detects class body ERROR macro invocation candidates', () => {
     const parser = createAxelParser();
     const tree = parser.parse('class C { define_stringMAP_one(int) };');

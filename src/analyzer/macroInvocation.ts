@@ -59,17 +59,21 @@ export function parseMacroInvocationText(text: string): { name: string; argument
   }
 
   const argumentText = trimmed.slice(openParenIndex + 1, closeParenIndex);
-  return { name, arguments: splitMacroArguments(argumentText) };
+  const macroArguments = splitMacroArguments(argumentText);
+  if (macroArguments === undefined) {
+    return undefined;
+  }
+  return { name, arguments: macroArguments };
 }
 
-function splitMacroArguments(text: string): string[] {
+function splitMacroArguments(text: string): string[] | undefined {
   if (text.trim() === '') {
     return [];
   }
 
   const argumentsList: string[] = [];
   let start = 0;
-  let depth = 0;
+  const expectedClosers: string[] = [];
   let quote: string | undefined;
   let blockComment = false;
   let lineComment = false;
@@ -120,19 +124,25 @@ function splitMacroArguments(text: string): string[] {
     }
 
     if (character === '(' || character === '[' || character === '{') {
-      depth += 1;
+      expectedClosers.push(matchingCloserFor(character));
       continue;
     }
 
     if (character === ')' || character === ']' || character === '}') {
-      depth -= 1;
+      if (expectedClosers.pop() !== character) {
+        return undefined;
+      }
       continue;
     }
 
-    if (character === ',' && depth === 0) {
+    if (character === ',' && expectedClosers.length === 0) {
       argumentsList.push(text.slice(start, index).trim());
       start = index + 1;
     }
+  }
+
+  if (expectedClosers.length > 0 || quote !== undefined || blockComment) {
+    return undefined;
   }
 
   argumentsList.push(text.slice(start).trim());
@@ -142,8 +152,26 @@ function splitMacroArguments(text: string): string[] {
 function findMatchingCloseParen(text: string, openParenIndex: number): number {
   let depth = 0;
   let quote: string | undefined;
+  let blockComment = false;
+  let lineComment = false;
   for (let index = openParenIndex; index < text.length; index += 1) {
     const character = text[index];
+    const next = text[index + 1];
+
+    if (lineComment) {
+      if (character === '\n' || character === '\r') {
+        lineComment = false;
+      }
+      continue;
+    }
+
+    if (blockComment) {
+      if (character === '*' && next === '/') {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
 
     if (quote !== undefined) {
       if (character === '\\') {
@@ -151,6 +179,18 @@ function findMatchingCloseParen(text: string, openParenIndex: number): number {
       } else if (character === quote) {
         quote = undefined;
       }
+      continue;
+    }
+
+    if (character === '/' && next === '/') {
+      lineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (character === '/' && next === '*') {
+      blockComment = true;
+      index += 1;
       continue;
     }
 
@@ -170,6 +210,16 @@ function findMatchingCloseParen(text: string, openParenIndex: number): number {
   }
 
   return -1;
+}
+
+function matchingCloserFor(opener: string): string {
+  if (opener === '(') {
+    return ')';
+  }
+  if (opener === '[') {
+    return ']';
+  }
+  return '}';
 }
 
 function contextForNode(node: Parser.SyntaxNode): AnalysisMacroInvocationContext {
