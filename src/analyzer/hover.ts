@@ -3,6 +3,7 @@ import type {
   AnalyzedDocument,
   AnalysisGuiClass,
   AnalysisGuiMethod,
+  AnalysisMacroDefinition,
   AnalysisGuiPart,
   AnalysisHover,
   AnalysisMemberAccess,
@@ -13,6 +14,7 @@ import type {
   AnalysisRange
 } from '../types/analysis';
 import { getBuiltinHover } from './builtins';
+import { expandMacroInvocationText, type MacroLookup } from './macroExpansion';
 import {
   findLocalDeclaration as resolveLocalDeclaration,
   findVisibleDeclaration,
@@ -39,6 +41,11 @@ export interface HoverInput {
 export interface WorkspaceDeclarationIndex {
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;
+  findBestVisibleMacroDefinition?(
+    sourceUri: string,
+    name: string,
+    arity?: number
+  ): AnalysisMacroDefinition | undefined;
   resolveIncludeAtPosition?(sourceUri: string, position: AnalysisPosition): AnalysisResolvedInclude | undefined;
   resolveScriptExecutionAtPosition?(sourceUri: string, position: AnalysisPosition): AnalysisResolvedScriptExecution | undefined;
 }
@@ -63,6 +70,11 @@ export function getHover(input: HoverInput): AnalysisHover | null {
 
   if (declaration !== undefined) {
     return hoverForDeclaration(declaration);
+  }
+
+  const macroInvocationHover = findMacroInvocationHover(input);
+  if (macroInvocationHover !== undefined) {
+    return macroInvocationHover;
   }
 
   const reference = findReferenceAtPosition(input.analysis, input.position);
@@ -96,6 +108,55 @@ function findIncludeHover(input: HoverInput): AnalysisHover | undefined {
 function findScriptExecutionHover(input: HoverInput): AnalysisHover | undefined {
   const execution = input.workspaceIndex.resolveScriptExecutionAtPosition?.(input.analysis.uri, input.position);
   return execution === undefined ? undefined : hoverFromText(`axel: ${execution.filePath}`, 'text');
+}
+
+function findMacroInvocationHover(input: HoverInput): AnalysisHover | undefined {
+  const invocation = input.analysis.macroInvocations.find((candidate) => (
+    contains(candidate.selectionRange, input.position)
+    || contains(candidate.range, input.position)
+  ));
+  if (invocation === undefined) {
+    return undefined;
+  }
+
+  const macro = input.workspaceIndex.findBestVisibleMacroDefinition?.(
+    input.analysis.uri,
+    invocation.name,
+    invocation.argumentCount
+  );
+  if (macro === undefined || macro.parameters === undefined) {
+    return undefined;
+  }
+
+  const lookup: MacroLookup = {
+    findMacro: (name, arity) => input.workspaceIndex.findBestVisibleMacroDefinition?.(
+      input.analysis.uri,
+      name,
+      arity
+    )
+  };
+  const expansion = expandMacroInvocationText(invocation.rawText, lookup);
+  if (expansion.diagnostics.length > 0) {
+    return undefined;
+  }
+
+  const expandedText = formatMacroExpansionForHover(expansion.expandedText);
+  const expansionNote = expansion.truncated ? '\nExpansion truncated at depth 8.' : '';
+  const plainText = [
+    macro.detail,
+    ...(macro.documentation === undefined ? [] : [macro.documentation]),
+    'Expansion:',
+    expandedText + expansionNote
+  ].join('\n');
+
+  return {
+    markdown: markdownForMacroExpansion(macro.detail, macro.documentation, expandedText, expansionNote),
+    plainText
+  };
+}
+
+function formatMacroExpansionForHover(expandedText: string): string {
+  return expandedText.replace(/;[ \t]+(?=[^}\s])/g, ';\n');
 }
 
 function findPreferredImplicitGuiReferenceHover(input: HoverInput, reference: AnalysisReference): AnalysisHover | undefined {
@@ -657,6 +718,27 @@ function hoverForDeclarationText(plainText: string, documentation: string | unde
     markdown: `\`\`\`axel\n${plainText}\n\`\`\`\n\n${documentation}`,
     plainText: `${plainText}\n${documentation}`
   };
+}
+
+function markdownForMacroExpansion(
+  detail: string,
+  documentation: string | undefined,
+  expandedText: string,
+  note: string
+): string {
+  return [
+    '```axel',
+    detail,
+    '```',
+    ...(documentation === undefined ? [] : ['', documentation]),
+    '',
+    'Expansion:',
+    '',
+    '```axel',
+    expandedText,
+    '```',
+    ...(note === '' ? [] : ['', note.trim()])
+  ].join('\n');
 }
 
 function findGuiPartForDeclaration(

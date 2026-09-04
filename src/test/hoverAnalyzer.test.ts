@@ -738,6 +738,57 @@ suite('getHover', () => {
     });
   });
 
+  test('shows expansion for function-like macro invocation hover', () => {
+    const index = new WorkspaceIndex();
+    const uri = 'file:///main.axl';
+    const analysis = index.indexOpenDocument({
+      uri,
+      version: 1,
+      text: [
+        '#define FIELD(T) T value;',
+        'class C { FIELD(int) };'
+      ].join('\n')
+    });
+
+    const hover = getHover({
+      analysis,
+      position: { line: 1, character: 10 },
+      workspaceIndex: index
+    });
+
+    assert.strictEqual(hover?.plainText, [
+      '#define FIELD(T) T value;',
+      'Expansion:',
+      'int value;'
+    ].join('\n'));
+  });
+
+  test('shows nested expansion for included function-like macro invocation hover', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-hover-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, [
+      '#define BASE(T) T value;',
+      '#define WRAP(T) BASE(T) T *Find(string key) { return NULL; }'
+    ].join('\n'));
+    const index = new WorkspaceIndex();
+    const analysis = index.indexOpenDocument({
+      uri: mainUri,
+      version: 1,
+      text: '#include "macros.h"\nclass C { WRAP(int) };'
+    });
+
+    const hover = getHover({
+      analysis,
+      position: { line: 1, character: 10 },
+      workspaceIndex: index
+    });
+
+    assert.ok(hover?.plainText.includes('#define WRAP(T) BASE(T) T *Find(string key) { return NULL; }'));
+    assert.ok(hover?.plainText.includes('Expansion:\nint value;\nint *Find(string key) { return NULL; }'));
+  });
+
   test('prefers a local declaration over a built-in name', () => {
     const analysis = analyze('void main() { int printf; printf = 1; }');
 
