@@ -62,9 +62,10 @@ export class DocumentAnalyzer {
       ]);
       const inactiveRanges = collectInactivePreprocessorRanges(tree.rootNode, input.preprocessorSymbols);
       const macroDefinitions = collectMacroDefinitions(tree.rootNode, input.uri);
+      const activeMacroDefinitions = macroDefinitions.filter((macro) => !startsInInactiveRange(macro.selectionRange, inactiveRanges));
       const visibleMacroDefinitions = [
         ...(input.macroDefinitions ?? []),
-        ...macroDefinitions
+        ...activeMacroDefinitions
       ];
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
         uri: input.uri,
@@ -85,7 +86,7 @@ export class DocumentAnalyzer {
         symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), inactiveRanges),
         declarations: symbolIndex.declarations.filter((declaration) => !startsInInactiveRange(declaration.selectionRange, inactiveRanges)),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
-        macroDefinitions: macroDefinitions.filter((macro) => !startsInInactiveRange(macro.selectionRange, inactiveRanges)),
+        macroDefinitions: activeMacroDefinitions,
         macroInvocations: macroInvocations.filter((invocation) => !startsInInactiveRange(invocation.selectionRange, inactiveRanges)),
         semanticTokenReferences: preprocessorSemanticTokenReferences.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
         semanticTokens: preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),

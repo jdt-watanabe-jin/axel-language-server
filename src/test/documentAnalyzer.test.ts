@@ -194,6 +194,23 @@ suite('DocumentAnalyzer', () => {
     assert.strictEqual(result.diagnostics[0]?.message, 'Syntax error.');
   });
 
+  test('does not use inactive local macro definitions for syntax suppression', () => {
+    const analyzer = new DocumentAnalyzer();
+    const result = analyzer.analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: [
+        '#if 0',
+        '#define DEFINE_FIELD(T) T value;',
+        '#endif',
+        'class C { DEFINE_FIELD(int) };'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(result.macroDefinitions, []);
+    assert.strictEqual(result.diagnostics[0]?.message, 'Syntax error.');
+  });
+
   test('emits timing logs when logger is provided', () => {
     const entries: string[] = [];
     const analyzer = new DocumentAnalyzer(undefined, {
