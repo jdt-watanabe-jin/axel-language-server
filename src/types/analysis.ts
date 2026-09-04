@@ -86,6 +86,19 @@ export interface AnalysisMacroDefinition {
   replacementText: string;
 }
 
+export type AnalysisMacroInvocationContext = 'classBody' | 'block' | 'topLevel' | 'unknown';
+
+export interface AnalysisMacroInvocation {
+  name: string;
+  arguments: string[];
+  argumentCount: number;
+  uri: AnalysisDocumentUri;
+  range: AnalysisRange;
+  selectionRange: AnalysisRange;
+  rawText: string;
+  context: AnalysisMacroInvocationContext;
+}
+
 export interface AnalysisSignatureHelp {
   signatures: AnalysisSignature[];
   activeSignature: number;
