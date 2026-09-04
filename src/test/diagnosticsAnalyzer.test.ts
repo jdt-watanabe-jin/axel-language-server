@@ -34,4 +34,87 @@ class Json {
     assert.strictEqual(diagnostics[0].source, 'axel');
     assert.strictEqual(diagnostics[0].message, 'Syntax error.');
   });
+
+  test('suppresses syntax error for valid class body macro expansion', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse('class C { DEFINE_FIELD(int) };');
+
+    const diagnostics = collectSyntaxDiagnostics(tree.rootNode, {
+      uri: 'file:///main.axl',
+      macroDefinitions: [{
+        name: 'DEFINE_FIELD',
+        uri: 'file:///macros.h',
+        range: zeroRange(),
+        selectionRange: zeroRange(),
+        detail: '#define DEFINE_FIELD(T) T value;',
+        parameters: [{ label: 'T' }],
+        replacementText: 'T value;'
+      }],
+      parseText: (text) => parser.parse(text).rootNode
+    });
+
+    assert.deepStrictEqual(diagnostics, []);
+  });
+
+  test('keeps syntax error for unknown class body macro expansion', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse('class C { UNKNOWN(int) };');
+
+    const diagnostics = collectSyntaxDiagnostics(tree.rootNode, {
+      uri: 'file:///main.axl',
+      macroDefinitions: [],
+      parseText: (text) => parser.parse(text).rootNode
+    });
+
+    assert.strictEqual(diagnostics[0]?.message, 'Syntax error.');
+  });
+
+  test('keeps syntax error when macro arity does not match', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse('class C { DEFINE_FIELD(int, string) };');
+
+    const diagnostics = collectSyntaxDiagnostics(tree.rootNode, {
+      uri: 'file:///main.axl',
+      macroDefinitions: [{
+        name: 'DEFINE_FIELD',
+        uri: 'file:///macros.h',
+        range: zeroRange(),
+        selectionRange: zeroRange(),
+        detail: '#define DEFINE_FIELD(T) T value;',
+        parameters: [{ label: 'T' }],
+        replacementText: 'T value;'
+      }],
+      parseText: (text) => parser.parse(text).rootNode
+    });
+
+    assert.strictEqual(diagnostics[0]?.message, 'Syntax error.');
+  });
+
+  test('keeps syntax error when expanded class body code is invalid', () => {
+    const parser = createAxelParser();
+    const tree = parser.parse('class C { BROKEN(int) };');
+
+    const diagnostics = collectSyntaxDiagnostics(tree.rootNode, {
+      uri: 'file:///main.axl',
+      macroDefinitions: [{
+        name: 'BROKEN',
+        uri: 'file:///macros.h',
+        range: zeroRange(),
+        selectionRange: zeroRange(),
+        detail: '#define BROKEN(T) T',
+        parameters: [{ label: 'T' }],
+        replacementText: 'T'
+      }],
+      parseText: (text) => parser.parse(text).rootNode
+    });
+
+    assert.strictEqual(diagnostics[0]?.message, 'Syntax error.');
+  });
 });
+
+function zeroRange() {
+  return {
+    start: { line: 0, character: 0 },
+    end: { line: 0, character: 0 }
+  };
+}

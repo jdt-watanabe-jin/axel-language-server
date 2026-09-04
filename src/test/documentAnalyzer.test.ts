@@ -153,6 +153,7 @@ suite('DocumentAnalyzer', () => {
     const lines = [
       '#if 0',
       'int ;',
+      'BROKEN_MACRO(int)',
       'int inactiveValue;',
       '#else',
       'void activeFunction() {}',
@@ -168,12 +169,29 @@ suite('DocumentAnalyzer', () => {
     assert.deepStrictEqual(result.diagnostics, []);
     assert.deepStrictEqual(result.symbols.map((symbol) => symbol.name), ['activeFunction']);
     assert.deepStrictEqual(result.declarations.map((declaration) => declaration.name), ['activeFunction']);
-    assert.ok(result.references.every((reference) => reference.range.start.line !== 2));
-    assert.deepStrictEqual(collectSemanticTokens(result).map((token) => token.range.start.line), [4]);
+    assert.ok(result.references.every((reference) => reference.range.start.line !== 3));
+    assert.deepStrictEqual(collectSemanticTokens(result).map((token) => token.range.start.line), [5]);
     assert.deepStrictEqual(result.inactiveRanges, [
-      { start: { line: 1, character: 0 }, end: { line: 1, character: 5 } },
-      { start: { line: 2, character: 0 }, end: { line: 2, character: 18 } }
+      { start: { line: 1, character: 0 }, end: { line: 3, character: 18 } }
     ]);
+  });
+
+  test('collects macro invocations outside inactive preprocessor regions', () => {
+    const analyzer = new DocumentAnalyzer();
+    const result = analyzer.analyzeDocument({
+      uri: 'file:///main.axl',
+      version: 1,
+      text: [
+        '#if 0',
+        'class Inactive { INACTIVE_MACRO(int) };',
+        '#else',
+        'class Active { ACTIVE_MACRO(int) };',
+        '#endif'
+      ].join('\n')
+    });
+
+    assert.deepStrictEqual(result.macroInvocations.map((invocation) => invocation.name), ['ACTIVE_MACRO']);
+    assert.strictEqual(result.diagnostics[0]?.message, 'Syntax error.');
   });
 
   test('emits timing logs when logger is provided', () => {

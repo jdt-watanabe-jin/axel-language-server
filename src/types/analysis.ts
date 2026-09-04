@@ -289,6 +289,7 @@ export interface AnalyzedDocument {
   declarations: AnalysisDeclaration[];
   references: AnalysisReference[];
   macroDefinitions: AnalysisMacroDefinition[];
+  macroInvocations: AnalysisMacroInvocation[];
   semanticTokenReferences?: AnalysisReference[];
   semanticTokens?: AnalysisSemanticToken[];
   scopes: AnalysisScope[];

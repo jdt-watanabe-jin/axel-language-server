@@ -656,6 +656,7 @@ function recoveredStaticMemberFixture(): {
         }
       }],
       macroDefinitions: [],
+      macroInvocations: [],
       scopes: [],
       includes: [],
       scriptExecutions: [],

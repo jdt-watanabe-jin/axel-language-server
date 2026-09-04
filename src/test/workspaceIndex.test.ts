@@ -191,6 +191,26 @@ suite('WorkspaceIndex', () => {
     );
   });
 
+  test('suppresses class body syntax errors for macros from included files', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const macroPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(macroPath, [
+      '#define DEFINE_MAP_BASE(T) T value;',
+      '#define DEFINE_MAP(T) DEFINE_MAP_BASE(T) T *Find(string key) { return NULL; }'
+    ].join('\n'));
+
+    const index = new WorkspaceIndex();
+    const analysis = index.analyzeDocument({
+      uri: mainUri,
+      version: 1,
+      text: '#include "macros.h"\nclass C { DEFINE_MAP(int) };'
+    });
+
+    assert.deepStrictEqual(analysis.diagnostics, []);
+  });
+
   test('selects visible function-like macro by arity', () => {
     const index = new WorkspaceIndex();
     const uri = 'file:///main.axl';

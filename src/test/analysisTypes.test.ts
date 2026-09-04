@@ -33,6 +33,7 @@ suite('analysis types', () => {
       declarations: [],
       references: [],
       macroDefinitions: [],
+      macroInvocations: [],
       semanticTokens: [],
       scopes: [],
       includes: [],
