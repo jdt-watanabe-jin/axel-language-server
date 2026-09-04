@@ -265,6 +265,7 @@ export interface AnalyzeDocumentInput {
   knownGuiClasses?: readonly AnalysisKnownGuiClass[];
   knownGuiClassNames?: readonly string[];
   preprocessorSymbols?: readonly AnalysisPreprocessorSymbol[];
+  macroDefinitions?: readonly AnalysisMacroDefinition[];
 }
 
 export interface AnalyzedDocument {

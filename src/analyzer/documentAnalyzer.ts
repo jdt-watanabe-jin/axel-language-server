@@ -115,7 +115,14 @@ function analysisContextKeyFromInput(input: AnalyzeDocumentInput): string {
     .sort((left, right) => left.name.localeCompare(right.name))
     .map((symbol) => `${symbol.name}=${symbol.value ?? ''}`)
     .join('\u0000');
-  return `${guiClassKey}\u0001${preprocessorKey}`;
+  const macroKey = [...(input.macroDefinitions ?? [])]
+    .sort((left, right) => left.name.localeCompare(right.name)
+      || left.uri.localeCompare(right.uri)
+      || left.selectionRange.start.line - right.selectionRange.start.line
+      || left.selectionRange.start.character - right.selectionRange.start.character)
+    .map((macro) => `${macro.name}/${macro.parameters?.length ?? -1}=${macro.replacementText}`)
+    .join('\u0000');
+  return `${guiClassKey}\u0001${preprocessorKey}\u0001${macroKey}`;
 }
 
 function knownGuiClassMapFromInput(input: AnalyzeDocumentInput): ReadonlyMap<string, AnalysisGuiClassKind> {

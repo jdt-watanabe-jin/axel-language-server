@@ -163,6 +163,51 @@ suite('WorkspaceIndex', () => {
     );
   });
 
+  test('finds function-like macro definitions through includes', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const headerPath = path.join(tempDir, 'macros.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(headerPath, '#define WRAP(T) T value;\n');
+
+    const index = new WorkspaceIndex();
+    index.indexOpenDocument({
+      uri: mainUri,
+      version: 1,
+      text: '#include "macros.h"\nclass Box { WRAP(int) };'
+    });
+
+    assert.deepStrictEqual(
+      index.findVisibleMacroDefinitions(mainUri, 'WRAP').map((macro) => ({
+        name: macro.name,
+        parameters: macro.parameters,
+        replacementText: macro.replacementText
+      })),
+      [{
+        name: 'WRAP',
+        parameters: [{ label: 'T' }],
+        replacementText: 'T value;'
+      }]
+    );
+  });
+
+  test('selects visible function-like macro by arity', () => {
+    const index = new WorkspaceIndex();
+    const uri = 'file:///main.axl';
+    index.indexOpenDocument({
+      uri,
+      version: 1,
+      text: [
+        '#define ONE(a) a',
+        '#define TWO(a, b) a + b',
+        'void main() {}'
+      ].join('\n')
+    });
+
+    assert.strictEqual(index.findBestVisibleMacroDefinition(uri, 'TWO', 1), undefined);
+    assert.strictEqual(index.findBestVisibleMacroDefinition(uri, 'TWO', 2)?.replacementText, 'a + b');
+  });
+
   test('finds declarations from includes resolved by forced include files', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
     const mainPath = path.join(tempDir, 'main.axl');

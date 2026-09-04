@@ -5,6 +5,7 @@ import type {
   AnalysisDeclaration,
   AnalysisDiagnostic,
   AnalysisGuiClass,
+  AnalysisMacroDefinition,
   AnalysisPosition,
   AnalysisPreprocessorSymbol,
   AnalysisRange,
@@ -185,6 +186,23 @@ export class WorkspaceIndex {
       .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
       .filter((declaration) => declaration.name === name)
       .sort(compareDeclarations);
+  }
+
+  public findVisibleMacroDefinitions(sourceUri: string, name: string): AnalysisMacroDefinition[] {
+    this.indexForcedIncludes();
+    return this.collectVisibleMacroDefinitions(sourceUri)
+      .filter((macro) => macro.name === name)
+      .sort(compareMacroDefinitions);
+  }
+
+  public findBestVisibleMacroDefinition(
+    sourceUri: string,
+    name: string,
+    arity?: number
+  ): AnalysisMacroDefinition | undefined {
+    return this.findVisibleMacroDefinitions(sourceUri, name)
+      .filter((macro) => arity === undefined || macro.parameters?.length === arity)
+      .at(-1);
   }
 
   public listVisibleDeclarations(sourceUri: string): AnalysisDeclaration[] {
@@ -448,14 +466,16 @@ export class WorkspaceIndex {
         kind: entry.guiClass.kind
       }));
     const preprocessorSymbols = this.collectVisiblePreprocessorSymbols(input.uri);
-    if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0) {
+    const macroDefinitions = this.collectVisibleMacroDefinitions(input.uri).sort(compareMacroDefinitions);
+    if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0) {
       return initialAnalysis;
     }
 
     const analysis = this.analyzer.analyzeDocument({
       ...input,
       knownGuiClasses,
-      preprocessorSymbols
+      preprocessorSymbols,
+      macroDefinitions
     });
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
@@ -700,6 +720,11 @@ export class WorkspaceIndex {
         .map((guiClass) => ({ uri, guiClass })));
   }
 
+  private collectVisibleMacroDefinitions(sourceUri: string): AnalysisMacroDefinition[] {
+    return [sourceUri, ...this.collectVisibleUris(sourceUri)]
+      .flatMap((uri) => this.documents.get(uri)?.analysis.macroDefinitions ?? []);
+  }
+
   private collectVisiblePreprocessorSymbols(sourceUri: string): AnalysisPreprocessorSymbol[] {
     return [
       ...defaultPreprocessorSymbols(this.defines),
@@ -757,6 +782,14 @@ export class WorkspaceIndex {
 }
 
 function compareDeclarations(left: AnalysisDeclaration, right: AnalysisDeclaration): number {
+  return left.uri.localeCompare(right.uri)
+    || left.selectionRange.start.line - right.selectionRange.start.line
+    || left.selectionRange.start.character - right.selectionRange.start.character
+    || left.selectionRange.end.line - right.selectionRange.end.line
+    || left.selectionRange.end.character - right.selectionRange.end.character;
+}
+
+function compareMacroDefinitions(left: AnalysisMacroDefinition, right: AnalysisMacroDefinition): number {
   return left.uri.localeCompare(right.uri)
     || left.selectionRange.start.line - right.selectionRange.start.line
     || left.selectionRange.start.character - right.selectionRange.start.character
