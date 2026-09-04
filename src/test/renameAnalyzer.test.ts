@@ -105,6 +105,32 @@ suite('rename analyzer', () => {
       }
     });
   });
+
+  test('rename an inherited inline GUI event updates the inherited member declaration', () => {
+    const { analysis, position } = analyzeMarked([
+      'class GCWidget { void OnCreate() {} };',
+      'class GCButtonGroup : public GCWidget {};',
+      'class mydialog : public GCDialog {',
+      '  GCButtonGroup { |OnCreate() {} };',
+      '};'
+    ].join('\n'));
+
+    const result = getRenameEdits({
+      analysis,
+      position,
+      newName: 'OnBuild',
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(result, {
+      changes: {
+        'file:///main.axl': [
+          edit(0, 22, 30, 'OnBuild'),
+          edit(3, 18, 26, 'OnBuild')
+        ]
+      }
+    });
+  });
 });
 
 function analyze(text: string) {

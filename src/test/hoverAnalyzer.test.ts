@@ -1210,7 +1210,7 @@ suite('getHover', () => {
     });
   });
 
-  test('returns the part type hover for an inherited inline GUI event declaration', () => {
+  test('returns the inherited member hover for an inherited inline GUI event declaration', () => {
     const { analysis, position } = analyzeMarked([
       'class GCWidget { void OnCreate() {} };',
       'class GCButtonGroup : public GCWidget {};',
@@ -1226,8 +1226,8 @@ suite('getHover', () => {
     });
 
     assert.deepStrictEqual(hover, {
-      markdown: '```axel\nvoid GCButtonGroup::OnCreate()\n```',
-      plainText: 'void GCButtonGroup::OnCreate()'
+      markdown: '```axel\nvoid GCWidget::OnCreate()\n```',
+      plainText: 'void GCWidget::OnCreate()'
     });
   });
 
@@ -1362,9 +1362,9 @@ suite('getHover', () => {
     assertHoverText(analysis, index, { line: 34, character: 5 }, 'GCRadioButton mydialog::box.Two');
     assertHoverText(analysis, index, { line: 34, character: 9 }, 'void GCRadioButton::SetChecked(int val)');
     assertHoverText(analysis, index, { line: 23, character: 18 }, 'GCControlButton mydialog::ctlBtn');
-    assertHoverText(analysis, index, { line: 5, character: 4 }, 'void GCButtonGroup::OnCreate()');
+    assertHoverText(analysis, index, { line: 5, character: 4 }, 'void GCWidget::OnCreate()');
     assertHoverText(analysis, index, { line: 5, character: 17 }, 'string GCButtonGroup::text');
-    assertHoverText(analysis, index, { line: 9, character: 24 }, 'void GCCheckBox::OnCreate()');
+    assertHoverText(analysis, index, { line: 9, character: 24 }, 'void GCWidget::OnCreate()');
     assertHoverText(analysis, index, { line: 9, character: 37 }, 'string GCCheckBox::text');
     assertHoverText(analysis, index, { line: 23, character: 28 }, 'void GCControlButton::OnCreate()');
     assertHoverText(analysis, index, { line: 23, character: 41 }, 'int GCControlButton::style');

@@ -227,24 +227,10 @@ function findImplicitGuiReferenceDeclaration(
 
   const member = findDeclarationMember(input, context.receiverTypeName, reference.name, reference);
   if (member !== undefined) {
-    return shouldJumpToGuiReceiverType(context, reference, member)
-      ? findVisibleDeclaration(input, context.receiverTypeName) ?? member
-      : member;
+    return member;
   }
 
   return findDeclarationMember(input, context.rootClassName, reference.name, reference);
-}
-
-function shouldJumpToGuiReceiverType(
-  context: GuiMethodContext,
-  reference: AnalysisReference,
-  member: AnalysisDeclaration
-): boolean {
-  return context.part !== undefined
-    && context.method.event
-    && context.method.selectionRange !== undefined
-    && sameRange(context.method.selectionRange, reference.range)
-    && member.containerName !== context.receiverTypeName;
 }
 
 function findImplicitGuiMemberAccessDeclaration(

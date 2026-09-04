@@ -524,7 +524,7 @@ suite('navigation', () => {
     ]);
   });
 
-  test('definition on an inherited inline GUI event jumps to the receiver type member', () => {
+  test('definition on an inherited inline GUI event jumps to the inherited member declaration', () => {
     const { analysis, position } = analyzeMarked([
       'class GCWidget { void OnCreate() {} };',
       'class GCButtonGroup : public GCWidget {};',
@@ -540,7 +540,51 @@ suite('navigation', () => {
     });
 
     assert.deepStrictEqual(definitions.map((location) => location.range.start), [
-      { line: 1, character: 6 }
+      { line: 0, character: 22 }
+    ]);
+  });
+
+  test('references for an inherited GUI event include inline event declarations', () => {
+    const { analysis, position } = analyzeMarked([
+      'class GCWidget { void |OnCreate() {} };',
+      'class GCButtonGroup : public GCWidget {};',
+      'class mydialog : public GCDialog {',
+      '  GCButtonGroup { OnCreate() {} };',
+      '};'
+    ].join('\n'));
+
+    const references = getReferences({
+      analysis,
+      position,
+      includeDeclaration: true,
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(references.map((location) => location.range.start), [
+      { line: 0, character: 22 },
+      { line: 3, character: 18 }
+    ]);
+  });
+
+  test('references from an inherited inline GUI event use the inherited member declaration', () => {
+    const { analysis, position } = analyzeMarked([
+      'class GCWidget { void OnCreate() {} };',
+      'class GCButtonGroup : public GCWidget {};',
+      'class mydialog : public GCDialog {',
+      '  GCButtonGroup { |OnCreate() {} };',
+      '};'
+    ].join('\n'));
+
+    const references = getReferences({
+      analysis,
+      position,
+      includeDeclaration: true,
+      workspaceIndex: new WorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(references.map((location) => location.range.start), [
+      { line: 0, character: 22 },
+      { line: 3, character: 18 }
     ]);
   });
 

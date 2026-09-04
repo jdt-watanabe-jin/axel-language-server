@@ -280,7 +280,8 @@ function findImplicitGuiReferenceHover(
   const member = findImplicitGuiContextMember(input, context, reference);
   const ownerMember = member
     ?? findDeclarationMemberWithoutRecovery(input, context.rootClassName, reference.name, new Set<string>(), reference);
-  const shouldUseReceiverType = member !== undefined || ownerMember?.containerName === undefined;
+  const shouldUseReceiverType = (member !== undefined && member.containerName === context.receiverTypeName)
+    || ownerMember?.containerName === undefined;
   return ownerMember === undefined ? undefined : hoverForDeclarationText(
     shouldUseReceiverType
       ? hoverTextForGuiContextMemberDeclaration(ownerMember, context)
