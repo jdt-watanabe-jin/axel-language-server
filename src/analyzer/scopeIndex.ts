@@ -34,7 +34,7 @@ function collectNestedScopes(
   scopes: AnalysisScope[]
 ): void {
   for (const child of node.namedChildren) {
-    const isScope = SCOPE_NODE_TYPES.has(child.type);
+    const isScope = SCOPE_NODE_TYPES.has(child.type) || isPrototypeParameterList(child);
     const scope = isScope
       ? createScope(uri, `${child.startPosition.row}:${child.startPosition.column}`, parentId, nodeToAnalysisRange(child))
       : undefined;
@@ -45,6 +45,20 @@ function collectNestedScopes(
 
     collectNestedScopes(child, uri, scope?.id ?? parentId, scopes);
   }
+}
+
+// Definition parameters share the function scope so they remain visible in its body.
+// Prototype (and nested callback) parameters are confined to their own list.
+function isPrototypeParameterList(node: Parser.SyntaxNode): boolean {
+  if (node.type !== 'parameter_list' || node.parent === null) {
+    return false;
+  }
+
+  let declarator = node.parent;
+  while (declarator.parent?.childForFieldName('declarator')?.id === declarator.id) {
+    declarator = declarator.parent;
+  }
+  return declarator.type !== 'function_definition';
 }
 
 function createScope(
@@ -63,7 +77,7 @@ function createScope(
 
 function assignDeclarations(scopes: AnalysisScope[], declarations: AnalysisDeclaration[]): void {
   for (const declaration of declarations) {
-    const scope = declaration.kind === 'function' || isOwnContainerDeclaration(scopes, declaration.range)
+    const scope = isOwnContainerDeclaration(scopes, declaration.range)
       ? findParentScope(scopes, declaration.selectionRange)
       : findInnermostScope(scopes, declaration.selectionRange);
     scope.declarationIds.push(declaration.id);

@@ -10,6 +10,7 @@ import type {
 import { getBuiltinCompletions } from './builtins';
 import { DIRECT_GUI_BASE_NAMES } from './guiClassKinds';
 import {
+  contains,
   declarationsInTypeHierarchy as sharedDeclarationsInTypeHierarchy,
   isTypeDeclaration as sharedIsTypeDeclaration,
   isVisibleAt as sharedIsVisibleAt,
@@ -176,6 +177,7 @@ export function getCompletions(input: CompletionInput): AnalysisCompletionItem[]
   }
 
   if (context.kind === 'expression') {
+    items.push(...typeCompletionItems(input));
     items.push(...keywordItems(EXPRESSION_KEYWORDS));
     items.push(...getBuiltinCompletions());
     items.push(...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)));
@@ -430,6 +432,7 @@ function implicitGuiMemberCompletions(input: CompletionInput, path: string[]): A
 
 function typeMemberCompletions(input: CompletionInput, typeName: string): AnalysisCompletionItem[] {
   return declarationsInTypeHierarchy(input, typeName)
+    .filter((declaration) => declaration.kind !== 'parameter')
     .map((declaration) => ({
       name: declaration.name,
       kind: declaration.kind === 'function' ? 'method' : 'property',
@@ -458,17 +461,64 @@ function visibleDeclarationCompletions(
   input: CompletionInput,
   predicate: (declaration: AnalysisDeclaration) => boolean
 ): AnalysisCompletionItem[] {
-  return listVisibleDeclarations(input)
+  const visibleIds = lexicallyVisibleDeclarationIds(input);
+  const receiverType = thisReceiverType(input);
+  const memberIds = new Set<string>();
+  if (receiverType !== undefined) {
+    for (const declaration of declarationsInTypeHierarchy(input, receiverType)) {
+      if (declaration.kind !== 'parameter') {
+        visibleIds.add(declaration.id);
+        memberIds.add(declaration.id);
+      }
+    }
+  }
+  const declarations = listVisibleDeclarations(input);
+  const typeNames = new Set(declarations.filter(isTypeDeclaration).map((declaration) => declaration.name));
+  const enclosingScopeIds = new Set(input.analysis.scopes
+    .filter((scope) => scope.parentId !== undefined && contains(scope.range, input.position))
+    .flatMap((scope) => scope.declarationIds));
+  const memberOwnerNames = new Set(declarations
+    .filter((declaration) => ['class', 'struct', 'union'].includes(declaration.kind))
+    .map((declaration) => declaration.name));
+  return declarations
+    .filter((declaration) => visibleIds.has(declaration.id))
+    .filter((declaration) => enclosingScopeIds.has(declaration.id)
+      || !memberOwnerNames.has(declaration.containerName ?? '')
+      || memberIds.has(declaration.id))
     .filter(predicate)
     .filter((declaration) => isVisibleAt(declaration, input.position, input.analysis.uri))
-    .map((declaration) => completionFromDeclaration(input, declaration));
+    .map((declaration) => completionFromDeclaration(input, declaration, typeNames));
 }
 
-function completionFromDeclaration(input: CompletionInput, declaration: AnalysisDeclaration): AnalysisCompletionItem {
+function lexicallyVisibleDeclarationIds(input: CompletionInput): Set<string> {
+  const documents = new Map((input.workspaceIndex.listVisibleDocuments?.(input.analysis.uri) ?? [])
+    .map((document) => [document.uri, document]));
+  documents.set(input.analysis.uri, input.analysis);
+  const ids = new Set<string>();
+  for (const document of documents.values()) {
+    for (const scope of document.scopes) {
+      if (scope.parentId === undefined
+        || (document.uri === input.analysis.uri && contains(scope.range, input.position))) {
+        for (const id of scope.declarationIds) {
+          ids.add(id);
+        }
+      }
+    }
+  }
+  return ids;
+}
+
+function completionFromDeclaration(
+  input: CompletionInput,
+  declaration: AnalysisDeclaration,
+  typeNames: ReadonlySet<string>
+): AnalysisCompletionItem {
   return {
     name: declaration.name,
     kind: completionKindForDeclaration(declaration),
-    detail: declaration.detail,
+    detail: declaration.kind !== 'parameter' && typeNames.has(declaration.containerName ?? '')
+      ? memberDetail(declaration)
+      : declaration.detail,
     ...completionDocumentation(input, declaration)
   };
 }

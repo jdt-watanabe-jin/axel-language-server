@@ -8,6 +8,159 @@ import { DocumentAnalyzer } from '../analyzer/documentAnalyzer';
 import { WorkspaceIndex } from '../analyzer/workspaceIndex';
 
 suite('getCompletions', () => {
+  test('excludes prototype parameters from expression completions', () => {
+    const { text, position } = marked('int time(int *timer);\nvoid main() { ti| }');
+    const analysis = analyze(text);
+    const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+
+    assertCompletionNames(completions, ['time']);
+    assertNoCompletionNames(completions, ['timer']);
+  });
+
+  test('only completes parameters and locals in enclosing scopes', () => {
+    const { text, position } = marked([
+      'void other(int otherParameter) { int otherLocal; }',
+      'void main(int currentParameter) {',
+      '  int currentLocal;',
+      '  { int expiredLocal; }',
+      '  |',
+      '  int laterLocal;',
+      '}'
+    ].join('\n'));
+    const analysis = analyze(text);
+    const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+
+    assertCompletionNames(completions, ['currentParameter', 'currentLocal', 'other']);
+    assertNoCompletionNames(completions, ['otherParameter', 'otherLocal', 'expiredLocal', 'laterLocal']);
+  });
+
+  test('excludes parameters and locals from included headers', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-completion-scope-'));
+    try {
+      fs.writeFileSync(path.join(tempDir, 'time.h'), [
+        'int time(int *timer);',
+        'int headerGlobal;',
+        'void helper(int headerParameter) { int headerLocal; }'
+      ].join('\n'));
+      const { text, position } = marked('#include "time.h"\nvoid main() { ti| }');
+      const index = new WorkspaceIndex();
+      const analysis = index.indexOpenDocument({
+        uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1, text
+      });
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
+
+      assertCompletionNames(completions, ['time', 'helper', 'headerGlobal']);
+      assertNoCompletionNames(completions, ['timer', 'headerParameter', 'headerLocal']);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  for (const outOfClass of [false, true]) {
+    test(`preserves implicit inherited members in ${outOfClass ? 'out-of-class' : 'inline'} methods`, () => {
+      const { text, position } = marked([
+        'class Base { int inheritedValue; void helper(int hiddenParameter); };',
+        'class Other { int unrelatedValue; };',
+        outOfClass
+          ? 'class Child : public Base { int directValue; void run(); };\nvoid Child::run() { inh| }'
+          : 'class Child : public Base { int directValue; void run() { inh| } };'
+      ].join('\n'));
+      const analysis = analyze(text);
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+
+      assertCompletionNames(completions, ['inheritedValue', 'directValue', 'helper']);
+      assertNoCompletionNames(completions, ['hiddenParameter', 'unrelatedValue']);
+    });
+  }
+
+  for (const definition of [
+    'class VGPathData { void T(); };',
+    'class VGPathData { void T(); }; void VGPathData::T() {}'
+  ]) {
+    test(`hides unrelated class methods from bare completion: ${definition}`, () => {
+      const { text, position } = marked(`${definition}\nvoid main() { t| }`);
+      const analysis = analyze(text);
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+      assertNoCompletionNames(completions, ['T']);
+    });
+  }
+
+  for (const body of [
+    'void main() { VGPathData path; path.t| }',
+    'class Derived : public VGPathData { void run() { t| } };'
+  ]) {
+    test(`preserves class method completion in its receiver context: ${body}`, () => {
+      const { text, position } = marked(`class VGPathData { void T(); };\n${body}`);
+      const analysis = analyze(text);
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+      assertCompletionNames(completions, ['T']);
+      assert.strictEqual(completions.find((item) => item.name === 'T')?.detail, 'void VGPathData::T()');
+    });
+  }
+
+  test('hides class method prototypes from included headers in ordinary functions', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-completion-class-'));
+    try {
+      fs.writeFileSync(path.join(tempDir, 'path.h'), 'class VGPathData { void T(); };');
+      const { text, position } = marked('#include "path.h"\nvoid main() { t| }');
+      const index = new WorkspaceIndex();
+      const analysis = index.indexOpenDocument({
+        uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1, text
+      });
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
+      assertNoCompletionNames(completions, ['T']);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  for (const source of [
+    'class X { X(int arg) { int local; ar| } };',
+    'class X {}; void X(int arg) { int local; ar| }'
+  ]) {
+    test(`keeps lexical locals when a function shares a class name: ${source}`, () => {
+      const { text, position } = marked(source);
+      const analysis = analyze(text);
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+      assertCompletionNames(completions, ['arg', 'local']);
+    });
+  }
+
+  test('completes builtin types while starting a declaration in a function body', () => {
+    const { text, position } = marked('void main() { i| }');
+    const analysis = analyze(text);
+    const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+    assertCompletionNames(completions, ['int', 'int64']);
+  });
+
+  test('completes visible class names containing GC in a function body', () => {
+    const { text, position } = marked([
+      'class GCCustom {};',
+      'class MyGCWidget {};',
+      'void main() { GC| }'
+    ].join('\n'));
+    const analysis = analyze(text);
+    const completions = getCompletions({ analysis, text, position, workspaceIndex: new WorkspaceIndex() });
+    assertCompletionNames(completions, ['GCDialog', 'GCCustom', 'MyGCWidget']);
+    assert.strictEqual(completions.find((item) => item.name === 'MyGCWidget')?.kind, 'class');
+  });
+
+  test('completes included types while starting a declaration in a function body', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-completion-types-'));
+    try {
+      fs.writeFileSync(path.join(tempDir, 'types.h'), 'class GCIncluded {}; typedef int Index;');
+      const { text, position } = marked('#include "types.h"\nvoid main() { GC| }');
+      const index = new WorkspaceIndex();
+      const analysis = index.indexOpenDocument({
+        uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1, text
+      });
+      const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
+      assertCompletionNames(completions, ['GCIncluded', 'Index']);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test('returns declaration keywords at top level', () => {
     const { text, position } = marked('|');
     const analysis = analyze(text);
