@@ -174,13 +174,7 @@ function isRecoverableTypeSpecifierNode(node: Parser.SyntaxNode): boolean {
 }
 
 function nextNamedSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
-  const siblings = node.parent?.namedChildren;
-  if (siblings === undefined) {
-    return undefined;
-  }
-
-  const index = siblings.findIndex((sibling) => sibling.id === node.id);
-  return index < 0 ? undefined : siblings[index + 1];
+  return node.nextNamedSibling ?? undefined;
 }
 
 function macroDeclarationFromNode(
@@ -689,13 +683,7 @@ function leadingDocumentationForNode(node: Parser.SyntaxNode): string | undefine
 }
 
 function previousNamedSibling(node: Parser.SyntaxNode): Parser.SyntaxNode | undefined {
-  const siblings = node.parent?.namedChildren;
-  if (siblings === undefined) {
-    return undefined;
-  }
-
-  const index = siblings.findIndex((sibling) => sibling.id === node.id);
-  return index <= 0 ? undefined : siblings[index - 1];
+  return node.previousNamedSibling ?? undefined;
 }
 
 function documentationFromComments(comments: readonly string[]): string | undefined {

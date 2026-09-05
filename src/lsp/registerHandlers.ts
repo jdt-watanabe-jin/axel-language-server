@@ -50,6 +50,7 @@ export interface AnalyzerLike extends
   WorkspaceNavigationIndex,
   WorkspaceCodeActionIndex {
   analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument;
+  analyzeDiagnosticDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   analyzeForegroundDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   indexOpenDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   semanticTokenWorkspaceIndex?(sourceUri: string): WorkspaceDeclarationLookup;
@@ -503,6 +504,7 @@ function getErrorMessage(error: unknown): string {
 function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext): void {
   context.analyzer.onBackgroundIndexingComplete?.(() => {
     context.connection.languages.semanticTokens.refresh();
+    context.connection.languages.diagnostics.refresh();
   });
 }
 
@@ -520,7 +522,11 @@ function analyzeForDiagnosticRequest(
   context: HandlerRegistrationContext,
   input: AnalyzeDocumentInput
 ): AnalyzedDocument {
-  return context.analyzer.analyzeDocument(input);
+  const analysis = context.analyzer.analyzeDiagnosticDocument?.(input)
+    ?? context.analyzer.analyzeForegroundDocument?.(input)
+    ?? context.analyzer.analyzeDocument(input);
+  sendInactiveRanges(context, analysis);
+  return analysis;
 }
 
 type LogDetails = Record<string, string | number | boolean | undefined>;

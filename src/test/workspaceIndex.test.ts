@@ -57,6 +57,31 @@ suite('WorkspaceIndex', () => {
     assert.deepStrictEqual(index.findDeclarations('includedValue'), []);
   });
 
+  test('diagnostic analysis avoids synchronously indexing pending include documents', async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
+    const mainPath = path.join(tempDir, 'main.axl');
+    const headerPath = path.join(tempDir, 'types.h');
+    const mainUri = pathToFileURL(mainPath).toString();
+    fs.writeFileSync(headerPath, 'class IncludedType {};');
+    const index = new WorkspaceIndex();
+
+    const analysis = index.analyzeDiagnosticDocument({
+      uri: mainUri,
+      version: 1,
+      text: '#include "types.h"\nIncludedType value;'
+    });
+
+    assert.deepStrictEqual(analysis.declarations.map((declaration) => declaration.name), ['value']);
+    assert.deepStrictEqual(index.findDeclarations('IncludedType'), []);
+
+    await index.waitForBackgroundIndexing();
+
+    assert.deepStrictEqual(
+      index.findDeclarations('IncludedType').map((declaration) => declaration.name),
+      ['IncludedType']
+    );
+  });
+
   test('full analysis adds workspace diagnostics after foreground analysis cached the same version', () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-workspace-'));
     const mainPath = path.join(tempDir, 'main.axl');

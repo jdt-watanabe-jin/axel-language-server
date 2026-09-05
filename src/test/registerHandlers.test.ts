@@ -358,15 +358,17 @@ suite('registerHandlers', () => {
     }]);
   });
 
-  test('returns workspace diagnostics for document diagnostic requests', () => {
+  test('uses foreground analysis for document diagnostic requests', () => {
     let diagnosticsHandler: ((params: { textDocument: { uri: string } }) => unknown) | undefined;
-    const workspaceDiagnostic = {
+    let fullAnalysisCalls = 0;
+    let foregroundAnalysisCalls = 0;
+    const foregroundDiagnostic = {
       severity: 'error' as const,
       source: 'axel' as const,
-      message: "Include file not found: 'missing.h'.",
+      message: 'Syntax error.',
       range: {
-        start: { line: 0, character: 10 },
-        end: { line: 0, character: 19 }
+        start: { line: 0, character: 0 },
+        end: { line: 0, character: 1 }
       }
     };
     const connection = {
@@ -402,10 +404,30 @@ suite('registerHandlers', () => {
       onDidClose: () => undefined
     };
     const analyzer = {
-      analyzeDocument: () => ({
+      analyzeDocument: () => {
+        fullAnalysisCalls += 1;
+        return {
+          uri: 'file:///main.axl',
+          version: 1,
+          diagnostics: [],
+          symbols: [],
+          declarations: [],
+          references: [],
+          macroDefinitions: [],
+          macroInvocations: [],
+          scopes: [],
+          includes: [],
+          scriptExecutions: [],
+          guiClasses: [],
+          guiMethods: []
+        };
+      },
+      analyzeForegroundDocument: () => {
+        foregroundAnalysisCalls += 1;
+        return {
         uri: 'file:///main.axl',
         version: 1,
-        diagnostics: [workspaceDiagnostic],
+        diagnostics: [foregroundDiagnostic],
         symbols: [],
         declarations: [],
         references: [],
@@ -416,22 +438,8 @@ suite('registerHandlers', () => {
         scriptExecutions: [],
         guiClasses: [],
         guiMethods: []
-      }),
-      analyzeForegroundDocument: () => ({
-        uri: 'file:///main.axl',
-        version: 1,
-        diagnostics: [],
-        symbols: [],
-        declarations: [],
-        references: [],
-        macroDefinitions: [],
-        macroInvocations: [],
-        scopes: [],
-        includes: [],
-        scriptExecutions: [],
-        guiClasses: [],
-        guiMethods: []
-      })
+        };
+      }
     };
 
     registerHandlers({
@@ -450,10 +458,12 @@ suite('registerHandlers', () => {
       items: [{
         severity: 1,
         source: 'axel',
-        message: "Include file not found: 'missing.h'.",
-        range: workspaceDiagnostic.range
+        message: 'Syntax error.',
+        range: foregroundDiagnostic.range
       }]
     });
+    assert.strictEqual(foregroundAnalysisCalls, 1);
+    assert.strictEqual(fullAnalysisCalls, 0);
   });
 
   test('uses foreground analysis for opened documents and semantic tokens', () => {
@@ -1373,20 +1383,24 @@ suite('registerHandlers', () => {
     ]);
   });
 
-  test('refreshes semantic tokens after background indexing completes', () => {
+  test('refreshes semantic tokens and diagnostics after background indexing completes', () => {
     let backgroundComplete: (() => void) | undefined;
-    let refreshCount = 0;
+    let semanticTokensRefreshCount = 0;
+    let diagnosticsRefreshCount = 0;
     const connection = {
       onInitialize: () => undefined,
       onDidChangeWatchedFiles: () => undefined,
       languages: {
         diagnostics: {
-          on: () => undefined
+          on: () => undefined,
+          refresh: () => {
+            diagnosticsRefreshCount += 1;
+          }
         },
         semanticTokens: {
           on: () => undefined,
           refresh: () => {
-            refreshCount += 1;
+            semanticTokensRefreshCount += 1;
           }
         }
       },
@@ -1436,7 +1450,8 @@ suite('registerHandlers', () => {
 
     backgroundComplete?.();
 
-    assert.strictEqual(refreshCount, 1);
+    assert.strictEqual(semanticTokensRefreshCount, 1);
+    assert.strictEqual(diagnosticsRefreshCount, 1);
   });
 });
 

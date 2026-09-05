@@ -10,8 +10,9 @@ import type {
 import { getBuiltinHover } from './builtins';
 import {
   compareDeclarations,
-  findDeclarationMember,
+  findDeclarationMember as findDeclarationMemberUncached,
   findLocalDeclaration,
+  isTypeDeclaration,
   visibleDeclarationsByName,
   type DeclarationResolutionInput,
   type WorkspaceDeclarationLookup
@@ -25,10 +26,12 @@ export function collectSemanticTokens(
   analysis: AnalyzedDocument,
   workspaceIndex: WorkspaceDeclarationLookup = {}
 ): AnalysisSemanticToken[] {
+  const cachedWorkspaceIndex = createCachedWorkspaceDeclarationLookup(workspaceIndex);
+  const resolutionCache = createSemanticTokenResolutionCache(analysis, cachedWorkspaceIndex);
   const tokens = [
     ...analysis.declarations.flatMap(tokenFromDeclaration),
-    ...analysis.references.flatMap((reference) => tokenFromReference(reference, analysis, workspaceIndex)),
-    ...(analysis.semanticTokenReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, workspaceIndex)),
+    ...analysis.references.flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
+    ...(analysis.semanticTokenReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
     ...(analysis.semanticTokens ?? []),
     ...analysis.scriptExecutions.map((execution) => ({
       range: execution.selectionRange,
@@ -40,6 +43,57 @@ export function collectSemanticTokens(
   ];
 
   return dedupeAndSort(tokens).filter(isSingleLineToken);
+}
+
+function createCachedWorkspaceDeclarationLookup(
+  workspaceIndex: WorkspaceDeclarationLookup
+): WorkspaceDeclarationLookup {
+  const visibleDeclarationsByUri = new Map<string, AnalysisDeclaration[]>();
+  const declarationsByUriAndName = new Map<string, Map<string, AnalysisDeclaration[]>>();
+  const lookupCache = new Map<string, AnalysisDeclaration[]>();
+
+  function listVisibleDeclarations(uri: string): AnalysisDeclaration[] {
+    const cached = visibleDeclarationsByUri.get(uri);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const declarations = workspaceIndex.listVisibleDeclarations?.(uri) ?? [];
+    visibleDeclarationsByUri.set(uri, declarations);
+    return declarations;
+  }
+
+  function declarationsByName(uri: string): Map<string, AnalysisDeclaration[]> {
+    const cached = declarationsByUriAndName.get(uri);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const declarations = createDeclarationsByName([], listVisibleDeclarations(uri));
+    declarationsByUriAndName.set(uri, declarations);
+    return declarations;
+  }
+
+  return {
+    findVisibleDeclarations: (uri, name) => {
+      if (workspaceIndex.listVisibleDeclarations !== undefined) {
+        return declarationsByName(uri).get(name) ?? [];
+      }
+
+      const key = `${uri}\0${name}`;
+      const cached = lookupCache.get(key);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const declarations = workspaceIndex.findVisibleDeclarations?.(uri, name) ?? [];
+      lookupCache.set(key, declarations);
+      return declarations;
+    },
+    ...(workspaceIndex.listVisibleDeclarations === undefined
+      ? {}
+      : { listVisibleDeclarations })
+  };
 }
 
 function tokenFromDeclaration(declaration: AnalysisDeclaration): AnalysisSemanticToken[] {
@@ -58,13 +112,14 @@ function tokenFromDeclaration(declaration: AnalysisDeclaration): AnalysisSemanti
 function tokenFromReference(
   reference: AnalysisReference,
   analysis: AnalyzedDocument,
-  workspaceIndex: WorkspaceDeclarationLookup
+  workspaceIndex: WorkspaceDeclarationLookup,
+  resolutionCache: SemanticTokenResolutionCache
 ): AnalysisSemanticToken[] {
   if (isGuiMethodSelectionReference(analysis, reference)) {
     return [];
   }
 
-  const tokenType = tokenTypeFromReference(reference, analysis, workspaceIndex);
+  const tokenType = tokenTypeFromReference(reference, analysis, workspaceIndex, resolutionCache);
   if (tokenType === undefined) {
     return [];
   }
@@ -113,7 +168,8 @@ function tokenTypeFromDeclaration(declaration: AnalysisDeclaration): AnalysisSem
 function tokenTypeFromReference(
   reference: AnalysisReference,
   analysis: AnalyzedDocument,
-  workspaceIndex: WorkspaceDeclarationLookup
+  workspaceIndex: WorkspaceDeclarationLookup,
+  resolutionCache: SemanticTokenResolutionCache
 ): AnalysisSemanticTokenType | undefined {
   if (reference.memberAccess !== undefined) {
     return reference.call === true ? 'method' : 'property';
@@ -121,7 +177,7 @@ function tokenTypeFromReference(
 
   const resolutionInput = { analysis, workspaceIndex, position: reference.range.start };
   if (reference.typeReference === true) {
-    const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput);
+    const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput, resolutionCache);
     if (visibleDeclaration !== undefined) {
       return tokenTypeFromReferenceDeclaration(reference, visibleDeclaration);
     }
@@ -132,12 +188,12 @@ function tokenTypeFromReference(
     return tokenTypeFromReferenceDeclaration(reference, localDeclaration);
   }
 
-  const implicitGuiMember = findImplicitGuiMemberDeclaration(resolutionInput, reference);
+  const implicitGuiMember = findImplicitGuiMemberDeclaration(resolutionInput, reference, resolutionCache);
   if (implicitGuiMember !== undefined) {
     return tokenTypeFromReferenceDeclaration(reference, implicitGuiMember);
   }
 
-  const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput);
+  const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput, resolutionCache);
   if (visibleDeclaration !== undefined) {
     return tokenTypeFromReferenceDeclaration(reference, visibleDeclaration);
   }
@@ -151,9 +207,10 @@ function tokenTypeFromReference(
 
 function matchingVisibleDeclaration(
   reference: AnalysisReference,
-  input: DeclarationResolutionInput
+  input: DeclarationResolutionInput,
+  resolutionCache: SemanticTokenResolutionCache
 ): AnalysisDeclaration | undefined {
-  return visibleDeclarationsByName(input, reference.name)
+  return resolutionCache.visibleDeclarationsByName(input, reference.name)
     .find((declaration) => referenceMatchesDeclarationKind(reference, declaration));
 }
 
@@ -198,7 +255,8 @@ function isOperatorName(name: string): boolean {
 
 function findImplicitGuiMemberDeclaration(
   input: DeclarationResolutionInput & { analysis: AnalyzedDocument },
-  reference: AnalysisReference
+  reference: AnalysisReference,
+  resolutionCache: SemanticTokenResolutionCache
 ): AnalysisDeclaration | undefined {
   const context = findEnclosingGuiMethodContext({
     analysis: input.analysis,
@@ -208,22 +266,23 @@ function findImplicitGuiMemberDeclaration(
     return undefined;
   }
 
-  return findDeclarationMember(input, context.receiverTypeName, reference.name)
-    ?? findRecoveredGuiDeclarationMember(input, context.receiverTypeName, reference)
-    ?? findDeclarationMember(input, context.rootClassName, reference.name)
-    ?? findRecoveredGuiDeclarationMember(input, context.rootClassName, reference);
+  return resolutionCache.findDeclarationMember(input, context.receiverTypeName, reference.name)
+    ?? findRecoveredGuiDeclarationMember(input, context.receiverTypeName, reference, resolutionCache)
+    ?? resolutionCache.findDeclarationMember(input, context.rootClassName, reference.name)
+    ?? findRecoveredGuiDeclarationMember(input, context.rootClassName, reference, resolutionCache);
 }
 
 function findRecoveredGuiDeclarationMember(
   input: DeclarationResolutionInput,
   containerName: string,
-  reference: AnalysisReference
+  reference: AnalysisReference,
+  resolutionCache: SemanticTokenResolutionCache
 ): AnalysisDeclaration | undefined {
   if (!/^GC[A-Za-z_$][0-9A-Za-z_$]*$/.test(containerName)) {
     return undefined;
   }
 
-  const declaration = visibleDeclarationsByName(input, reference.name)
+  const declaration = resolutionCache.visibleDeclarationsByName(input, reference.name)
     .filter((item) => item.containerName === undefined && isRecoveredGuiMember(item, reference.name))
     .sort(compareDeclarations)[0];
   if (declaration === undefined) {
@@ -239,6 +298,169 @@ function findRecoveredGuiDeclarationMember(
 
 function isRecoveredGuiMember(declaration: AnalysisDeclaration, memberName: string): boolean {
   return declaration.detail.includes(`${memberName}(`) || declaration.detail.endsWith(memberName);
+}
+
+interface SemanticTokenResolutionCache {
+  visibleDeclarationsByName(input: DeclarationResolutionInput, name: string): AnalysisDeclaration[];
+  findDeclarationMember(
+    input: DeclarationResolutionInput,
+    containerName: string,
+    memberName: string
+  ): AnalysisDeclaration | undefined;
+}
+
+function createSemanticTokenResolutionCache(
+  analysis: AnalyzedDocument,
+  workspaceIndex: WorkspaceDeclarationLookup
+): SemanticTokenResolutionCache {
+  let visibleDeclarations: AnalysisDeclaration[] | undefined;
+  let visibleDeclarationIndex: Map<string, AnalysisDeclaration[]> | undefined;
+  let allVisibleDeclarations: AnalysisDeclaration[] | undefined;
+  const typeHierarchyDeclarationsByContainerName = new Map<string, Map<string, AnalysisDeclaration[]>>();
+  const declarationsByName = new Map<string, AnalysisDeclaration[]>();
+
+  function listVisibleDeclarations(): AnalysisDeclaration[] | undefined {
+    visibleDeclarations ??= workspaceIndex.listVisibleDeclarations?.(analysis.uri);
+    return visibleDeclarations;
+  }
+
+  return {
+    visibleDeclarationsByName: (input, name) => {
+      if (input.analysis.uri !== analysis.uri) {
+        return visibleDeclarationsByName(input, name);
+      }
+
+      const cached = declarationsByName.get(name);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const listed = listVisibleDeclarations();
+      if (listed !== undefined && visibleDeclarationIndex === undefined) {
+        visibleDeclarationIndex = createDeclarationsByName(analysis.declarations, listed);
+      }
+      const declarations = visibleDeclarationIndex?.get(name) ?? visibleDeclarationsByName(input, name);
+      declarationsByName.set(name, declarations);
+      return declarations;
+    },
+    findDeclarationMember: (input, containerName, memberName) => {
+      if (input.analysis.uri !== analysis.uri) {
+        return findDeclarationMemberUncached(input, containerName, memberName);
+      }
+
+      let declarationsByMemberName = typeHierarchyDeclarationsByContainerName.get(containerName);
+      if (declarationsByMemberName === undefined) {
+        declarationsByMemberName = createTypeHierarchyDeclarationsByName(
+          visibleDeclarationsForInput(input),
+          containerName
+        );
+        typeHierarchyDeclarationsByContainerName.set(containerName, declarationsByMemberName);
+      }
+
+      return declarationsByMemberName.get(memberName)?.[0];
+    }
+  };
+
+  function visibleDeclarationsForInput(input: DeclarationResolutionInput): AnalysisDeclaration[] {
+    if (input.analysis.uri !== analysis.uri) {
+      return [
+        ...input.analysis.declarations,
+        ...(input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri) ?? [])
+      ].sort(compareDeclarations);
+    }
+
+    allVisibleDeclarations ??= Array.from(new Map([
+      ...analysis.declarations,
+      ...(listVisibleDeclarations() ?? [])
+    ].map((declaration) => [declaration.id, declaration])).values())
+      .sort(compareDeclarations);
+    return allVisibleDeclarations;
+  }
+}
+
+function createDeclarationsByName(
+  localDeclarations: readonly AnalysisDeclaration[],
+  visibleDeclarations: readonly AnalysisDeclaration[]
+): Map<string, AnalysisDeclaration[]> {
+  const declarationsById = new Map([
+    ...localDeclarations,
+    ...visibleDeclarations
+  ].map((declaration) => [declaration.id, declaration]));
+  const declarationsByName = new Map<string, AnalysisDeclaration[]>();
+  for (const declaration of declarationsById.values()) {
+    const declarations = declarationsByName.get(declaration.name) ?? [];
+    declarations.push(declaration);
+    declarationsByName.set(declaration.name, declarations);
+  }
+
+  for (const declarations of declarationsByName.values()) {
+    declarations.sort(compareDeclarations);
+  }
+  return declarationsByName;
+}
+
+function createTypeHierarchyDeclarationsByName(
+  visibleDeclarations: readonly AnalysisDeclaration[],
+  typeName: string
+): Map<string, AnalysisDeclaration[]> {
+  const declarations: AnalysisDeclaration[] = [];
+  const visited = new Set<string>();
+
+  function visit(currentTypeName: string): void {
+    if (visited.has(currentTypeName)) {
+      return;
+    }
+
+    visited.add(currentTypeName);
+    declarations.push(...visibleDeclarations.filter((declaration) => declaration.containerName === currentTypeName));
+    declarations.push(...recoveredStaticMemberDeclarations(visibleDeclarations, currentTypeName));
+
+    const baseName = visibleDeclarations
+      .find((declaration) => isTypeDeclaration(declaration) && declaration.name === currentTypeName)
+      ?.baseName;
+    if (baseName !== undefined) {
+      visit(baseName);
+    }
+  }
+
+  visit(typeName);
+  return createDeclarationsByName([], declarations);
+}
+
+function recoveredStaticMemberDeclarations(
+  declarations: readonly AnalysisDeclaration[],
+  containerName: string
+): AnalysisDeclaration[] {
+  return declarations
+    .filter((declaration) => declaration.containerName === undefined)
+    .filter((declaration) => declaration.detail.startsWith('static '))
+    .filter((declaration) => recoveredStaticMemberOwner(declarations, declaration)?.name === containerName)
+    .map((declaration) => ({ ...declaration, containerName }));
+}
+
+function recoveredStaticMemberOwner(
+  declarations: readonly AnalysisDeclaration[],
+  member: AnalysisDeclaration
+): AnalysisDeclaration | undefined {
+  return declarations
+    .filter(isTypeDeclaration)
+    .filter((declaration) => declaration.uri === member.uri)
+    .filter((declaration) => positionBefore(declaration.selectionRange.start, member.selectionRange.start))
+    .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start))[0];
+}
+
+function positionBefore(
+  left: AnalysisDeclaration['selectionRange']['start'],
+  right: AnalysisDeclaration['selectionRange']['start']
+): boolean {
+  return left.line < right.line || (left.line === right.line && left.character < right.character);
+}
+
+function comparePositions(
+  left: AnalysisDeclaration['selectionRange']['start'],
+  right: AnalysisDeclaration['selectionRange']['start']
+): number {
+  return left.line - right.line || left.character - right.character;
 }
 
 function isGuiMethodSelectionReference(

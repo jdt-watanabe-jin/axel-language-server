@@ -108,6 +108,15 @@ export class WorkspaceIndex {
     });
   }
 
+  public analyzeDiagnosticDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
+    const foregroundAnalysis = this.analyzeForegroundDocument(input);
+    if (this.backgroundIndexingScheduled || this.pendingBackgroundDocuments.size > 0) {
+      return foregroundAnalysis;
+    }
+
+    return this.indexOpenDocument(input);
+  }
+
   public semanticTokenWorkspaceIndex(_sourceUri: string): WorkspaceDeclarationLookup {
     return {
       findVisibleDeclarations: (uri, name) => this.listCachedVisibleDeclarations(uri)
