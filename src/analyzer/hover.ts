@@ -1,3 +1,4 @@
+import { withDeclarationOrigin } from './declarationOrigin';
 import type {
   AnalysisDeclaration,
   AnalyzedDocument,
@@ -27,6 +28,7 @@ import {
   allGuiMethods,
   findEnclosingGuiMethodContext,
   findVisibleGuiClass,
+  findVisibleGuiClassEntry,
   resolveGuiPartPath,
   resolveLongestGuiPartPath,
   type GuiMethodContext,
@@ -40,6 +42,7 @@ export interface HoverInput {
 }
 
 export interface WorkspaceDeclarationIndex {
+  listVisibleDocuments?(sourceUri: string): AnalyzedDocument[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;
   findBestVisibleMacroDefinition?(
@@ -92,7 +95,9 @@ export function getHover(input: HoverInput): AnalysisHover | null {
       }
     }
 
-    return hoverForReferenceDeclaration(referenceDeclaration, reference);
+    return withDeclarationOrigin(
+      hoverForReferenceDeclaration(referenceDeclaration, reference), input.analysis.uri, referenceDeclaration.uri
+    );
   }
 
   const implicitGuiHover = findImplicitGuiReferenceHover(input, reference);
@@ -159,10 +164,10 @@ function hoverForMacroInvocation(
     expandedText + expansionNote
   ].join('\n');
 
-  return {
+  return withDeclarationOrigin({
     markdown: markdownForMacroExpansion(macro.detail, macro.documentation, expandedText, expansionNote),
     plainText
-  };
+  }, input.analysis.uri, macro.uri);
 }
 
 function formatMacroExpansionForHover(expandedText: string): string {
@@ -256,7 +261,9 @@ function findGuiReferenceHover(input: HoverInput): AnalysisHover | null | undefi
   }
 
   const part = resolveGuiMemberAccess(input, reference.memberAccess, input.position);
-  return part === undefined ? undefined : hoverFromText(guiPartText(part.ownerName, part.part));
+  return part === undefined ? undefined : withDeclarationOrigin(
+    hoverFromText(guiPartText(part.ownerName, part.part)), input.analysis.uri, part.ownerUri
+  );
 }
 
 function findImplicitGuiReferenceHover(
@@ -274,7 +281,9 @@ function findImplicitGuiReferenceHover(
 
   const part = resolveGuiPartPath(input, context.rootClassName, [reference.name]);
   if (part !== undefined) {
-    return hoverFromText(implicitGuiPartText(context.rootClassName, part.part));
+    return withDeclarationOrigin(
+      hoverFromText(implicitGuiPartText(context.rootClassName, part.part)), input.analysis.uri, part.ownerUri
+    );
   }
 
   const member = findImplicitGuiContextMember(input, context, reference);
@@ -282,12 +291,12 @@ function findImplicitGuiReferenceHover(
     ?? findDeclarationMemberWithoutRecovery(input, context.rootClassName, reference.name, new Set<string>(), reference);
   const shouldUseReceiverType = (member !== undefined && member.containerName === context.receiverTypeName)
     || ownerMember?.containerName === undefined;
-  return ownerMember === undefined ? undefined : hoverForDeclarationText(
+  return ownerMember === undefined ? undefined : withDeclarationOrigin(hoverForDeclarationText(
     shouldUseReceiverType
       ? hoverTextForGuiContextMemberDeclaration(ownerMember, context)
       : hoverTextForMemberDeclaration(ownerMember),
     ownerMember.documentation
-  );
+  ), input.analysis.uri, ownerMember.uri);
 }
 
 function findImplicitGuiContextMember(
@@ -329,7 +338,10 @@ function hoverForImplicitGuiMemberAccess(
   }
 
   if (partPrefix.length === path.length) {
-    return hoverFromText(implicitGuiPartText(context.rootClassName, partPrefix.part.part));
+    return withDeclarationOrigin(
+      hoverFromText(implicitGuiPartText(context.rootClassName, partPrefix.part.part)),
+      input.analysis.uri, partPrefix.part.ownerUri
+    );
   }
 
   const memberName = path.at(-1);
@@ -338,10 +350,10 @@ function hoverForImplicitGuiMemberAccess(
   }
 
   const member = findDeclarationMember(input, partPrefix.part.part.typeName, memberName, reference);
-  return member === undefined ? undefined : hoverForDeclarationText(
+  return member === undefined ? undefined : withDeclarationOrigin(hoverForDeclarationText(
     hoverTextForMemberDeclaration(member),
     member.documentation
-  );
+  ), input.analysis.uri, member.uri);
 }
 
 function findGuiTypeReferenceHover(input: HoverInput): AnalysisHover | undefined {
@@ -350,8 +362,10 @@ function findGuiTypeReferenceHover(input: HoverInput): AnalysisHover | undefined
     return undefined;
   }
 
-  const guiClass = findVisibleGuiClass(input, reference.name);
-  return guiClass === undefined ? undefined : hoverFromText(guiClassText(guiClass));
+  const entry = findVisibleGuiClassEntry(input, reference.name);
+  return entry === undefined ? undefined : withDeclarationOrigin(
+    hoverFromText(guiClassText(entry.guiClass)), input.analysis.uri, entry.uri
+  );
 }
 
 function findGuiBaseClassReferenceHover(
@@ -376,10 +390,10 @@ function findGuiBaseClassReferenceHover(
     return undefined;
   }
 
-  const baseGuiClass = findVisibleGuiClass(input, reference.name);
-  return baseGuiClass?.baseName === undefined
+  const entry = findVisibleGuiClassEntry(input, reference.name);
+  return entry?.guiClass.baseName === undefined
     ? undefined
-    : hoverFromText(`class ${baseGuiClass.baseName}`);
+    : withDeclarationOrigin(hoverFromText(`class ${entry.guiClass.baseName}`), input.analysis.uri, entry.uri);
 }
 
 function isTypeDeclaration(declaration: AnalysisDeclaration): boolean {
@@ -409,14 +423,16 @@ function findGuiReceiverPathHover(input: HoverInput): AnalysisHover | undefined 
       continue;
     }
 
-    const rootClass = findVisibleGuiClass(input, method.receiverPath[0]);
+    const rootClass = findVisibleGuiClassEntry(input, method.receiverPath[0]);
     if (segmentIndex === 0 && rootClass !== undefined) {
-      return hoverFromText(guiClassText(rootClass));
+      return withDeclarationOrigin(hoverFromText(guiClassText(rootClass.guiClass)), input.analysis.uri, rootClass.uri);
     }
 
     const part = resolveGuiPartPath(input, method.receiverPath[0], method.receiverPath.slice(1, segmentIndex + 1));
     if (part !== undefined) {
-      return hoverFromText(guiPartText(part.ownerName, part.part));
+      return withDeclarationOrigin(
+        hoverFromText(guiPartText(part.ownerName, part.part)), input.analysis.uri, part.ownerUri
+      );
     }
   }
 

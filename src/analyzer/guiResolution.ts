@@ -186,7 +186,7 @@ function guiMethodContextFromReceiverPath(
     : { rootClassName, receiverTypeName: part.part.typeName, method, part: part.part };
 }
 
-function findVisibleGuiClassEntry(input: GuiResolutionInput, name: string): GuiClassEntry | undefined {
+export function findVisibleGuiClassEntry(input: GuiResolutionInput, name: string): GuiClassEntry | undefined {
   for (const analysis of visibleDocuments(input)) {
     const guiClass = analysis.guiClasses.find((candidate) => candidate.name === name);
     if (guiClass !== undefined) {

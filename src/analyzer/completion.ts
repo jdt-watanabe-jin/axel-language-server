@@ -1,3 +1,4 @@
+import { declarationOrigin } from './declarationOrigin';
 import type {
   AnalysisCompletionItem,
   AnalysisDeclaration,
@@ -19,7 +20,7 @@ import {
 } from './resolution';
 import {
   findEnclosingGuiMethodContext,
-  findVisibleGuiClass,
+  findVisibleGuiClassEntry,
   resolveGuiPartPath
 } from './guiResolution';
 
@@ -31,6 +32,7 @@ export interface CompletionInput {
 }
 
 export interface WorkspaceCompletionIndex {
+  listVisibleDocuments?(sourceUri: string): AnalyzedDocument[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   listVisibleDeclarations?(sourceUri: string): AnalysisDeclaration[];
   findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;
@@ -356,10 +358,10 @@ function memberCompletions(
     return [];
   }
 
-  const guiClass = findVisibleGuiClass(input, receiverType);
+  const entry = findVisibleGuiClassEntry(input, receiverType);
   return uniqueCompletions([
     ...typeMemberCompletions(input, receiverType),
-    ...guiPartChildCompletions(guiClass?.parts ?? [])
+    ...guiPartChildCompletions(input, entry?.guiClass.parts ?? [], entry?.uri)
   ]);
 }
 
@@ -367,7 +369,8 @@ function guiReceiverCompletions(
   input: CompletionInput,
   context: Extract<CompletionContext, { kind: 'guiReceiver' }>
 ): AnalysisCompletionItem[] {
-  const root = findVisibleGuiClass(input, context.rootName);
+  const entry = findVisibleGuiClassEntry(input, context.rootName);
+  const root = entry?.guiClass;
   if (root === undefined) {
     return staticTypeMemberCompletions(input, context);
   }
@@ -375,7 +378,7 @@ function guiReceiverCompletions(
   const part = context.path.length === 0 ? undefined : resolveGuiPartPath(input, context.rootName, context.path);
   const receiverTypeName = part?.part.typeName ?? root.name;
   return uniqueCompletions([
-    ...guiPartChildCompletions(part?.part.parts ?? root.parts),
+    ...guiPartChildCompletions(input, part?.part.parts ?? root.parts, part?.ownerUri ?? entry?.uri),
     ...typeMemberCompletions(input, receiverTypeName),
     ...guiEventCompletions(root.kind === 'dialog' && context.path.length === 0 ? 'GCDialog' : receiverTypeName)
   ]);
@@ -402,10 +405,10 @@ function implicitGuiContextCompletions(input: CompletionInput): AnalysisCompleti
     return [];
   }
 
-  const root = findVisibleGuiClass(input, context.rootClassName);
+  const entry = findVisibleGuiClassEntry(input, context.rootClassName);
   return uniqueCompletions([
     ...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)),
-    ...guiPartChildCompletions(root?.parts ?? []),
+    ...guiPartChildCompletions(input, entry?.guiClass.parts ?? [], entry?.uri),
     ...typeMemberCompletions(input, context.rootClassName),
     ...typeMemberCompletions(input, context.receiverTypeName)
   ]);
@@ -430,7 +433,8 @@ function typeMemberCompletions(input: CompletionInput, typeName: string): Analys
     .map((declaration) => ({
       name: declaration.name,
       kind: declaration.kind === 'function' ? 'method' : 'property',
-      detail: memberDetail(declaration)
+      detail: memberDetail(declaration),
+      ...completionDocumentation(input, declaration)
     }));
 }
 
@@ -457,15 +461,25 @@ function visibleDeclarationCompletions(
   return listVisibleDeclarations(input)
     .filter(predicate)
     .filter((declaration) => isVisibleAt(declaration, input.position, input.analysis.uri))
-    .map(completionFromDeclaration);
+    .map((declaration) => completionFromDeclaration(input, declaration));
 }
 
-function completionFromDeclaration(declaration: AnalysisDeclaration): AnalysisCompletionItem {
+function completionFromDeclaration(input: CompletionInput, declaration: AnalysisDeclaration): AnalysisCompletionItem {
   return {
     name: declaration.name,
     kind: completionKindForDeclaration(declaration),
-    detail: declaration.detail
+    detail: declaration.detail,
+    ...completionDocumentation(input, declaration)
   };
+}
+
+function completionDocumentation(
+  input: CompletionInput,
+  declaration: AnalysisDeclaration
+): Pick<AnalysisCompletionItem, 'documentation'> {
+  const origin = declarationOrigin(input.analysis.uri, declaration.uri);
+  const documentation = [declaration.documentation, origin].filter((text) => text !== undefined).join('\n\n');
+  return documentation.length === 0 ? {} : { documentation };
 }
 
 function completionKindForDeclaration(declaration: AnalysisDeclaration): AnalysisCompletionItem['kind'] {
@@ -488,12 +502,18 @@ function completionKindForDeclaration(declaration: AnalysisDeclaration): Analysi
   return declaration.kind;
 }
 
-function guiPartChildCompletions(parts: AnalysisGuiPart[]): AnalysisCompletionItem[] {
+function guiPartChildCompletions(
+  input: CompletionInput,
+  parts: AnalysisGuiPart[],
+  ownerUri: string | undefined
+): AnalysisCompletionItem[] {
+  const origin = declarationOrigin(input.analysis.uri, ownerUri);
   return flattenNamedParts(parts)
     .map((part) => ({
       name: part.name,
       kind: 'property',
-      detail: `${part.typeName} ${part.path.join('.')}`
+      detail: `${part.typeName} ${part.path.join('.')}`,
+      ...(origin === undefined ? {} : { documentation: origin })
     }));
 }
 

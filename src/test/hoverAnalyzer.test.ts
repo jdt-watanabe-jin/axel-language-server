@@ -6,7 +6,7 @@ import { pathToFileURL } from 'url';
 import { DocumentAnalyzer } from '../analyzer/documentAnalyzer';
 import { getHover } from '../analyzer/hover';
 import { WorkspaceIndex } from '../analyzer/workspaceIndex';
-import type { AnalysisDeclaration, AnalyzedDocument } from '../types/analysis';
+import type { AnalysisDeclaration, AnalysisHover, AnalyzedDocument } from '../types/analysis';
 
 suite('getHover', () => {
   test('returns a function declaration hover at its name', () => {
@@ -245,7 +245,8 @@ suite('getHover', () => {
       workspaceIndex: fixture.workspaceIndex
     });
 
-    assert.strictEqual(hover?.plainText, 'static int FILE::IsDirectory(string fname)');
+    assertExternalHover(hover, 'static int FILE::IsDirectory(string fname)',
+      process.platform === 'win32' ? 'file:///file.h' : '/file.h');
   });
 
   test('returns all duplicate declarations from multiple includes in URI order', () => {
@@ -277,10 +278,7 @@ suite('getHover', () => {
       { uri: pathToFileURL(firstPath).toString(), detail: 'class' },
       { uri: pathToFileURL(secondPath).toString(), detail: 'struct' }
     ]);
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nclass SharedName\n```',
-      plainText: 'class SharedName'
-    });
+    assertExternalHover(hover, 'class SharedName', firstPath);
   });
 
   test('resolves a parameter reference to its declaration', () => {
@@ -389,10 +387,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nint Base::inheritedValue\n```',
-      plainText: 'int Base::inheritedValue'
-    });
+    assertExternalHover(hover, 'int Base::inheritedValue', forcedPath);
   });
 
   test('resolves inherited GUI methods when a recovered base header loses member containers', () => {
@@ -421,10 +416,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nvoid GCWidget::SetCaption(string caption)\n```',
-      plainText: 'void GCWidget::SetCaption(string caption)'
-    });
+    assertExternalHover(hover, 'void GCWidget::SetCaption(string caption)', forcedPath);
   });
 
   test('resolves a qualified out-of-class method through its receiver type', () => {
@@ -467,10 +459,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nint Widget::Now()\n```',
-      plainText: 'int Widget::Now()'
-    });
+    assertExternalHover(hover, 'int Widget::Now()', headerPath);
   });
 
   test('returns a qualified hover for a method prototype resolved from a forced include', () => {
@@ -493,10 +482,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\ndouble DATE::LapTime()\n```',
-      plainText: 'double DATE::LapTime()'
-    });
+    assertExternalHover(hover, 'double DATE::LapTime()', forcedPath);
   });
 
   test('resolves chained widget member access through each field type', () => {
@@ -982,10 +968,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nvoid printf(int value)\n```',
-      plainText: 'void printf(int value)'
-    });
+    assertExternalHover(hover, 'void printf(int value)', forcedPath);
   });
 
   test('prefers a forced-include typedef over same-name type keyword hover fallback', () => {
@@ -1011,10 +994,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\ntypedef string\n```',
-      plainText: 'typedef string'
-    });
+    assertExternalHover(hover, 'typedef string', forcedPath);
   });
 
   test('resolves this arrow member access inside a method body', () => {
@@ -1086,10 +1066,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nclass GCComboBox : public GCWidget\n```',
-      plainText: 'class GCComboBox : public GCWidget'
-    });
+    assertExternalHover(hover, 'class GCComboBox : public GCWidget', forcedPath);
   });
 
   test('resolves member access on a reusable widget GUI part', () => {
@@ -1326,10 +1303,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nGCPushButton MyDialog::group.button\n```',
-      plainText: 'GCPushButton MyDialog::group.button'
-    });
+    assertExternalHover(hover, 'GCPushButton MyDialog::group.button', headerPath);
   });
 
   test('resolves function and variable token hovers in the real groupbox sample', function () {
@@ -1504,4 +1478,10 @@ function recoveredStaticMemberFixture(): {
       }
     }
   };
+}
+
+function assertExternalHover(hover: AnalysisHover | null, detail: string, filePath: string): void {
+  assert.ok(hover);
+  assert.strictEqual(hover.plainText, `${detail}\ndefined in ${filePath}`);
+  assert.ok(hover.markdown.startsWith(`\`\`\`axel\n${detail}\n\`\`\`\n\ndefined in `));
 }
