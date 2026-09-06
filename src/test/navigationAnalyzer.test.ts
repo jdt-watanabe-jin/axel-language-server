@@ -120,6 +120,39 @@ suite('navigation', () => {
     }]);
   });
 
+  test('resolves a directory-qualified command from SXM_HOME/bin without diagnostics', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-command-path-'));
+    try {
+      const binRoot = path.join(tempDir, 'sxm', 'bin');
+      const scriptPath = path.join(binRoot, '_spicechart', '_adc.axl');
+      fs.mkdirSync(path.dirname(scriptPath), { recursive: true });
+      fs.writeFileSync(scriptPath, 'void main() {}');
+      const index = new WorkspaceIndex({ includeRoots: [binRoot] });
+      const text = 'void main (int argc, string *argv)\n{\n  @_spicechart/_adc.axl;\n}';
+      const analysis = index.indexOpenDocument({
+        uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(),
+        version: 1,
+        text
+      });
+
+      assert.deepStrictEqual(analysis.diagnostics, []);
+      assert.deepStrictEqual(analysis.scriptExecutions.map((script) => script.scriptPath), ['_spicechart/_adc.axl']);
+      const definitions = getDefinitions({
+        analysis,
+        position: positionFromOffset(text, text.indexOf('_adc')),
+        workspaceIndex: index
+      });
+      assert.deepStrictEqual(definitions, [{
+        uri: pathToFileURL(scriptPath).toString(),
+        range: {
+          start: { line: 0, character: 0 },
+          end: { line: 0, character: 0 }
+        }
+      }]);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
   test('references include declaration only when requested', () => {
     const { analysis, position } = analyzeMarked('void main() { int local; |local = local + 1; }');
 

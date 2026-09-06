@@ -171,6 +171,10 @@ function scriptExecutionCandidates(input: {
   scriptPath: string;
   includeRoots: string[];
 }): string[] {
+  if (path.isAbsolute(input.scriptPath) || path.win32.isAbsolute(input.scriptPath)) {
+    return scriptPathVariants(path.normalize(input.scriptPath));
+  }
+
   const roots = [path.dirname(input.includingFilePath), ...input.includeRoots];
   return Array.from(new Set(roots
     .map((root) => path.normalize(path.join(root, input.scriptPath)))

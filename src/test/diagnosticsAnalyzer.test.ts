@@ -24,6 +24,14 @@ class Json {
     assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode), []);
   });
 
+  for (const scriptPath of ['/home/path/to/sub.axl', 'C:\\path\\to\\sub.axl']) {
+    test(`accepts an absolute command path: ${scriptPath}`, () => {
+      const parser = createAxelParser();
+      const tree = parser.parse(`void main() { @${scriptPath}; }`);
+
+      assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode), []);
+    });
+  }
   test('reports parser ERROR nodes as syntax errors', () => {
     const parser = createAxelParser();
     const tree = parser.parse('void main( {');

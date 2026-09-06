@@ -100,3 +100,36 @@ suite('resolveInclude', () => {
     assert.strictEqual(result.filePath, path.join(includeRoot, 'task.axl'));
   });
 });
+
+suite('resolveScriptExecution absolute paths', () => {
+  for (const scriptPath of ['/home/path/to/sub.axl', 'C:\\path\\to\\sub.axl']) {
+    test(`does not prepend search roots to ${scriptPath}`, () => {
+      const candidates: string[] = [];
+      const result = resolveScriptExecution({
+        includingFilePath: path.resolve('workspace', 'main.axl'),
+        scriptPath,
+        includeRoots: [path.resolve('sxm', 'bin')],
+        fileExists: (candidate) => { candidates.push(candidate); return false; }
+      });
+      assert.strictEqual(result.status, 'unresolved');
+      assert.deepStrictEqual(candidates, [path.normalize(scriptPath)]);
+    });
+  }
+
+  test('resolves an existing native absolute script path without search roots', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'axel-absolute-script-'));
+    try {
+      const scriptPath = path.join(tempDir, 'sub.axl');
+      fs.writeFileSync(scriptPath, 'void main() {}');
+      const result = resolveScriptExecution({
+        includingFilePath: path.join(tempDir, 'workspace', 'main.axl'),
+        scriptPath,
+        includeRoots: []
+      });
+      assert.strictEqual(result.status, 'resolved');
+      assert.strictEqual(result.filePath, scriptPath);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+});
