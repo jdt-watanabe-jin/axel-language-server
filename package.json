@@ -22,10 +22,18 @@
 	},
 	"scripts": {
 		"build": "tsc",
-		"test": "mocha --ui tdd out/test/**/*.test.js",
-		"test:watch": "mocha --ui tdd out/test/**/*.test.js --watch",
+		"test": "node scripts/run-tests.mjs all",
+		"test:watch": "node --watch-path=src scripts/run-tests.mjs fast",
 		"prepare": "npm run build",
-		"lint": "eslint"
+		"lint": "eslint",
+		"test:unit": "node scripts/run-tests.mjs unit",
+		"test:integration": "node scripts/run-tests.mjs integration",
+		"test:e2e": "node scripts/run-tests.mjs e2e",
+		"test:performance": "node scripts/run-tests.mjs performance",
+		"test:external": "node scripts/run-tests.mjs external",
+		"test:fast": "node scripts/run-tests.mjs fast",
+		"test:complete": "node scripts/run-tests.mjs complete",
+		"test:ci": "npm run lint && npm test"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.13.0",

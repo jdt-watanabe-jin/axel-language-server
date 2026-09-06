@@ -1,0 +1,38 @@
+[
+  {
+    "label": "dialog field",
+    "source": "One.SetChecked(1);",
+    "token": "One",
+    "expected": "GCRadioButton mydialog::One"
+  },
+  {
+    "label": "nested GUI field",
+    "source": "box.Two.SetChecked(1);",
+    "token": "Two",
+    "expected": "GCCheckBox mydialog::box.Two"
+  },
+  {
+    "label": "inherited GUI method",
+    "source": "box.Two.SetChecked(1);",
+    "token": "SetChecked",
+    "expected": "void GCWidget::SetChecked(int checked)"
+  },
+  {
+    "label": "implicit inherited property",
+    "source": "text = \"Hover Regression\";",
+    "token": "text",
+    "expected": "string GCWidget::text"
+  },
+  {
+    "label": "ordinary method in GUI body",
+    "source": "timer.LapTime();",
+    "token": "LapTime",
+    "expected": "double DATE::LapTime()"
+  },
+  {
+    "label": "local variable in GUI body",
+    "source": "int count = HOVER_COUNT;",
+    "token": "count",
+    "expected": "int count"
+  }
+]
