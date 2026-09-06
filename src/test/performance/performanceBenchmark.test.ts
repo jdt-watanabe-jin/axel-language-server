@@ -80,6 +80,12 @@ suite('performance benchmark', () => {
 
   test('semantic tokens reuse visible declarations while resolving GUI implicit members', () => {
     const visibleDeclarations = createVisibleEnumMemberDeclarations(5_000);
+    let visibleDeclarationScans = 0;
+    const iterateDeclarations = visibleDeclarations[Symbol.iterator].bind(visibleDeclarations);
+    visibleDeclarations[Symbol.iterator] = function () {
+      visibleDeclarationScans += 1;
+      return iterateDeclarations();
+    };
     const analysis = createGuiReferenceHeavyAnalysis(300);
     let listVisibleDeclarationCalls = 0;
 
@@ -91,6 +97,7 @@ suite('performance benchmark', () => {
     }));
 
     assert.strictEqual(tokens.value.length, 2);
+    assert.ok(visibleDeclarationScans <= 3, `scanned visible declarations ${visibleDeclarationScans} times`);
     assert.ok(listVisibleDeclarationCalls <= 3, `listed visible declarations ${listVisibleDeclarationCalls} times`);
     assert.ok(tokens.durationMs < 150, `semantic token collection took ${tokens.durationMs.toFixed(1)}ms`);
 

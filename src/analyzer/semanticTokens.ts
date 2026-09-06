@@ -339,7 +339,9 @@ function createSemanticTokenResolutionCache(
       if (listed !== undefined && visibleDeclarationIndex === undefined) {
         visibleDeclarationIndex = createDeclarationsByName(analysis.declarations, listed);
       }
-      const declarations = visibleDeclarationIndex?.get(name) ?? visibleDeclarationsByName(input, name);
+      const declarations = visibleDeclarationIndex === undefined
+        ? visibleDeclarationsByName(input, name)
+        : visibleDeclarationIndex.get(name) ?? [];
       declarationsByName.set(name, declarations);
       return declarations;
     },
