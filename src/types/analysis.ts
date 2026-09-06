@@ -160,6 +160,7 @@ export type AnalysisCompletionItemKind =
   | 'macro'
   | 'typedef'
   | 'include'
+  | 'folder'
   | 'property'
   | 'method'
   | 'event';
@@ -172,6 +173,7 @@ export interface AnalysisCompletionItem {
   insertText?: string;
   filterText?: string;
   sortText?: string;
+  textEdit?: { range: AnalysisRange; newText: string };
 }
 
 export type AnalysisSemanticTokenType =

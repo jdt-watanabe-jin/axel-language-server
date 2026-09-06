@@ -292,7 +292,7 @@ function includePathCompletions(
 }
 
 function scriptExecutionContext(linePrefix: string): CompletionContext | undefined {
-  const match = linePrefix.match(/(?:^|[;{]\s*)@([^\s;`]*)$/);
+  const match = linePrefix.match(/(?:^|[;{])\s*@([^\s;`"']*)$/);
   return match === null ? undefined : { kind: 'scriptExecution', prefix: match[1] };
 }
 
@@ -313,24 +313,36 @@ function scriptExecutionPathCompletions(
   input: CompletionInput,
   context: Extract<CompletionContext, { kind: 'scriptExecution' }>
 ): AnalysisCompletionItem[] {
+  const segmentStart = Math.max(context.prefix.lastIndexOf('/'), context.prefix.lastIndexOf('\\')) + 1;
+  const offset = offsetFromPosition(input.text, input.position);
+  const suffixLength = input.text.slice(offset).match(/^[^/\\\s;`"']*/)?.[0].length ?? 0;
+  const nextCharacter = input.text[offset + suffixLength];
+  const hasSeparator = nextCharacter === '/' || nextCharacter === '\\';
   return (input.workspaceIndex.findScriptExecutionPathCompletions?.(
     input.analysis.uri,
     context.prefix
   ) ?? [])
-    .map((candidate) => scriptExecutionCompletionFromPath(candidate));
-}
-
-function scriptExecutionCompletionFromPath(candidate: string): AnalysisCompletionItem {
-  const name = includePathSegment(candidate);
-  const parentPath = candidate.slice(0, candidate.length - name.length);
-  return {
-    name,
-    kind: 'function',
-    detail: parentPath.length === 0 ? 'AXEL execution file' : `AXEL execution path: ${parentPath}`,
-    insertText: name,
-    filterText: candidate,
-    sortText: candidate
-  };
+    .map((candidate, index) => {
+      const name = includePathSegment(candidate);
+      const isFolder = candidate.endsWith('/');
+      const parentPath = candidate.slice(0, candidate.length - name.length - (isFolder ? 1 : 0));
+      const insertText = isFolder ? `${name}/` : name;
+      return {
+        name,
+        kind: isFolder ? 'folder' : 'function',
+        detail: parentPath.length === 0 ? 'AXEL execution file' : `AXEL execution path: ${parentPath}`,
+        insertText,
+        filterText: name,
+        sortText: String(index).padStart(10, '0'),
+        textEdit: {
+          range: {
+            start: { line: input.position.line, character: input.position.character - context.prefix.length + segmentStart },
+            end: { line: input.position.line, character: input.position.character + suffixLength + (isFolder && hasSeparator ? 1 : 0) }
+          },
+          newText: insertText
+        }
+      };
+    });
 }
 
 function includePathSegment(candidate: string): string {

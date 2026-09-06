@@ -12,7 +12,8 @@ export function toLspCompletionItem(item: AnalysisCompletionItem): CompletionIte
     documentation: item.documentation,
     insertText: item.insertText,
     filterText: item.filterText,
-    sortText: item.sortText
+    sortText: item.sortText,
+    ...(item.textEdit === undefined ? {} : { textEdit: item.textEdit })
   };
 }
 
@@ -43,6 +44,8 @@ function toCompletionItemKind(kind: AnalysisCompletionItem['kind']): CompletionI
       return CompletionItemKind.TypeParameter;
     case 'include':
       return CompletionItemKind.File;
+    case 'folder':
+      return CompletionItemKind.Folder;
     case 'keyword':
       return CompletionItemKind.Keyword;
   }

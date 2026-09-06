@@ -261,7 +261,7 @@ export class WorkspaceIndex {
   public findScriptExecutionPathCompletions(sourceUri: string, prefix: string): string[] {
     const includingFilePath = filePathFromUri(sourceUri);
     const localRoot = includingFilePath === undefined ? [] : [path.dirname(includingFilePath)];
-    return pathCompletions([...localRoot, ...this.includeRoots], prefix, /\.(?:axl)$/i);
+    return pathCompletions([...localRoot, ...this.includeRoots], prefix, /\.(?:axl)$/i, true);
   }
 
   public resolveIncludeAtPosition(
@@ -930,7 +930,7 @@ function includePathCompletions(roots: string[], prefix: string): string[] {
   return pathCompletions(roots, prefix, /\.(?:axl|h|hh)$/i);
 }
 
-function pathCompletions(roots: string[], prefix: string, filePattern: RegExp): string[] {
+function pathCompletions(roots: string[], prefix: string, filePattern: RegExp, preserveRootOrder = false): string[] {
   const entries: string[] = [];
   for (const root of roots) {
     if (!fs.existsSync(root)) {
@@ -947,7 +947,9 @@ function pathCompletions(roots: string[], prefix: string, filePattern: RegExp): 
       continue;
     }
 
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const children = fs.readdirSync(dir, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of children) {
       if (!entry.name.startsWith(basePrefix)) {
         continue;
       }
@@ -959,7 +961,8 @@ function pathCompletions(roots: string[], prefix: string, filePattern: RegExp): 
     }
   }
 
-  return Array.from(new Set(entries)).sort();
+  const uniqueEntries = Array.from(new Set(entries));
+  return preserveRootOrder ? uniqueEntries : uniqueEntries.sort();
 }
 
 function filePathFromUri(uri: string): string | undefined {

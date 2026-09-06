@@ -11,7 +11,9 @@ const COMPLETION_TRIGGER_CHARACTERS = [
   '"',
   '<',
   '#',
+  '@',
   '/',
+  '\\',
   '>',
   '_',
   ...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
