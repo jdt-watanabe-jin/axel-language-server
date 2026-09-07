@@ -359,6 +359,9 @@ suite('getHover', () => {
       markdown: `\`\`\`text\naxel: ${scriptPath}\n\`\`\``,
       plainText: `axel: ${scriptPath}`
     });
+    assert.strictEqual(getHover({
+      analysis, position: positionFromOffset(text, markerOffset), workspaceIndex: index, locale: 'ja'
+    })?.plainText, `AXEL 実行ファイル: ${scriptPath}`);
   });
 
   test('returns documented built-in hover for printf', () => {

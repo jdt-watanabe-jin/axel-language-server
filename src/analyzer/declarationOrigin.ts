@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'url';
 import type { AnalysisHover } from '../types/analysis';
+import { translate } from '../i18n/messages';
 
-export function declarationOrigin(sourceUri: string, definitionUri: string | undefined): string | undefined {
+export function declarationOrigin(sourceUri: string, definitionUri: string | undefined, locale?: string): string | undefined {
   if (definitionUri === undefined || definitionUri === sourceUri) {
     return undefined;
   }
@@ -12,15 +13,16 @@ export function declarationOrigin(sourceUri: string, definitionUri: string | und
   } catch {
     filePath = definitionUri;
   }
-  return `defined in ${filePath}`;
+  return translate(locale, 'defined in {0}', filePath);
 }
 
 export function withDeclarationOrigin(
   hover: AnalysisHover,
   sourceUri: string,
-  definitionUri: string | undefined
+  definitionUri: string | undefined,
+  locale?: string
 ): AnalysisHover {
-  const origin = declarationOrigin(sourceUri, definitionUri);
+  const origin = declarationOrigin(sourceUri, definitionUri, locale);
   if (origin === undefined) {
     return hover;
   }

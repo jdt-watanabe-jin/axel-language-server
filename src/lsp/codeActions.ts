@@ -3,11 +3,11 @@ import type { AnalysisCodeAction } from '../types/analysis';
 import { toLspDiagnostic } from './diagnostics';
 import { toLspWorkspaceEdit } from './rename';
 
-export function toLspCodeActions(actions: AnalysisCodeAction[]): CodeAction[] {
+export function toLspCodeActions(actions: AnalysisCodeAction[], locale?: string): CodeAction[] {
   return actions.map((action) => ({
     title: action.title,
     kind: CodeActionKind.QuickFix,
-    diagnostics: action.diagnostics.map(toLspDiagnostic),
+    diagnostics: action.diagnostics.map((diagnostic) => toLspDiagnostic(diagnostic, locale)),
     edit: toLspWorkspaceEdit(action.edit)
   }));
 }

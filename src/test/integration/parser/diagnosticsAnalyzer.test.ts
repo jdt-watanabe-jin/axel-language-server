@@ -99,6 +99,7 @@ class Json {
       severity: 'error',
       source: 'axel',
       message: "Macro 'DEFINE_FIELD' expects 1 argument but got 2.",
+      messageDescriptor: { key: "Macro '{0}' expects {1} argument but got {2}.", args: ['DEFINE_FIELD', 1, 2] },
       range: {
         start: { line: 0, character: 10 },
         end: { line: 0, character: 35 }

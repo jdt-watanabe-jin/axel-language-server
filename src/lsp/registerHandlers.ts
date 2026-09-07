@@ -90,7 +90,9 @@ interface RefactorHandlerConnection {
 }
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
+  let locale: string | undefined;
   context.connection.onInitialize((params) => {
+    locale = params.locale;
     context.analyzer.configure?.(params.initializationOptions);
     return createInitializeResult();
   });
@@ -112,7 +114,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           version: document.version,
           text: document.getText()
         });
-        return toDocumentDiagnosticReport(analysis.diagnostics);
+        return toDocumentDiagnosticReport(analysis.diagnostics, locale);
       } catch (error: unknown) {
         context.logger.error(`Diagnostics failed: ${getErrorMessage(error)}`);
         return toDocumentDiagnosticReport([]);
@@ -134,6 +136,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           text: document.getText()
         });
         const hover = getHover({
+          locale,
           analysis,
           position: params.position,
           workspaceIndex: context.analyzer
@@ -161,6 +164,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           text
         });
         return getCompletions({
+          locale,
           analysis,
           text,
           position: params.position,
@@ -298,11 +302,12 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           text: document.getText()
         });
         return toLspCodeActions(getCodeActions({
+          locale,
           analysis,
           range: params.range,
           diagnostics: analysis.diagnostics,
           workspaceIndex: context.analyzer
-        }));
+        }), locale);
       } catch (error: unknown) {
         context.logger.error(`Code action failed: ${getErrorMessage(error)}`);
         return [];

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { getCodeActions } from '../../../analyzer/codeActions';
+import { toLspCodeActions } from '../../../lsp/codeActions';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('code action analyzer', () => {
@@ -40,6 +41,15 @@ suite('code action analyzer', () => {
         }
       }
     }]);
+
+    const localized = toLspCodeActions(getCodeActions({
+      analysis, diagnostics: analysis.diagnostics,
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 6 } },
+      workspaceIndex: index, locale: 'ja'
+    }), 'ja');
+    assert.strictEqual(localized[0].title, '"types.h" のインクルードを追加');
+    assert.strictEqual(localized[0].diagnostics?.[0].message, "型'Widget'は定義されていません。");
+    assert.deepStrictEqual(localized[0].edit, actions[0].edit);
   });
 
   test('returns no include quick fix for ambiguous candidates', () => {

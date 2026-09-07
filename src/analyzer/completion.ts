@@ -1,4 +1,5 @@
 import { declarationOrigin } from './declarationOrigin';
+import { translate } from '../i18n/messages';
 import type {
   AnalysisCompletionItem,
   AnalysisDeclaration,
@@ -26,6 +27,7 @@ import {
 } from './guiResolution';
 
 export interface CompletionInput {
+  locale?: string;
   analysis: AnalyzedDocument;
   text: string;
   position: AnalysisPosition;
@@ -179,7 +181,7 @@ export function getCompletions(input: CompletionInput): AnalysisCompletionItem[]
   if (context.kind === 'expression') {
     items.push(...typeCompletionItems(input));
     items.push(...keywordItems(EXPRESSION_KEYWORDS));
-    items.push(...getBuiltinCompletions());
+    items.push(...getBuiltinCompletions(input.locale));
     items.push(...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)));
     items.push(...implicitGuiContextCompletions(input));
   }
@@ -288,7 +290,7 @@ function includePathCompletions(
     context.prefix,
     context.includeKind
   ) ?? [])
-    .map((candidate) => includeCompletionFromPath(candidate));
+    .map((candidate) => includeCompletionFromPath(candidate, input.locale));
 }
 
 function scriptExecutionContext(linePrefix: string): CompletionContext | undefined {
@@ -296,13 +298,13 @@ function scriptExecutionContext(linePrefix: string): CompletionContext | undefin
   return match === null ? undefined : { kind: 'scriptExecution', prefix: match[1] };
 }
 
-function includeCompletionFromPath(candidate: string): AnalysisCompletionItem {
+function includeCompletionFromPath(candidate: string, locale?: string): AnalysisCompletionItem {
   const name = includePathSegment(candidate);
   const parentPath = candidate.slice(0, candidate.length - name.length);
   return {
     name,
     kind: 'include',
-    detail: parentPath.length === 0 ? 'include path' : `include path: ${parentPath}`,
+    detail: parentPath.length === 0 ? translate(locale, 'include path') : translate(locale, 'include path: {0}', parentPath),
     insertText: name,
     filterText: candidate,
     sortText: candidate
@@ -330,7 +332,7 @@ function scriptExecutionPathCompletions(
       return {
         name,
         kind: isFolder ? 'folder' : 'function',
-        detail: parentPath.length === 0 ? 'AXEL execution file' : `AXEL execution path: ${parentPath}`,
+        detail: parentPath.length === 0 ? translate(input.locale, 'AXEL execution file') : translate(input.locale, 'AXEL execution path: {0}', parentPath),
         insertText,
         filterText: name,
         sortText: String(index).padStart(10, '0'),
@@ -394,7 +396,7 @@ function guiReceiverCompletions(
   return uniqueCompletions([
     ...guiPartChildCompletions(input, part?.part.parts ?? root.parts, part?.ownerUri ?? entry?.uri),
     ...typeMemberCompletions(input, receiverTypeName),
-    ...guiEventCompletions(root.kind === 'dialog' && context.path.length === 0 ? 'GCDialog' : receiverTypeName)
+    ...guiEventCompletions(root.kind === 'dialog' && context.path.length === 0 ? 'GCDialog' : receiverTypeName, input.locale)
   ]);
 }
 
@@ -539,7 +541,7 @@ function completionDocumentation(
   input: CompletionInput,
   declaration: AnalysisDeclaration
 ): Pick<AnalysisCompletionItem, 'documentation'> {
-  const origin = declarationOrigin(input.analysis.uri, declaration.uri);
+  const origin = declarationOrigin(input.analysis.uri, declaration.uri, input.locale);
   const documentation = [declaration.documentation, origin].filter((text) => text !== undefined).join('\n\n');
   return documentation.length === 0 ? {} : { documentation };
 }
@@ -569,7 +571,7 @@ function guiPartChildCompletions(
   parts: AnalysisGuiPart[],
   ownerUri: string | undefined
 ): AnalysisCompletionItem[] {
-  const origin = declarationOrigin(input.analysis.uri, ownerUri);
+  const origin = declarationOrigin(input.analysis.uri, ownerUri, input.locale);
   return flattenNamedParts(parts)
     .map((part) => ({
       name: part.name,
@@ -586,7 +588,7 @@ function flattenNamedParts(parts: AnalysisGuiPart[]): (AnalysisGuiPart & { name:
   ]);
 }
 
-function guiEventCompletions(typeName: string): AnalysisCompletionItem[] {
+function guiEventCompletions(typeName: string, locale?: string): AnalysisCompletionItem[] {
   const names = new Set(COMMON_GUI_EVENTS);
   if (typeName.includes('Dialog')) {
     for (const name of DIALOG_GUI_EVENTS) {
@@ -602,7 +604,7 @@ function guiEventCompletions(typeName: string): AnalysisCompletionItem[] {
   return Array.from(names).sort().map((name) => ({
     name,
     kind: 'event',
-    detail: 'GUI event handler'
+    detail: translate(locale, 'GUI event handler')
   }));
 }
 
@@ -635,7 +637,7 @@ function declarationKeywordItems(typedHash: boolean): AnalysisCompletionItem[] {
 function typeCompletionItems(input: CompletionInput): AnalysisCompletionItem[] {
   return [
     ...keywordItems(BUILTIN_TYPE_NAMES),
-    ...DIRECT_GUI_BASE_NAMES.map((name) => ({ name, kind: 'class' as const, detail: 'GUI base class' })),
+    ...DIRECT_GUI_BASE_NAMES.map((name) => ({ name, kind: 'class' as const, detail: translate(input.locale, 'GUI base class') })),
     ...visibleDeclarationCompletions(input, isTypeDeclaration)
   ];
 }

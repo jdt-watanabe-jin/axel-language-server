@@ -18,6 +18,8 @@ export function startLspServer() {
   // Keep startup errors observed even before the first request.
   void closed.catch(() => undefined);
   const connection = createProtocolConnection(new StreamMessageReader(child.stdout), new StreamMessageWriter(child.stdin));
+  connection.onRequest('workspace/semanticTokens/refresh', () => null);
+  connection.onRequest('workspace/diagnostic/refresh', () => null);
   connection.listen();
   async function deadline<T>(work: Promise<T>, operation: string): Promise<T> {
     let timer: NodeJS.Timeout | undefined;

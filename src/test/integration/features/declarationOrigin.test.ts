@@ -55,6 +55,20 @@ suite('included declaration origins', () => {
           if (usage === 'TWICE(2)') {
             assert.ok(hover?.plainText.includes('Expansion:\n2 + 2'));
           }
+          const japaneseHover = getHover({ analysis, position, workspaceIndex: index, locale: 'ja' });
+          assert.ok(japaneseHover?.plainText.includes(`定義元: ${header}`), japaneseHover?.plainText);
+          const japaneseCompletion = getCompletions({
+            analysis, text, position: completionPosition, workspaceIndex: index, locale: 'ja'
+          }).find(item => item.name === completion?.name);
+          assert.ok(japaneseCompletion?.documentation?.includes(`定義元: ${header}`));
+          if (usage === 'shared') {
+            assert.ok(japaneseHover?.plainText.includes('Shared documentation.'));
+            assert.ok(japaneseCompletion?.documentation?.includes('Shared documentation.'));
+          }
+          if (usage === 'TWICE(2)') {
+            assert.ok(japaneseHover?.plainText.includes('展開結果:\n2 + 2'));
+            assert.ok(japaneseHover?.markdown.includes('展開結果:'));
+          }
         } finally {
           fs.rmSync(directory, { recursive: true, force: true });
         }

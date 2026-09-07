@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { message } from '../i18n/messages';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type {
@@ -441,7 +442,7 @@ export class WorkspaceIndex {
       .map((item) => ({
         severity: 'error',
         source: 'axel',
-        message: `Include file not found: '${item.include.includePath}'.`,
+        ...message("Include file not found: '{0}'.", item.include.includePath),
         range: item.include.range
       }));
   }
@@ -465,7 +466,7 @@ export class WorkspaceIndex {
       .map((item) => ({
         severity: 'error',
         source: 'axel',
-        message: `AXEL execution file not found: '${item.execution.scriptPath}'.`,
+        ...message("AXEL execution file not found: '{0}'.", item.execution.scriptPath),
         range: item.execution.range
       }));
   }

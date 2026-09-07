@@ -9,8 +9,10 @@ import type {
   AnalyzedDocument
 } from '../types/analysis';
 import { isTypeDeclaration } from './resolution';
+import { translate } from '../i18n/messages';
 
 export interface CodeActionInput {
+  locale?: string;
   analysis: Pick<AnalyzedDocument, 'uri'>;
   range: AnalysisRange;
   diagnostics: AnalysisDiagnostic[];
@@ -46,7 +48,7 @@ function includeQuickFix(input: CodeActionInput, diagnostic: AnalysisDiagnostic)
   }
 
   return [{
-    title: `Add include "${includePath}"`,
+    title: translate(input.locale, 'Add include "{0}"', includePath),
     kind: 'quickfix',
     diagnostics: [diagnostic],
     edit: includeWorkspaceEdit(input.analysis.uri, includePath)

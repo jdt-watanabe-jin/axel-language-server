@@ -1,4 +1,5 @@
 import type { AnalysisCompletionItem, AnalysisHover } from '../types/analysis';
+import { translate } from '../i18n/messages';
 
 interface BuiltinHoverInfo {
   signature: string;
@@ -132,26 +133,27 @@ const BUILTIN_HOVER_INFO = new Map<string, BuiltinHoverInfo>([
   }]
 ]);
 
-export function getBuiltinCompletions(): AnalysisCompletionItem[] {
+export function getBuiltinCompletions(locale?: string): AnalysisCompletionItem[] {
   return Array.from(BUILTIN_HOVER_INFO.entries())
     .map(([name, info]): AnalysisCompletionItem => ({
       name,
       kind: 'function',
       detail: info.signature,
-      documentation: `${info.description} Source: docs/axel_users.pdf.`
+      documentation: `${translate(locale, info.description)} ${translate(locale, 'Source: docs/axel_users.pdf.')}`
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export function getBuiltinHover(name: string): AnalysisHover | null {
+export function getBuiltinHover(name: string, locale?: string): AnalysisHover | null {
   const builtin = BUILTIN_HOVER_INFO.get(name);
   if (builtin === undefined) {
     return null;
   }
 
-  const plainText = `${builtin.signature}\n${builtin.description}`;
+  const description = translate(locale, builtin.description);
+  const plainText = `${builtin.signature}\n${description}`;
   return {
-    markdown: `\`\`\`axel\n${builtin.signature}\n\`\`\`\n\n${builtin.description}`,
+    markdown: `\`\`\`axel\n${builtin.signature}\n\`\`\`\n\n${description}`,
     plainText
   };
 }

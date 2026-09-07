@@ -1,4 +1,5 @@
 import type { AnalysisMacroDefinition } from '../types/analysis';
+import { message, type MessageDescriptor } from '../i18n/messages';
 import type { MacroInvocationCandidate } from './macroInvocation';
 import { parseMacroInvocationText } from './macroInvocation';
 
@@ -14,6 +15,7 @@ export interface MacroExpansionStep {
 
 export interface MacroExpansionDiagnostic {
   message: string;
+  messageDescriptor?: MessageDescriptor;
 }
 
 export interface MacroExpansionResult {
@@ -53,7 +55,7 @@ export function expandMacroInvocationText(
       expandedText: text,
       steps: [],
       truncated: false,
-      diagnostics: [{ message: 'Text is not a macro invocation.' }]
+      diagnostics: [message('Text is not a macro invocation.')]
     };
   }
 
@@ -63,7 +65,7 @@ export function expandMacroInvocationText(
       expandedText: text,
       steps: [],
       truncated: false,
-      diagnostics: [{ message: `Macro '${invocation.name}' with ${invocation.arguments.length} argument(s) was not found.` }]
+      diagnostics: [message("Macro '{0}' with {1} argument(s) was not found.", invocation.name, invocation.arguments.length)]
     };
   }
 
@@ -87,7 +89,7 @@ function expandKnownMacro(
       expandedText: originalText,
       steps: [],
       truncated: false,
-      diagnostics: [{ message: `Macro '${macro.name}' is not function-like.` }]
+      diagnostics: [message("Macro '{0}' is not function-like.", macro.name)]
     };
   }
 
@@ -97,7 +99,7 @@ function expandKnownMacro(
       expandedText: originalText,
       steps: [],
       truncated: false,
-      diagnostics: [{ message: `Macro '${macro.name}' expects ${expected} argument but got ${args.length}.` }]
+      diagnostics: [message("Macro '{0}' expects {1} argument but got {2}.", macro.name, expected, args.length)]
     };
   }
 

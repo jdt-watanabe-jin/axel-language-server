@@ -1,4 +1,5 @@
 import type * as Parser from 'tree-sitter';
+import { message } from '../i18n/messages';
 import type { AnalysisDiagnostic, AnalysisDocumentUri, AnalysisMacroDefinition } from '../types/analysis';
 import { expandMacroInvocation, type MacroLookup } from './macroExpansion';
 import { macroInvocationCandidateFromErrorNode, type MacroInvocationCandidate } from './macroInvocation';
@@ -29,7 +30,7 @@ function diagnosticsForSyntaxNode(
   const defaultDiagnostic: AnalysisDiagnostic = {
     severity: 'error',
     source: 'axel',
-    message: node.isMissing ? `Missing ${node.type}.` : 'Syntax error.',
+    ...(node.isMissing ? message('Missing {0}.', node.type) : message('Syntax error.')),
     range: nodeToAnalysisRange(node)
   };
   if (node.isMissing || options.parseText === undefined || options.macroDefinitions === undefined) {
@@ -57,6 +58,7 @@ function diagnosticsForSyntaxNode(
       severity: 'error',
       source: 'axel',
       message: diagnostic.message,
+      messageDescriptor: diagnostic.messageDescriptor,
       range: invocation.range
     }));
   }

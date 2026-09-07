@@ -29,6 +29,16 @@ The server currently supports these Language Server Protocol features:
 
 Formatting intentionally changes indentation only. It does not rewrite expression spacing, comments, or documents with syntax errors or unbalanced braces.
 
+## Localization
+
+The server uses the client's `initialize.locale`: `ja` and `ja-*` (case insensitive) select Japanese; omitted or other locales use English. Missing translations fall back to their English templates. Locale belongs to the connection and is retained across configuration changes. Reconnect after changing the client's display language.
+
+Localized text includes syntax/semantic/include/execution-file diagnostics, built-in hover and completion documentation, definition origins, macro expansion annotations, path/GUI completion descriptions, and include quick-fix titles. Identifiers, signatures, source comments, paths, edits, and external output remain unchanged. Signature help currently contains only source signatures and parameters. Developer logs remain English.
+
+Translations live in `src/i18n/ja.ts`. `message()` adds structured descriptors to diagnostics while retaining canonical English analysis messages; the LSP adapter formats them for the session locale. `translate()` formats server-owned hover/completion text at presentation time. Keep argument placeholders consistent; do not translate by matching completed diagnostic strings. Compiled dictionaries ship under `out/i18n/`.
+
+See [testing strategy](docs/testing/strategy.md) for localization verification and [change log](CHANGELOG.md) for unreleased changes.
+
 ## Development
 
 Install dependencies:

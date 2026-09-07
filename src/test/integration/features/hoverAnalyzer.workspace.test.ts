@@ -180,6 +180,9 @@ suite('getHover', () => {
       markdown: `\`\`\`text\ninclude: ${headerPath}\n\`\`\``,
       plainText: `include: ${headerPath}`
     });
+    assert.strictEqual(getHover({
+      analysis, position: positionFromOffset(text, markerOffset), workspaceIndex: index, locale: 'ja'
+    })?.plainText, `インクルード: ${headerPath}`);
   });
 
   test('does not resolve a duplicate workspace name outside the include graph', () => {

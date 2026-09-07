@@ -1,3 +1,4 @@
+import { message, type MessageDescriptor } from '../i18n/messages';
 import type {
   AnalysisDeclaration,
   AnalysisDeclarationKind,
@@ -142,7 +143,7 @@ function duplicateDeclarationDiagnosticsForScope(
       diagnostics.push({
         severity: 'error',
         source: 'axel',
-        message: `Duplicate declaration '${declaration.name}'.`,
+        ...message("Duplicate declaration '{0}'.", declaration.name),
         range: declaration.selectionRange
       });
       continue;
@@ -214,7 +215,7 @@ function unresolvedTypeReferenceDiagnostics(
     .map((reference) => ({
       severity: 'error',
       source: 'axel',
-      message: `Unknown type '${reference.name}'.`,
+      ...message("Unknown type '{0}'.", reference.name),
       range: reference.range
     }));
 }
@@ -260,7 +261,7 @@ function unresolvedIdentifierDiagnostics(
     .map((reference) => ({
       severity: 'error',
       source: 'axel',
-      message: `Unknown identifier '${reference.name}'.`,
+      ...message("Unknown identifier '{0}'.", reference.name),
       range: reference.range
     }));
 }
@@ -388,11 +389,11 @@ function callArgumentCountDiagnostics(
       continue;
     }
 
-    const expected = expectedArgumentText(argumentCounts);
+    const expected = expectedArgumentDescriptor(argumentCounts);
     diagnostics.push({
       severity: 'error',
       source: 'axel',
-      message: `Function '${reference.name}' expects ${expected}, but got ${argumentCount}.`,
+      ...message("Function '{0}' expects {1}, but got {2}.", reference.name, expected, argumentCount),
       range: reference.range
     });
   }
@@ -462,54 +463,54 @@ function implicitGuiCallableDeclarations(
   ].filter((declaration): declaration is AnalysisDeclaration => declaration !== undefined);
 }
 
-function expectedArgumentText(argumentCounts: ReturnType<typeof acceptedArgumentCounts>[]): string {
+function expectedArgumentDescriptor(argumentCounts: ReturnType<typeof acceptedArgumentCounts>[]): MessageDescriptor {
   if (argumentCounts.every((counts) => counts.min === counts.max)) {
-    return exactArgumentCountText(argumentCounts.map((counts) => counts.min));
+    return exactArgumentCountDescriptor(argumentCounts.map((counts) => counts.min));
   }
 
-  const texts = uniqueStrings(argumentCounts.map(argumentCountText));
-  return joinAlternatives(texts);
+  const descriptors = Array.from(new Map(argumentCounts.map((counts) => {
+    const descriptor = argumentCountDescriptor(counts);
+    return [JSON.stringify(descriptor), descriptor];
+  })).values());
+  return joinAlternatives(descriptors);
 }
 
-function exactArgumentCountText(counts: number[]): string {
+function exactArgumentCountDescriptor(counts: number[]): MessageDescriptor {
   const uniqueCounts = Array.from(new Set(counts)).sort((left, right) => left - right);
   if (uniqueCounts.length === 1) {
-    return `${uniqueCounts[0]} ${argumentWord(uniqueCounts[0])}`;
+    return argumentCountDescriptor({ min: uniqueCounts[0], max: uniqueCounts[0] });
   }
 
-  return `${joinAlternatives(uniqueCounts.map((count) => count.toString()))} arguments`;
+  return { key: '{0} arguments', args: [joinAlternatives(uniqueCounts)] };
 }
 
-function argumentCountText(counts: ReturnType<typeof acceptedArgumentCounts>): string {
+function argumentCountDescriptor(counts: ReturnType<typeof acceptedArgumentCounts>): MessageDescriptor {
   if (counts.max === Number.POSITIVE_INFINITY) {
-    return `at least ${counts.min} ${argumentWord(counts.min)}`;
+    return { key: counts.min === 1 ? 'at least {0} argument' : 'at least {0} arguments', args: [counts.min] };
   }
 
   if (counts.min === counts.max) {
-    return `${counts.min} ${argumentWord(counts.min)}`;
+    return { key: counts.min === 1 ? '{0} argument' : '{0} arguments', args: [counts.min] };
   }
 
   if (counts.max === counts.min + 1) {
-    return `${counts.min} or ${counts.max} arguments`;
+    return { key: '{0} or {1} arguments', args: [counts.min, counts.max] };
   }
 
-  return `${counts.min} to ${counts.max} arguments`;
+  return { key: '{0} to {1} arguments', args: [counts.min, counts.max] };
 }
 
-function uniqueStrings(values: string[]): string[] {
-  return Array.from(new Set(values));
-}
-
-function joinAlternatives(values: string[]): string {
+function joinAlternatives(values: (number | MessageDescriptor)[]): MessageDescriptor {
   if (values.length <= 1) {
-    return values[0] ?? '0 arguments';
+    const value = values[0];
+    return value === undefined ? { key: '{0} arguments', args: [0] }
+      : typeof value === 'number' ? { key: '{0}', args: [value] } : value;
   }
 
-  return `${values.slice(0, -1).join(', ')} or ${values[values.length - 1]}`;
-}
-
-function argumentWord(count: number): string {
-  return count === 1 ? 'argument' : 'arguments';
+  const prefix = values.slice(0, -1).reduce((left, right) => ({
+    key: '{0}, {1}', args: [left, right]
+  }));
+  return { key: '{0} or {1}', args: [prefix, values[values.length - 1]] };
 }
 
 function findGuiPartByName(
@@ -566,7 +567,7 @@ function guiReceiverPathDiagnostic(
       return {
         severity: 'error',
         source: 'axel',
-        message: `Unknown GUI receiver path segment '${segment}'.`,
+        ...message("Unknown GUI receiver path segment '{0}'.", segment),
         range: method.receiverPathSegmentRanges[index]
       };
     }
@@ -617,7 +618,7 @@ function doModalOnCreateDiagnostics(
     .map((reference) => ({
       severity: 'warning',
       source: 'axel',
-      message: 'DoModal should not be called inside a GCDialog OnCreate handler.',
+      ...message('DoModal should not be called inside a GCDialog OnCreate handler.'),
       range: reference.range
     }));
 }

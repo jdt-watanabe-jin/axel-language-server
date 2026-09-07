@@ -1,3 +1,5 @@
+import type { MessageDescriptor } from '../i18n/messages';
+
 export interface AnalysisPosition {
   line: number;
   character: number;
@@ -20,6 +22,7 @@ export interface AnalysisDiagnostic {
   severity: AnalysisDiagnosticSeverity;
   source: 'axel';
   message: string;
+  messageDescriptor?: MessageDescriptor;
   range: AnalysisRange;
 }
 
