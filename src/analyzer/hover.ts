@@ -16,7 +16,6 @@ import type {
   AnalysisResolvedScriptExecution,
   AnalysisRange
 } from '../types/analysis';
-import { getBuiltinHover } from './builtins';
 import { expandMacroInvocationText, type MacroLookup } from './macroExpansion';
 import {
   findLocalDeclaration as resolveLocalDeclaration,
@@ -107,7 +106,7 @@ export function getHover(input: HoverInput): AnalysisHover | null {
     return implicitGuiHover;
   }
 
-  return getBuiltinHover(reference.name, input.locale);
+  return null;
 }
 
 function findIncludeHover(input: HoverInput): AnalysisHover | undefined {

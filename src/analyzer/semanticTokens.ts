@@ -7,7 +7,6 @@ import type {
   AnalysisSemanticTokenType,
   AnalyzedDocument
 } from '../types/analysis';
-import { getBuiltinHover } from './builtins';
 import {
   compareDeclarations,
   findDeclarationMember as findDeclarationMemberUncached,
@@ -196,10 +195,6 @@ function tokenTypeFromReference(
   const visibleDeclaration = matchingVisibleDeclaration(reference, resolutionInput, resolutionCache);
   if (visibleDeclaration !== undefined) {
     return tokenTypeFromReferenceDeclaration(reference, visibleDeclaration);
-  }
-
-  if (reference.call === true && getBuiltinHover(reference.name) !== null) {
-    return 'function';
   }
 
   return undefined;

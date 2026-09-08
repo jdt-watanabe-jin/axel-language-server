@@ -364,7 +364,7 @@ suite('getHover', () => {
     })?.plainText, `AXEL 実行ファイル: ${scriptPath}`);
   });
 
-  test('returns documented built-in hover for printf', () => {
+  test('returns no hover for undeclared printf', () => {
     const analysis = analyze('void main() { printf("value=%d", 1); }');
 
     const hover = getHover({
@@ -373,16 +373,7 @@ suite('getHover', () => {
       workspaceIndex: createWorkspaceIndex()
     });
 
-    assert.deepStrictEqual(hover, {
-      markdown: [
-        '```axel',
-        'int printf(string format, ...)',
-        '```',
-        '',
-        'AXEL standard library output function.'
-      ].join('\n'),
-      plainText: 'int printf(string format, ...)\nAXEL standard library output function.'
-    });
+    assert.strictEqual(hover, null);
   });
 
   test('resolves enum member references to their declaration', () => {
@@ -400,7 +391,7 @@ suite('getHover', () => {
     });
   });
 
-  test('prefers a local declaration over a built-in name', () => {
+  test('resolves a local declaration named printf', () => {
     const analysis = analyze('void main() { int printf; printf = 1; }');
 
     const hover = getHover({

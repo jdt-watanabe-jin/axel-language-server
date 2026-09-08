@@ -3,7 +3,6 @@ import type {
   AnalysisRange,
   AnalysisWorkspaceEdit
 } from '../types/analysis';
-import { getBuiltinHover } from './builtins';
 import {
   findNavigationTargetDeclaration,
   getReferences,
@@ -70,8 +69,7 @@ function findSafeRenameTarget(input: NavigationInput): AnalysisDeclaration | und
 
 function isUnsafeRenameDeclaration(declaration: AnalysisDeclaration): boolean {
   return declaration.kind === 'include'
-    || declaration.kind === 'macro'
-    || getBuiltinHover(declaration.name) !== null;
+    || declaration.kind === 'macro';
 }
 
 function hasAmbiguousVisibleDeclaration(

@@ -1,7 +1,6 @@
 import * as assert from 'assert';
 import { japaneseMessages } from '../../i18n/ja';
 import { formatMessage } from '../../i18n/messages';
-import { getBuiltinCompletions } from '../../analyzer/builtins';
 
 suite('message localization', () => {
   test('preserves argument text and translates nested templates without translating identifiers', () => {
@@ -25,17 +24,6 @@ suite('message localization', () => {
     const placeholders = (text: string) => [...new Set(text.match(/\{\d+\}/g) ?? [])].sort();
     for (const [key, translation] of Object.entries(japaneseMessages)) {
       assert.deepStrictEqual(placeholders(translation), placeholders(key), key);
-    }
-  });
-
-  test('every builtin description is translated while signatures and names stay identical', () => {
-    const english = getBuiltinCompletions();
-    const japanese = getBuiltinCompletions('ja');
-    assert.strictEqual(japanese.length, english.length);
-    for (const [index, item] of english.entries()) {
-      assert.strictEqual(japanese[index].name, item.name);
-      assert.strictEqual(japanese[index].detail, item.detail);
-      assert.notStrictEqual(japanese[index].documentation?.split(' 出典:')[0], item.documentation?.split(' Source:')[0]);
     }
   });
 });

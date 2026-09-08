@@ -259,6 +259,7 @@ suite('collectSemanticTokens', () => {
 
     const tokens = collectSemanticTokens(analysis, {
       listVisibleDeclarations: () => [
+        declaration('printf', 'function', 'int printf(string format, ...)'),
         declaration('customLog', 'function', 'void customLog(string value)')
       ]
     });

@@ -447,7 +447,7 @@ suite('getHover', () => {
     });
   });
 
-  test('prefers a forced-include function declaration over built-in hover data', () => {
+  test('resolves a forced-include function declaration named printf', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
     const forcedPath = path.join(tempDir, 'forced.h');

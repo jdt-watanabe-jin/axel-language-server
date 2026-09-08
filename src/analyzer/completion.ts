@@ -8,7 +8,6 @@ import type {
   AnalysisGuiPart,
   AnalysisPosition
 } from '../types/analysis';
-import { getBuiltinCompletions } from './builtins';
 import { DIRECT_GUI_BASE_NAMES } from './guiClassKinds';
 import {
   contains,
@@ -181,7 +180,6 @@ export function getCompletions(input: CompletionInput): AnalysisCompletionItem[]
   if (context.kind === 'expression') {
     items.push(...typeCompletionItems(input));
     items.push(...keywordItems(EXPRESSION_KEYWORDS));
-    items.push(...getBuiltinCompletions(input.locale));
     items.push(...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)));
     items.push(...implicitGuiContextCompletions(input));
   }

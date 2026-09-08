@@ -10,7 +10,6 @@ import type {
   AnalysisScope,
   AnalyzedDocument
 } from '../types/analysis';
-import { getBuiltinHover } from './builtins';
 import { isGuiPartTypeName } from './guiClassKinds';
 import {
   allGuiMethods,
@@ -48,7 +47,7 @@ export function collectSemanticDiagnostics(input: SemanticDiagnosticsInput): Ana
     ? undefined
     : createCachedWorkspaceIndex(input.analysis.uri, input.workspaceIndex);
   return [
-    ...duplicateDeclarationDiagnostics(input.analysis),
+    ...duplicateDeclarationDiagnostics(input.analysis, workspaceIndex),
     ...unresolvedTypeReferenceDiagnostics(input.analysis, workspaceIndex),
     ...unresolvedIdentifierDiagnostics(input.analysis, workspaceIndex),
     ...callArgumentCountDiagnostics(input.analysis, workspaceIndex),
@@ -114,9 +113,20 @@ function createCachedWorkspaceIndex(
 }
 
 function duplicateDeclarationDiagnostics(
-  analysis: Pick<AnalyzedDocument, 'declarations' | 'scopes'>
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
-  const declarations = new Map(analysis.declarations.map((declaration) => [declaration.id, declaration]));
+  // Unexpanded macro-prefixed calls may be parsed as object declarations.
+  // Preserve recovery using visible source functions instead of reserved names.
+  const functionNames = new Set(analysis.declarations
+    .filter(declaration => declaration.kind === 'function')
+    .map(declaration => declaration.name));
+  const macroNames = new Set(analysis.declarations
+    .filter(declaration => declaration.kind === 'macro')
+    .map(declaration => declaration.name));
+  const declarations = new Map(analysis.declarations
+    .filter(declaration => !isMacroPrefixedCallRecovery(declaration, functionNames, macroNames, analysis.uri, workspaceIndex))
+    .map((declaration) => [declaration.id, declaration]));
   const diagnostics: AnalysisDiagnostic[] = [];
 
   for (const scope of analysis.scopes) {
@@ -161,18 +171,29 @@ function isDuplicateCheckedDeclaration(declaration: AnalysisDeclaration): boolea
     && declaration.kind !== 'macro'
     && declaration.kind !== 'function'
     && declaration.kind !== 'parameter'
-    && !isFunctionPrototypeDeclaration(declaration)
-    && !isMacroPrefixedBuiltinCallRecovery(declaration);
+    && !isFunctionPrototypeDeclaration(declaration);
 }
 
 function isFunctionPrototypeDeclaration(declaration: AnalysisDeclaration): boolean {
   return declaration.kind === 'variable' && declaration.detail.includes('(');
 }
 
-function isMacroPrefixedBuiltinCallRecovery(declaration: AnalysisDeclaration): boolean {
+function isMacroPrefixedCallRecovery(
+  declaration: AnalysisDeclaration,
+  localFunctionNames: ReadonlySet<string>,
+  localMacroNames: ReadonlySet<string>,
+  sourceUri: string,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
+): boolean {
   return declaration.kind === 'variable'
-    && getBuiltinHover(declaration.name) !== null
-    && /^[A-Z_$][0-9A-Z_$]*\s+[0-9A-Za-z_$]+$/.test(declaration.detail);
+    && declaration.typeName !== undefined
+    && declaration.detail === `${declaration.typeName} ${declaration.name}`
+    && (localMacroNames.has(declaration.typeName)
+      || (workspaceIndex?.findVisibleDeclarations?.(sourceUri, declaration.typeName) ?? [])
+        .some(candidate => candidate.kind === 'macro'))
+    && (localFunctionNames.has(declaration.name)
+      || (workspaceIndex?.findVisibleDeclarations?.(sourceUri, declaration.name) ?? [])
+        .some(candidate => candidate.kind === 'function'));
 }
 
 const BUILTIN_TYPE_NAMES = new Set([
@@ -274,7 +295,6 @@ function isKnownIdentifierReference(
   if (KNOWN_VALUE_NAMES.has(reference.name)
     || BUILTIN_TYPE_NAMES.has(reference.name)
     || isGuiPartTypeName(reference.name)
-    || getBuiltinHover(reference.name) !== null
     || isMacroLikeTypeRecovery(reference.name)) {
     return true;
   }

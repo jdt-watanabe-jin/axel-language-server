@@ -196,7 +196,7 @@ suite('getCompletions', () => {
     assert.strictEqual(completions.find((completion) => completion.name === 'string')?.kind, 'typedef');
   });
 
-  test('returns visible symbols, enum members, macros, and built-ins in expression context', () => {
+  test('returns visible symbols, enum members, and macros in expression context', () => {
     const { text, position } = marked([
       '#define LIMIT 10',
       'enum Mode { Idle, Busy };',
@@ -211,29 +211,17 @@ suite('getCompletions', () => {
       'local',
       'helper',
       'Idle',
-      'LIMIT',
-      'printf',
-      'abs',
-      'floor',
-      'sin',
-      'srand',
-      'time',
-      'putchar',
-      'puts',
-      'sprintf',
-      'fopen',
-      'sleep',
-      'msleep'
+      'LIMIT'
     ]);
   });
 
-  test('returns prefix-matching built-ins while typing an expression identifier', () => {
+  test('does not suggest undeclared functions while typing an expression identifier', () => {
     const { text, position } = marked('void main() { pr| }');
     const analysis = analyze(text);
 
     const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
 
-    assertCompletionNames(completions, ['printf']);
+    assert.ok(!completions.some(item => item.name === 'printf'));
   });
 
   test('returns type names in object declaration type context', () => {

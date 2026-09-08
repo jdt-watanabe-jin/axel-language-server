@@ -20,7 +20,7 @@ suite('rename analyzer', () => {
     });
   });
 
-  test('prepare rename rejects built-in symbols', () => {
+  test('prepare rename rejects undeclared functions', () => {
     const { analysis, position } = analyzeMarked('void main() { |printf("x"); }');
 
     assert.strictEqual(prepareRename({

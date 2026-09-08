@@ -100,13 +100,8 @@ suite('collectSemanticDiagnostics', () => {
     assert.deepStrictEqual(diagnostics, []);
   });
 
-  test('does not report macro-prefixed builtin calls as duplicate declarations', () => {
-    const rootNode = parser.parse([
-      'void main() {',
-      '  M_DEBUG printf("first");',
-      '  M_DEBUG printf("second");',
-      '}'
-    ].join('\n')).rootNode;
+  test('reports duplicate variables even when named after former builtin functions', () => {
+    const rootNode = parser.parse('void main() { int printf; int printf; }').rootNode;
     const symbols = buildSymbolIndex(rootNode, uri);
     const diagnostics = collectSemanticDiagnostics({
       analysis: {
@@ -121,7 +116,7 @@ suite('collectSemanticDiagnostics', () => {
       }
     });
 
-    assert.deepStrictEqual(diagnostics, []);
+    assert.deepStrictEqual(diagnostics.map(item => item.message), ["Duplicate declaration 'printf'."]);
   });
 
   test('reports function calls with too many arguments', () => {
