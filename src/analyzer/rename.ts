@@ -3,6 +3,7 @@ import type {
   AnalysisRange,
   AnalysisWorkspaceEdit
 } from '../types/analysis';
+import { systemMacroAt } from './systemMacros';
 import {
   findNavigationTargetDeclaration,
   getReferences,
@@ -55,6 +56,7 @@ export function getRenameEdits(input: RenameInput): AnalysisWorkspaceEdit | Rena
 }
 
 function findSafeRenameTarget(input: NavigationInput): AnalysisDeclaration | undefined {
+  if (systemMacroAt(input.analysis, input.position)) { return undefined; }
   const target = findNavigationTargetDeclaration(input);
   if (target === undefined || isUnsafeRenameDeclaration(target)) {
     return undefined;

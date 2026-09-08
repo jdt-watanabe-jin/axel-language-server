@@ -1,4 +1,5 @@
-import type { AnalysisMacroDefinition } from '../types/analysis';
+import type { AnalysisMacroDefinition, AnalysisPosition } from '../types/analysis';
+import { resolveSystemMacro } from './systemMacros';
 import { message, type MessageDescriptor } from '../i18n/messages';
 import type { MacroInvocationCandidate } from './macroInvocation';
 import { parseMacroInvocationText } from './macroInvocation';
@@ -19,6 +20,7 @@ export interface MacroExpansionDiagnostic {
 }
 
 export interface MacroExpansionResult {
+  runtimeMacros?: string[];
   expandedText: string;
   steps: MacroExpansionStep[];
   truncated: boolean;
@@ -26,17 +28,25 @@ export interface MacroExpansionResult {
 }
 
 interface ExpansionState {
+  systemContext?: { uri: string; position: AnalysisPosition; tool?: string };
+  runtimeMacros?: Set<string>;
   maxDepth: number;
   depth: number;
   stack: string[];
+}
+
+export interface MacroExpansionOptions {
+  maxDepth?: number;
+  systemContext?: { uri: string; position: AnalysisPosition; tool?: string };
 }
 
 export function expandMacroInvocation(
   invocation: MacroInvocationCandidate,
   macro: AnalysisMacroDefinition,
   visibleMacros: MacroLookup,
-  options: { maxDepth?: number } = {}
+  options: MacroExpansionOptions = {}
 ): MacroExpansionResult {
+  if (options.systemContext !== undefined) { return expandMacroInvocationText(invocation.rawText, visibleMacros, options); }
   return expandKnownMacro(invocation.rawText, macro, invocation.arguments, visibleMacros, {
     maxDepth: options.maxDepth ?? 8,
     depth: 0,
@@ -47,8 +57,12 @@ export function expandMacroInvocation(
 export function expandMacroInvocationText(
   text: string,
   visibleMacros: MacroLookup,
-  options: { maxDepth?: number } = {}
+  options: MacroExpansionOptions = {}
 ): MacroExpansionResult {
+  const state: ExpansionState = {
+    maxDepth: options.maxDepth ?? 8, depth: 0, stack: [],
+    systemContext: options.systemContext, runtimeMacros: new Set()
+  };
   const invocation = parseMacroInvocationText(text);
   if (invocation === undefined) {
     return {
@@ -69,11 +83,18 @@ export function expandMacroInvocationText(
     };
   }
 
-  return expandKnownMacro(text, macro, invocation.arguments, visibleMacros, {
-    maxDepth: options.maxDepth ?? 8,
-    depth: 0,
-    stack: []
+  let argumentOffset = text.indexOf('(') + 1;
+  // Preserve the original argument boundaries even if an expansion generates commas.
+  const args = invocation.arguments.map(argument => {
+    if (options.systemContext === undefined) { return argument; }
+    const start = text.indexOf(argument, argumentOffset);
+    argumentOffset = start + argument.length;
+    return expandSourceTokens(argument, visibleMacros, { ...state,
+      systemContext: { ...options.systemContext, position: positionWithinText(options.systemContext.position, text, start) }
+    });
   });
+  return { ...expandKnownMacro(text, macro, args, visibleMacros, state),
+    runtimeMacros: [...(state.runtimeMacros ?? [])] };
 }
 
 function expandKnownMacro(
@@ -113,7 +134,7 @@ function expandKnownMacro(
   }
 
   const parameterNames = parameters.map((parameter) => parameter.label);
-  const substituted = substituteParameters(macro.replacementText, parameterNames, args);
+  const substituted = substituteParameters(macro.replacementText, parameterNames, args, state);
   const nested = expandNestedInvocations(substituted, visibleMacros, {
     ...state,
     depth: state.depth + 1,
@@ -171,13 +192,22 @@ function expandNestedInvocations(
 function substituteParameters(
   replacementText: string,
   parameters: readonly string[],
-  args: readonly string[]
+  args: readonly string[],
+  state?: ExpansionState,
+  sourcePositions = false,
+  sourceExpansions: ReadonlyMap<number, { end: number; text: string }> = new Map()
 ): string {
   const values = new Map(parameters.map((parameter, index) => [parameter, args[index] ?? '']));
   let result = '';
   let index = 0;
 
   while (index < replacementText.length) {
+    const expansion = sourceExpansions.get(index);
+    if (expansion !== undefined) {
+      result += expansion.text;
+      index = expansion.end;
+      continue;
+    }
     const character = replacementText[index];
     const next = replacementText[index + 1];
 
@@ -202,9 +232,19 @@ function substituteParameters(
       continue;
     }
 
-    const identifier = /^[A-Za-z_]\w*/.exec(replacementText.slice(index));
+    const identifier = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(replacementText.slice(index));
     if (identifier !== null) {
-      result += values.get(identifier[0]) ?? identifier[0];
+      let value = values.get(identifier[0]);
+      const context = state?.systemContext;
+      if (value === undefined && context !== undefined) {
+        const position = sourcePositions ? positionWithinText(context.position, replacementText, index) : context.position;
+        const macro = resolveSystemMacro(identifier[0], context.uri, position, context.tool);
+        if (macro?.defined) {
+          if (macro.runtimeFormat !== undefined) { state?.runtimeMacros?.add(macro.name); }
+          if (macro.value !== undefined) { value = typeof macro.value === 'number' ? String(macro.value) : JSON.stringify(macro.value); }
+        }
+      }
+      result += value ?? identifier[0];
       index += identifier[0].length;
       continue;
     }
@@ -214,6 +254,31 @@ function substituteParameters(
   }
 
   return result.replace(/[ \t]*\\\r?\n/g, '\n').trim();
+}
+
+function positionWithinText(start: AnalysisPosition, text: string, offset: number): AnalysisPosition {
+  const lines = text.slice(0, offset).split('\n');
+  return { line: start.line + lines.length - 1,
+    character: lines.length === 1 ? start.character + offset : lines[lines.length - 1].length };
+}
+
+function expandSourceTokens(text: string, lookup: MacroLookup, state: ExpansionState): string {
+  const expansions = new Map<number, { end: number; text: string }>();
+  const context = state.systemContext!;
+    for (const candidate of findNestedInvocationTexts(text)) {
+      const parsed = parseMacroInvocationText(candidate.text);
+      if (parsed === undefined || lookup.findMacro(parsed.name) === undefined) { continue; }
+      const start = candidate.start;
+      const result = expandMacroInvocationText(candidate.text, lookup, {
+        maxDepth: state.maxDepth,
+        systemContext: { ...context, position: positionWithinText(context.position, text, start) }
+      });
+      if (result.diagnostics.length > 0 || result.truncated) { continue; }
+      for (const name of result.runtimeMacros ?? []) { state.runtimeMacros?.add(name); }
+      expansions.set(start, { end: candidate.end, text: result.expandedText });
+    }
+  // Apply replacements against original offsets; never re-scan generated text as source.
+  return substituteParameters(text, [], [], state, true, expansions);
 }
 
 function findNestedInvocationTexts(text: string): { text: string; start: number; end: number }[] {
@@ -236,7 +301,7 @@ function findNestedInvocationTexts(text: string): { text: string; start: number;
       continue;
     }
 
-    const match = /^[A-Za-z_]\w*/.exec(text.slice(index));
+    const match = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(text.slice(index));
     if (match === null) {
       index += 1;
       continue;

@@ -1,4 +1,5 @@
 import { message, type MessageDescriptor } from '../i18n/messages';
+import { containsSourcePosition, isSystemMacroName, resolveSystemMacro } from './systemMacros';
 import type {
   AnalysisDeclaration,
   AnalysisDeclarationKind,
@@ -25,6 +26,7 @@ import {
   findDeclarationMember,
   findLocalDeclaration,
   isTypeDeclaration,
+  isVisibleAt,
   receiverTypeName,
   resolveMemberAccessType,
   thisReceiverType,
@@ -32,7 +34,7 @@ import {
 } from './resolution';
 
 export interface SemanticDiagnosticsInput {
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods'>;
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'tool' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations'>;
   workspaceIndex?: WorkspaceSemanticDiagnosticsIndex;
 }
 
@@ -43,6 +45,23 @@ export interface WorkspaceSemanticDiagnosticsIndex {
 }
 
 export function collectSemanticDiagnostics(input: SemanticDiagnosticsInput): AnalysisDiagnostic[] {
+  // Potential declarations cannot prove a duplicate, missing name or signature.
+  // Keep unrelated references so an unknown branch does not disable diagnostics.
+  const uncertainNames = new Set(input.analysis.uncertainNames ?? []);
+  const originalAnalysis = input.analysis;
+  const mightBeVisible = (name: string, reference: AnalysisReference): boolean => {
+    const candidates = (originalAnalysis.uncertainDeclarations ?? []).filter(d => d.name === name);
+    if (candidates.length === 0) { return uncertainNames.has(name); }
+    return candidates.some(declaration => originalAnalysis.scopes.some(scope =>
+      scope.declarationIds.includes(declaration.id) && containsSourcePosition(scope.range, reference.range.start)
+      && isVisibleAt(declaration, reference.range.start, originalAnalysis.uri)));
+  };
+  if (uncertainNames.size > 0) {
+    input = { ...input, analysis: { ...input.analysis,
+      references: input.analysis.references.filter(ref => !mightBeVisible(ref.name, ref)
+        && !mightBeVisible(ref.memberAccess?.receiverName ?? '', ref))
+    } };
+  }
   const workspaceIndex = input.workspaceIndex === undefined
     ? undefined
     : createCachedWorkspaceIndex(input.analysis.uri, input.workspaceIndex);
@@ -269,7 +288,7 @@ const KNOWN_VALUE_NAMES = new Set([
 ]);
 
 function unresolvedIdentifierDiagnostics(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods' | 'tool'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
   if (hasSyntaxDiagnostics(analysis.diagnostics)) {
@@ -289,9 +308,12 @@ function unresolvedIdentifierDiagnostics(
 
 function isKnownIdentifierReference(
   reference: AnalysisReference,
-  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods' | 'tool'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): boolean {
+  if (isSystemMacroName(reference.name) && reference.memberAccess === undefined) {
+    return resolveSystemMacro(reference.name, analysis.uri, reference.range.start, analysis.tool)?.defined === true;
+  }
   if (KNOWN_VALUE_NAMES.has(reference.name)
     || BUILTIN_TYPE_NAMES.has(reference.name)
     || isGuiPartTypeName(reference.name)

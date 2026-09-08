@@ -32,6 +32,9 @@ export function startLspServer() {
     }
   }
   return {
+    onNotification<T>(method: string, handler: (params: T) => void) {
+      return connection.onNotification(method, handler);
+    },
     request<T>(method: string, params?: object) {
       return deadline(connection.sendRequest<T>(method, params), method);
     },

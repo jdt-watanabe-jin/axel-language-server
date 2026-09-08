@@ -1,4 +1,6 @@
 import type * as Parser from 'tree-sitter';
+import { message } from '../i18n/messages';
+import { collectSystemMacroSyntax, isSystemMacroName, normalizeTool, resolveSystemMacro } from './systemMacros';
 import type {
   AnalysisDiagnostic,
   AnalysisGuiClass,
@@ -20,7 +22,7 @@ import { buildGuiIndex, collectExternalGuiMethods } from './guiIndex';
 import { collectIncludes, collectScriptExecutions } from './includeResolver';
 import { collectMacroInvocations } from './macroInvocation';
 import { collectMacroDefinitions } from './macroIndex';
-import { collectInactivePreprocessorRanges } from './preprocessorEvaluation';
+import { evaluatePreprocessor } from './preprocessorEvaluation';
 import {
   collectPreprocessorSemanticTokenReferences,
   collectPreprocessorSemanticTokens
@@ -53,6 +55,7 @@ export class DocumentAnalyzer {
 
     return measureDurationMs(this.logger, 'document.analyze', { uri: input.uri, version: input.version }, () => {
       const tree = this.parser.parse(input.text);
+      const systemSyntax = collectSystemMacroSyntax(tree.rootNode);
       const guiClasses = buildGuiIndex(tree.rootNode, input.uri, knownGuiClassMapFromInput(input));
       const guiMethods = collectExternalGuiMethods(tree.rootNode);
       const knownGuiClassNames = new Set([
@@ -60,9 +63,10 @@ export class DocumentAnalyzer {
         ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
         ...guiClasses.map((guiClass) => guiClass.name)
       ]);
-      const inactiveRanges = collectInactivePreprocessorRanges(tree.rootNode, input.preprocessorSymbols);
+      const { inactiveRanges, uncertainRanges, uncertainNames } = evaluatePreprocessor(tree.rootNode, input.preprocessorSymbols, input.tool);
       const macroDefinitions = collectMacroDefinitions(tree.rootNode, input.uri);
-      const activeMacroDefinitions = macroDefinitions.filter((macro) => !startsInInactiveRange(macro.selectionRange, inactiveRanges));
+      const activeMacroDefinitions = macroDefinitions.filter((macro) => !isSystemMacroName(macro.name)
+        && !startsInInactiveRange(macro.selectionRange, [...inactiveRanges, ...uncertainRanges]));
       const visibleMacroDefinitions = [
         ...(input.macroDefinitions ?? []),
         ...activeMacroDefinitions.map((macro) => ({
@@ -76,6 +80,10 @@ export class DocumentAnalyzer {
         parseText: (text) => this.parser.parse(text).rootNode
       });
       const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
+      const possibleDeclarations = symbolIndex.declarations.filter(declaration =>
+        startsInInactiveRange(declaration.selectionRange, uncertainRanges)
+        && !startsInInactiveRange(declaration.selectionRange, inactiveRanges)
+        && !(declaration.kind === 'macro' && isSystemMacroName(declaration.name)));
       const scopes = buildScopeIndex(tree.rootNode, input.uri, symbolIndex.declarations);
       const includes = collectIncludes(tree.rootNode);
       const scriptExecutions = collectScriptExecutions(tree.rootNode);
@@ -83,21 +91,43 @@ export class DocumentAnalyzer {
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
       const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
       const analysis: AnalyzedDocument = {
+        tool: normalizeTool(input.tool),
+        uncertainRanges,
+        uncertainDeclarations: possibleDeclarations,
+        uncertainMacroDefinitions: macroDefinitions.filter(macro => !isSystemMacroName(macro.name)
+          && startsInInactiveRange(macro.selectionRange, uncertainRanges)
+          && !startsInInactiveRange(macro.selectionRange, inactiveRanges)),
+        uncertainNames: [...new Set([...(input.uncertainNames ?? []), ...uncertainNames, ...possibleDeclarations.map(d => d.name)])],
+        systemMacroReferences: systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)),
+        completionExcludedRanges: systemSyntax.excludedRanges,
         uri: input.uri,
         version: input.version,
-        diagnostics: syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, inactiveRanges)),
+        diagnostics: [
+          ...syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, inactiveRanges)),
+          ...systemSyntax.mutations.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)).map(ref => ({
+            severity: 'warning' as const, source: 'axel' as const, range: ref.range,
+            ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
+          }))
+        ],
         symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), inactiveRanges),
-        declarations: symbolIndex.declarations.filter((declaration) => !startsInInactiveRange(declaration.selectionRange, inactiveRanges)),
+        declarations: symbolIndex.declarations.filter((declaration) => !(declaration.kind === 'macro' && isSystemMacroName(declaration.name))
+          && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
         macroDefinitions: activeMacroDefinitions,
         macroInvocations: macroInvocations.filter((invocation) => !startsInInactiveRange(invocation.selectionRange, inactiveRanges)),
         semanticTokenReferences: preprocessorSemanticTokenReferences.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
-        semanticTokens: preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
+        semanticTokens: [
+          ...preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
+          ...systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)
+            && resolveSystemMacro(ref.name, input.uri, ref.range.start, input.tool)?.defined).map(ref => ({
+            range: ref.range, tokenType: 'macro' as const, modifiers: []
+          }))
+        ],
         scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
         includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
         scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, inactiveRanges)),
-        guiClasses: filterGuiClassesForInactiveRanges(guiClasses, inactiveRanges),
-        guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, inactiveRanges)),
+        guiClasses: filterGuiClassesForInactiveRanges(guiClasses, [...inactiveRanges, ...uncertainRanges]),
+        guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, [...inactiveRanges, ...uncertainRanges])),
         inactiveRanges
       };
 
@@ -128,7 +158,7 @@ function analysisContextKeyFromInput(input: AnalyzeDocumentInput): string {
     .join('\u0000');
   const preprocessorKey = [...(input.preprocessorSymbols ?? [])]
     .sort((left, right) => left.name.localeCompare(right.name))
-    .map((symbol) => `${symbol.name}=${symbol.value ?? ''}`)
+    .map((symbol) => `${symbol.name}=${symbol.value ?? ''}:${symbol.possiblyUndefined ?? false}:${symbol.unknownValue ?? false}:${JSON.stringify(symbol.sourceRange)}`)
     .join('\u0000');
   const macroKey = [...(input.macroDefinitions ?? [])]
     .sort((left, right) => left.name.localeCompare(right.name)
@@ -143,7 +173,7 @@ function analysisContextKeyFromInput(input: AnalyzeDocumentInput): string {
       return `${macro.name}/${parameters}@${visibilityStart}=${macro.replacementText}`;
     })
     .join('\u0000');
-  return `${guiClassKey}\u0001${preprocessorKey}\u0001${macroKey}`;
+  return `${normalizeTool(input.tool)}\u0001${guiClassKey}\u0001${preprocessorKey}\u0001${macroKey}\u0001${(input.uncertainNames ?? []).join('\0')}`;
 }
 
 function knownGuiClassMapFromInput(input: AnalyzeDocumentInput): ReadonlyMap<string, AnalysisGuiClassKind> {

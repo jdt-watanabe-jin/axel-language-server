@@ -1,4 +1,5 @@
 import { withDeclarationOrigin } from './declarationOrigin';
+import { describeSystemMacro, resolveSystemMacro, systemMacroAt } from './systemMacros';
 import { translate } from '../i18n/messages';
 import type {
   AnalysisDeclaration,
@@ -56,6 +57,11 @@ export interface WorkspaceDeclarationIndex {
 }
 
 export function getHover(input: HoverInput): AnalysisHover | null {
+  const systemReference = systemMacroAt(input.analysis, input.position);
+  if (systemReference !== undefined) {
+    const macro = resolveSystemMacro(systemReference.name, input.analysis.uri, systemReference.range.start, input.analysis.tool);
+    if (macro !== undefined) { return hoverFromText(describeSystemMacro(macro, input.locale), 'text'); }
+  }
   const includeHover = findIncludeHover(input);
   if (includeHover !== undefined) {
     return includeHover;
@@ -151,13 +157,16 @@ function hoverForMacroInvocation(
       invocation.range.start
     )
   };
-  const expansion = expandMacroInvocationText(invocation.rawText, lookup);
+  const expansion = expandMacroInvocationText(invocation.rawText, lookup, {
+    systemContext: { uri: input.analysis.uri, position: invocation.range.start, tool: input.analysis.tool }
+  });
   if (expansion.diagnostics.length > 0) {
     return undefined;
   }
 
   const expandedText = formatMacroExpansionForHover(expansion.expandedText);
-  const expansionNote = expansion.truncated ? '\n' + translate(input.locale, 'Expansion truncated at depth 8.') : '';
+  const expansionNote = (expansion.truncated ? '\n' + translate(input.locale, 'Expansion truncated at depth 8.') : '')
+    + ((expansion.runtimeMacros?.length ?? 0) > 0 ? '\n' + translate(input.locale, 'Runtime values remain symbolic: {0}.', expansion.runtimeMacros!.join(', ')) : '');
   const plainText = [
     macro.detail,
     ...(macro.documentation === undefined ? [] : [macro.documentation]),

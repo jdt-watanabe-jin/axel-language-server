@@ -1,4 +1,5 @@
 import * as path from 'path';
+import { normalizeTool } from './systemMacros';
 import type { WorkspaceIndexOptions } from './workspaceIndex';
 
 const ENVIRONMENT_PATH_SEPARATOR = ';';
@@ -27,6 +28,7 @@ export function mergeWorkspaceIndexOptions(
   const defines = overrides.defines ?? base.defines;
   return {
     includeRoots: normalizePaths(overrides.includeRoots ?? base.includeRoots ?? []),
+    ...(overrides.tool === undefined ? {} : { tool: normalizeTool(overrides.tool) }),
     forcedIncludeRoots: normalizePaths(overrides.forcedIncludeRoots ?? base.forcedIncludeRoots ?? []),
     forcedIncludeFiles: normalizeUniquePaths([
       ...(base.forcedIncludeFiles ?? []),

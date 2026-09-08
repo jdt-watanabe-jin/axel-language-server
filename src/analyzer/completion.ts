@@ -1,4 +1,5 @@
 import { declarationOrigin } from './declarationOrigin';
+import { containsSourcePosition, describeSystemMacro, resolveSystemMacro, systemMacroNames } from './systemMacros';
 import { translate } from '../i18n/messages';
 import type {
   AnalysisCompletionItem,
@@ -172,6 +173,13 @@ export function getCompletions(input: CompletionInput): AnalysisCompletionItem[]
   }
 
   const items: AnalysisCompletionItem[] = [];
+  if ((context.kind === 'expression' || context.kind === 'topLevel')
+    && !(input.analysis.completionExcludedRanges ?? []).some(range => containsSourcePosition(range, input.position))) {
+    for (const name of systemMacroNames(input.analysis.tool)) {
+      const macro = resolveSystemMacro(name, input.analysis.uri, input.position, input.analysis.tool)!;
+      items.push({ name, kind: 'macro', detail: describeSystemMacro(macro, input.locale) });
+    }
+  }
   if (context.kind === 'topLevel') {
     items.push(...declarationKeywordItems(context.typedHash));
     items.push(...typeCompletionItems(input));

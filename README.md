@@ -29,6 +29,26 @@ The server currently supports these Language Server Protocol features:
 
 Formatting intentionally changes indentation only. It does not rewrite expression spacing, comments, or documents with syntax errors or unbalanced braces.
 
+## System-defined macros
+
+Pass `tool` in `initialize.initializationOptions` and in `workspace/didChangeConfiguration.settings`:
+
+```json
+{ "tool": "ismo" }
+```
+
+Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid values select `axel`; invalid values are logged. Changing the configuration invalidates analysis and refreshes diagnostics, inactive ranges, and semantic tokens without restarting the server.
+
+`__FILE__` is the absolute source path and `__LINE__` is the one-based source line. In a function-like macro body, the expansion uses the invocation location; tokens written in arguments keep their original locations. Strings and comments are not substituted.
+
+`__DATE__`, `__TIME__`, and `__TIMESTAMP__` are defined string macros whose runtime formats are `yy/mm/dd`, `hh:mm:ss`, and `yy/mm/dd hh:mm:ss`. Hover explains that their values are unavailable while editing; expansion leaves these names symbolic. The server never substitutes its current time or a file modification time.
+
+Tool `ismo` defines only `__APP_LEDIT__=1`, `asca` defines only `__APP_SEDIT__=1`, and `spicechart` defines only `__APP_SCHART__=1`. Tool `axel` defines none of these application macros. A non-selected macro is undefined, not defined as zero.
+
+The eight names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
+
+Hover, completion, diagnostics, and conditional evaluation share these definitions. System macros have no source definition or rename target, and no references list or function signature. Unknown runtime conditions retain possible branches instead of marking one inactive. Uncertain declarations are not treated as definitely visible; diagnostics depending only on their uncertainty are suppressed. Correlations between separate unknown branches are not evaluated.
+
 ## Localization
 
 The server uses the client's `initialize.locale`: `ja` and `ja-*` (case insensitive) select Japanese; omitted or other locales use English. Missing translations fall back to their English templates. Locale belongs to the connection and is retained across configuration changes. Reconnect after changing the client's display language.

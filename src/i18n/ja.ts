@@ -1,5 +1,11 @@
 /** Translations of server-owned text; source code and user comments are never keys. */
 export const japaneseMessages: Readonly<Record<string, string>> = {
+  'Runtime values remain symbolic: {0}.': '実行時に決まる値はマクロ名を残しています: {0}。',
+  'System-defined macro: {0} ({1})': 'システム定義マクロ: {0} ({1})',
+  'Not defined for the current Tool.': '現在の Tool では未定義です。',
+  'Determined at runtime ({0}); unavailable while editing.': '実行時に決定します（{0}）。編集時には値を確定できません。',
+  'Absolute file path is unavailable.': '絶対ファイルパスを取得できません。',
+  "System-defined macro '{0}' cannot be redefined or undefined.": "システム定義マクロ '{0}' は再定義・解除できません。",
   'Missing {0}.': '{0}がありません。',
   'Syntax error.': '構文エラーです。',
   "Duplicate declaration '{0}'.": "'{0}'は重複して宣言されています。",

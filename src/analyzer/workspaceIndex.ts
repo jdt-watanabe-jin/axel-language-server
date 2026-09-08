@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { containsSourcePosition, isSystemMacroName, normalizeTool } from './systemMacros';
 import { message } from '../i18n/messages';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -24,6 +25,7 @@ import { mergeWorkspaceIndexOptions } from './workspaceConfig';
 import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logger';
 
 export interface WorkspaceIndexOptions extends ForcedIncludeOptions {
+  tool?: string;
   includeRoots?: string[];
   defines?: string[];
   analyzer?: DocumentAnalyzer;
@@ -45,10 +47,12 @@ export class WorkspaceIndex {
   private forcedIncludeRoots: string[];
   private forcedIncludeFiles: string[];
   private defines: string[];
+  private tool: string;
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
   private readonly includeGraph = new Map<string, Set<string>>();
+  private readonly definiteIncludeGraph = new Map<string, Set<string>>();
   private readonly reverseIncludeGraph = new Map<string, Set<string>>();
   private forcedIncludeFileCache: string[] | undefined;
   private indexingForcedIncludes = false;
@@ -65,10 +69,13 @@ export class WorkspaceIndex {
     this.forcedIncludeRoots = normalizePaths(options.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(options.forcedIncludeFiles ?? []);
     this.defines = options.defines ?? [];
+    this.tool = normalizeTool(options.tool);
+    this.logSystemMacroConfiguration(options);
     this.maxNumberOfProblems = options.maxNumberOfProblems;
   }
 
   public configure(options: unknown): void {
+    this.logSystemMacroConfiguration(options);
     const merged = mergeWorkspaceIndexOptions({
       includeRoots: this.includeRoots,
       forcedIncludeRoots: this.forcedIncludeRoots,
@@ -80,6 +87,7 @@ export class WorkspaceIndex {
     this.forcedIncludeRoots = normalizePaths(merged.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(merged.forcedIncludeFiles ?? []);
     this.defines = merged.defines ?? [];
+    this.tool = normalizeTool(merged.tool);
     this.maxNumberOfProblems = merged.maxNumberOfProblems;
     this.forcedIncludeFileCache = undefined;
     this.clearCachedAnalysis();
@@ -96,7 +104,7 @@ export class WorkspaceIndex {
         return cached.analysis;
       }
 
-      const analysis = this.analyzer.analyzeDocument(input);
+      const analysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool });
       this.documents.set(input.uri, {
         analysis,
         version: input.version,
@@ -146,7 +154,7 @@ export class WorkspaceIndex {
       return cached.analysis;
     }
 
-    const initialAnalysis = this.analyzer.analyzeDocument(input);
+    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool });
     this.documents.set(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
@@ -200,7 +208,7 @@ export class WorkspaceIndex {
 
   public findVisibleDeclarations(sourceUri: string, name: string): AnalysisDeclaration[] {
     this.ensureForcedIncludesIndexed();
-    return this.collectVisibleUris(sourceUri)
+    return this.collectDefiniteVisibleUris(sourceUri)
       .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
       .filter((declaration) => declaration.name === name)
       .sort(compareDeclarations);
@@ -228,7 +236,7 @@ export class WorkspaceIndex {
     this.ensureForcedIncludesIndexed();
     const declarations = [
       ...(this.documents.get(sourceUri)?.analysis.declarations ?? []),
-      ...this.collectVisibleUris(sourceUri)
+      ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
     return Array.from(new Map(declarations.map((declaration) => [declaration.id, declaration])).values())
@@ -388,7 +396,7 @@ export class WorkspaceIndex {
     }
 
     const text = fs.readFileSync(normalizedPath, 'utf8');
-    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text });
+    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool });
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
@@ -486,16 +494,19 @@ export class WorkspaceIndex {
         kind: entry.guiClass.kind
       }));
     const preprocessorSymbols = this.collectVisiblePreprocessorSymbols(input.uri);
+    const uncertainNames = this.collectVisibleUncertainNames(input.uri);
     const macroDefinitions = this.collectPositionAwareMacroDefinitions(input.uri)
       .filter((macro) => macro.uri !== input.uri);
-    if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0) {
+    if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0 && uncertainNames.length === 0) {
       return initialAnalysis;
     }
 
     const analysis = this.analyzer.analyzeDocument({
       ...input,
+      tool: this.tool,
       knownGuiClasses,
       preprocessorSymbols,
+      uncertainNames,
       macroDefinitions
     });
     this.documents.set(input.uri, {
@@ -514,6 +525,7 @@ export class WorkspaceIndex {
     }
 
     const resolvedUris = new Set<string>();
+    const definiteUris = new Set<string>();
     for (const include of analysis.includes) {
       const resolution = resolveInclude({
         includingFilePath,
@@ -525,12 +537,13 @@ export class WorkspaceIndex {
       }
 
       resolvedUris.add(resolution.uri);
+      if (!this.isUncertainRange(analysis, include.range)) { definiteUris.add(resolution.uri); }
       if (!visitedUris.has(resolution.uri)) {
         this.indexDiskDocumentInternal(resolution.filePath, new Set([...visitedUris, resolution.uri]));
       }
     }
 
-    this.replaceIncludeEdges(analysis.uri, resolvedUris);
+    this.replaceIncludeEdges(analysis.uri, resolvedUris, definiteUris);
   }
 
   private replaceResolvedIncludeEdgesAndEnqueue(analysis: AnalyzedDocument): void {
@@ -541,6 +554,7 @@ export class WorkspaceIndex {
     }
 
     const resolvedUris = new Set<string>();
+    const definiteUris = new Set<string>();
     for (const include of analysis.includes) {
       const resolution = resolveInclude({
         includingFilePath,
@@ -552,12 +566,13 @@ export class WorkspaceIndex {
       }
 
       resolvedUris.add(resolution.uri);
+      if (!this.isUncertainRange(analysis, include.range)) { definiteUris.add(resolution.uri); }
       if (!this.documents.has(resolution.uri)) {
         this.enqueueBackgroundDocument(resolution.uri, resolution.filePath);
       }
     }
 
-    this.replaceIncludeEdges(analysis.uri, resolvedUris);
+    this.replaceIncludeEdges(analysis.uri, resolvedUris, definiteUris);
   }
 
   private enqueueBackgroundDocument(uri: string, filePath: string): void {
@@ -614,7 +629,7 @@ export class WorkspaceIndex {
       }
 
       const text = fs.readFileSync(normalizedPath, 'utf8');
-      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text });
+      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool });
       this.documents.set(uri, {
         analysis: initialAnalysis,
         filePath: normalizedPath,
@@ -645,7 +660,7 @@ export class WorkspaceIndex {
     }
   }
 
-  private replaceIncludeEdges(uri: string, includedUris: Set<string>): void {
+  private replaceIncludeEdges(uri: string, includedUris: Set<string>, definiteUris = includedUris): void {
     const oldEdges = this.includeGraph.get(uri) ?? new Set<string>();
     for (const includedUri of oldEdges) {
       const dependents = this.reverseIncludeGraph.get(includedUri);
@@ -656,6 +671,7 @@ export class WorkspaceIndex {
     }
 
     this.includeGraph.set(uri, includedUris);
+    this.definiteIncludeGraph.set(uri, definiteUris);
     for (const includedUri of includedUris) {
       const dependents = this.reverseIncludeGraph.get(includedUri) ?? new Set<string>();
       dependents.add(uri);
@@ -708,35 +724,59 @@ export class WorkspaceIndex {
   private listCachedVisibleDeclarations(sourceUri: string): AnalysisDeclaration[] {
     const declarations = [
       ...(this.documents.get(sourceUri)?.analysis.declarations ?? []),
-      ...this.collectCachedVisibleUris(sourceUri)
+      ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
     return Array.from(new Map(declarations.map((declaration) => [declaration.id, declaration])).values())
       .sort(compareDeclarations);
   }
 
-  private collectCachedVisibleUris(sourceUri: string): string[] {
-    const visibleUris = new Set<string>();
-    const pending = [
-      ...(this.includeGraph.get(sourceUri) ?? []),
-      ...this.knownForcedIncludeUris()
-    ];
+  private isUncertainRange(analysis: AnalyzedDocument, range: AnalysisRange): boolean {
+    return (analysis.uncertainRanges ?? []).some(uncertain => containsSourcePosition(uncertain, range.start));
+  }
 
+  // Potential reachability still drives indexing and invalidation. Only an
+  // entirely definite include path can establish a declaration as visible.
+  private collectDefiniteVisibleUris(sourceUri: string): string[] {
+    const visible = new Set<string>();
+    const visited = new Set<string>();
+    const pending = [sourceUri, ...this.knownForcedIncludeUris()];
     while (pending.length > 0) {
       const uri = pending.pop();
-      if (uri === undefined || uri === sourceUri || visibleUris.has(uri)) {
-        continue;
-      }
-
-      visibleUris.add(uri);
-      pending.push(...(this.includeGraph.get(uri) ?? []));
+      if (uri === undefined || visited.has(uri)) { continue; }
+      visited.add(uri);
+      if (uri !== sourceUri) { visible.add(uri); }
+      pending.push(...(this.definiteIncludeGraph.get(uri) ?? []));
     }
+    return [...visible].sort();
+  }
 
-    return Array.from(visibleUris).sort();
+  private collectVisibleUncertainNames(sourceUri: string): string[] {
+    const definite = new Set(this.collectDefiniteVisibleUris(sourceUri));
+    const names = new Set<string>();
+    for (const uri of this.collectVisibleUris(sourceUri)) {
+      const analysis = this.documents.get(uri)?.analysis;
+      if (analysis === undefined) { continue; }
+      const globalIds = new Set(analysis.scopes.filter(scope => scope.parentId === undefined).flatMap(scope => scope.declarationIds));
+      const possible = analysis.uncertainDeclarations ?? [];
+      for (const declaration of possible) {
+        if (globalIds.has(declaration.id)) { names.add(declaration.name); }
+      }
+      for (const name of analysis.uncertainNames ?? []) {
+        const local = possible.filter(declaration => declaration.name === name);
+        if (local.length === 0 || local.some(declaration => globalIds.has(declaration.id))) { names.add(name); }
+      }
+      if (!definite.has(uri)) {
+        for (const declaration of analysis.declarations) {
+          if (globalIds.has(declaration.id)) { names.add(declaration.name); }
+        }
+      }
+    }
+    return [...names].sort();
   }
 
   private collectVisibleGuiClassEntries(sourceUri: string): GuiClassEntry[] {
-    return [sourceUri, ...this.collectVisibleUris(sourceUri)]
+    return [sourceUri, ...this.collectDefiniteVisibleUris(sourceUri)]
       .flatMap((uri) => (this.documents.get(uri)?.analysis.guiClasses ?? [])
         .map((guiClass) => ({ uri, guiClass })));
   }
@@ -778,7 +818,7 @@ export class WorkspaceIndex {
           visibilityStart: visibilityStart ?? macro.range.end
         })
       })),
-      ...analysis.includes.map((include) => ({
+      ...analysis.includes.filter(include => !this.isUncertainRange(analysis, include.range)).map((include) => ({
         range: include.range,
         run: () => {
           if (includingFilePath === undefined) {
@@ -808,9 +848,10 @@ export class WorkspaceIndex {
   }
 
   private collectVisiblePreprocessorSymbols(sourceUri: string): AnalysisPreprocessorSymbol[] {
-    return [
-      ...defaultPreprocessorSymbols(this.defines),
-      ...this.collectVisibleUris(sourceUri)
+    const definiteUris = new Set(this.collectDefiniteVisibleUris(sourceUri));
+    const symbols: AnalysisPreprocessorSymbol[] = [
+      ...defaultPreprocessorSymbols(this.defines).filter(symbol => !isSystemMacroName(symbol.name)),
+      ...[...definiteUris]
       .flatMap((uri) => (this.documents.get(uri)?.analysis.declarations ?? []))
       .filter((declaration) => declaration.kind === 'macro')
       .sort(compareDeclarations)
@@ -819,6 +860,88 @@ export class WorkspaceIndex {
         value: macroValueFromDetail(declaration)
       }))
     ];
+    const byName = new Map(symbols.map(symbol => [symbol.name, symbol]));
+    const uncertainNames = new Set<string>();
+    for (const uri of this.collectVisibleUris(sourceUri)) {
+      const analysis = this.documents.get(uri)?.analysis;
+      if (analysis === undefined) { continue; }
+      const possibleMacros = [
+        ...(analysis.uncertainMacroDefinitions ?? []),
+        ...(definiteUris.has(uri) ? [] : analysis.macroDefinitions)
+      ];
+      for (const macro of possibleMacros) {
+        if (isSystemMacroName(macro.name)) { continue; }
+        uncertainNames.add(macro.name);
+      }
+    }
+    if (uncertainNames.size === 0) { return [...byName.values()]; }
+    // Uncertain imports take effect at their include, rather than before all
+    // local definitions. Keep the established handling of definite-only names.
+    for (const name of uncertainNames) { byName.delete(name); }
+    for (const symbol of defaultPreprocessorSymbols(this.defines)) {
+      if (uncertainNames.has(symbol.name)) { byName.set(symbol.name, symbol); }
+    }
+    for (const uri of this.knownForcedIncludeUris()) {
+      for (const symbol of this.collectImportedMacroSymbols(uri)) {
+        if (!uncertainNames.has(symbol.name)) { continue; }
+        const existing = byName.get(symbol.name);
+        byName.set(symbol.name, symbol.possiblyUndefined && existing !== undefined
+          ? { ...existing, unknownValue: true } : symbol);
+      }
+    }
+    const events: AnalysisPreprocessorSymbol[] = [];
+    const includingFilePath = filePathFromUri(sourceUri);
+    if (includingFilePath !== undefined) {
+      for (const include of this.documents.get(sourceUri)?.analysis.includes ?? []) {
+        const resolution = resolveInclude({
+          includingFilePath,
+          includeText: includeTextForResolution(include.includePath, include.kind),
+          includeRoots: this.includeRoots
+        });
+        if (resolution.status !== 'resolved') { continue; }
+        events.push(...this.collectImportedMacroSymbols(resolution.uri)
+          .filter(symbol => uncertainNames.has(symbol.name))
+          .map(symbol => ({ ...symbol, sourceRange: include.range })));
+      }
+    }
+    return [...byName.values(), ...events];
+  }
+
+  private collectImportedMacroSymbols(rootUri: string): AnalysisPreprocessorSymbol[] {
+    const reachable = (graph: Map<string, Set<string>>): Set<string> => {
+      const result = new Set<string>();
+      const pending = [rootUri];
+      while (pending.length > 0) {
+        const uri = pending.pop();
+        if (uri === undefined || result.has(uri)) { continue; }
+        result.add(uri);
+        pending.push(...(graph.get(uri) ?? []));
+      }
+      return result;
+    };
+    const definite = reachable(this.definiteIncludeGraph);
+    const symbols = new Map<string, AnalysisPreprocessorSymbol>();
+    for (const uri of [...reachable(this.includeGraph)].sort()) {
+      const analysis = this.documents.get(uri)?.analysis;
+      if (analysis === undefined) { continue; }
+      for (const macro of [...analysis.macroDefinitions, ...(analysis.uncertainMacroDefinitions ?? [])]) {
+        if (isSystemMacroName(macro.name)) { continue; }
+        const possible = !definite.has(uri) || (analysis.uncertainMacroDefinitions ?? []).includes(macro);
+        const previous = symbols.get(macro.name);
+        if (possible) {
+          symbols.set(macro.name, {
+            name: macro.name,
+            value: previous?.value,
+            possiblyUndefined: previous === undefined || previous.possiblyUndefined,
+            unknownValue: true
+          });
+        } else {
+          symbols.set(macro.name, { name: macro.name, value: macro.replacementText,
+            unknownValue: previous?.unknownValue });
+        }
+      }
+    }
+    return [...symbols.values()];
   }
 
   private getForcedIncludeFiles(): string[] {
@@ -827,6 +950,21 @@ export class WorkspaceIndex {
       forcedIncludeFiles: this.forcedIncludeFiles
     });
     return this.forcedIncludeFileCache;
+  }
+
+  private logSystemMacroConfiguration(options: unknown): void {
+    if (options === null || typeof options !== 'object') { return; }
+    const candidate = options as { tool?: unknown; defines?: unknown };
+    if (candidate.tool !== undefined && normalizeTool(candidate.tool) !== candidate.tool) {
+      this.logger.info('[configuration] Invalid Tool; using axel.');
+    }
+    if (Array.isArray(candidate.defines)) {
+      for (const define of candidate.defines) {
+        if (typeof define === 'string' && isSystemMacroName(define.split('=', 1)[0].trim())) {
+          this.logger.info('[configuration] Reserved system macro ignored: ' + define.split('=', 1)[0].trim());
+        }
+      }
+    }
   }
 
   private enqueueKnownForcedIncludeFiles(): void {
@@ -858,6 +996,7 @@ export class WorkspaceIndex {
 
     this.documents.clear();
     this.includeGraph.clear();
+    this.definiteIncludeGraph.clear();
     this.reverseIncludeGraph.clear();
     this.pendingBackgroundDocuments.clear();
     this.backgroundIndexingScheduled = false;

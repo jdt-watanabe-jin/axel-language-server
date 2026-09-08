@@ -1,3 +1,4 @@
+import { systemMacroAt } from './systemMacros';
 import type {
   AnalysisDeclaration,
   AnalyzedDocument,
@@ -57,6 +58,7 @@ export interface WorkspaceNavigationIndex {
 }
 
 export function getDefinitions(input: NavigationInput): AnalysisLocation[] {
+  if (systemMacroAt(input.analysis, input.position)) { return []; }
   const include = input.workspaceIndex.resolveIncludeAtPosition?.(input.analysis.uri, input.position);
   if (include !== undefined) {
     return [{
@@ -84,6 +86,7 @@ export function getDefinitions(input: NavigationInput): AnalysisLocation[] {
 }
 
 export function getReferences(input: ReferencesInput): AnalysisLocation[] {
+  if (systemMacroAt(input.analysis, input.position)) { return []; }
   const target = findNavigationTargetDeclaration(input);
   if (target === undefined) {
     return [];

@@ -247,6 +247,9 @@ export interface AnalysisKnownGuiClass {
 export interface AnalysisPreprocessorSymbol {
   name: string;
   value?: string;
+  possiblyUndefined?: boolean;
+  unknownValue?: boolean;
+  sourceRange?: AnalysisRange;
 }
 
 export type AnalysisIncludeKind = 'quote' | 'angle' | 'bare' | 'expression';
@@ -278,6 +281,8 @@ export interface AnalysisResolvedScriptExecution {
 }
 
 export interface AnalyzeDocumentInput {
+  tool?: string;
+  uncertainNames?: readonly string[];
   uri: string;
   version: number;
   text: string;
@@ -288,6 +293,13 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  tool?: string;
+  systemMacroReferences?: { name: string; range: AnalysisRange }[];
+  completionExcludedRanges?: AnalysisRange[];
+  uncertainRanges?: AnalysisRange[];
+  uncertainNames?: string[];
+  uncertainDeclarations?: AnalysisDeclaration[];
+  uncertainMacroDefinitions?: AnalysisMacroDefinition[];
   uri: string;
   version: number;
   diagnostics: AnalysisDiagnostic[];
