@@ -1,3 +1,4 @@
+import { resolveAmbiguousCalls } from './ambiguousCalls';
 import { recoverMacroCommands } from './macroCommands';
 import { buildTypeSnapshot } from './typeChecking/syntax';
 import type * as Parser from 'tree-sitter';
@@ -78,16 +79,19 @@ export class DocumentAnalyzer {
       ].sort(compareMacroVisibility);
       const recoveredCommands = recoverMacroCommands(tree.rootNode,input.uri,visibleMacroDefinitions,
         [...inactiveRanges,...uncertainRanges], text=>this.parser.parse(text).rootNode);
-      const commandRanges = recoveredCommands.map(command=>command.range);
+      const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
+      const recoveredCalls = resolveAmbiguousCalls(tree.rootNode,input.uri,symbolIndex.declarations,
+        [...inactiveRanges,...uncertainRanges],text=>this.parser.parse(text).rootNode);
+      const recoveredStatements = [...recoveredCommands,...recoveredCalls];
+      const recoveredStatementRanges = recoveredStatements.map(statement=>statement.range);
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
         uri: input.uri,
         macroDefinitions: visibleMacroDefinitions,
         parseText: (text) => this.parser.parse(text).rootNode
       });
-      const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
-      symbolIndex.declarations = symbolIndex.declarations.filter(declaration=>!startsInInactiveRange(declaration.selectionRange,commandRanges));
-      symbolIndex.references = [...symbolIndex.references.filter(reference=>!startsInInactiveRange(reference.range,commandRanges)),
-        ...recoveredCommands.flatMap(command=>command.references)];
+      symbolIndex.declarations = symbolIndex.declarations.filter(declaration=>!startsInInactiveRange(declaration.selectionRange,recoveredStatementRanges));
+      symbolIndex.references = [...symbolIndex.references.filter(reference=>!startsInInactiveRange(reference.range,recoveredStatementRanges)),
+        ...recoveredStatements.flatMap(statement=>statement.references)];
       const possibleDeclarations = symbolIndex.declarations.filter(declaration =>
         startsInInactiveRange(declaration.selectionRange, uncertainRanges)
         && !startsInInactiveRange(declaration.selectionRange, inactiveRanges)
@@ -99,7 +103,7 @@ export class DocumentAnalyzer {
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
       const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
       const analysis: AnalyzedDocument = {
-        typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri, recoveredCommands.map(command=>command.node)),
+        typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri, recoveredStatements.map(statement=>statement.node)),
         tool: normalizeTool(input.tool),
         uncertainRanges,
         uncertainDeclarations: possibleDeclarations,
@@ -112,13 +116,13 @@ export class DocumentAnalyzer {
         uri: input.uri,
         version: input.version,
         diagnostics: [
-          ...syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, [...inactiveRanges,...commandRanges])),
+          ...syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, [...inactiveRanges,...recoveredStatementRanges])),
           ...systemSyntax.mutations.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)).map(ref => ({
             severity: 'warning' as const, source: 'axel' as const, range: ref.range,
             ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
           }))
         ],
-        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), [...inactiveRanges,...commandRanges]),
+        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), [...inactiveRanges,...recoveredStatementRanges]),
         declarations: symbolIndex.declarations.filter((declaration) => !(declaration.kind === 'macro' && isSystemMacroName(declaration.name))
           && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
@@ -134,7 +138,7 @@ export class DocumentAnalyzer {
         ],
         scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
         includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
-        scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, [...inactiveRanges,...commandRanges])),
+        scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, [...inactiveRanges,...recoveredStatementRanges])),
         guiClasses: filterGuiClassesForInactiveRanges(guiClasses, [...inactiveRanges, ...uncertainRanges]),
         guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, [...inactiveRanges, ...uncertainRanges])),
         inactiveRanges
