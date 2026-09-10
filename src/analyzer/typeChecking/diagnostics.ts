@@ -136,7 +136,10 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
       }
     }
     if (isExpression(node)) { evaluateExpression(ctx,node,scope); }
-    for (const child of node.children) { visit(child); }
+    for (const child of node.children) {
+      if (node.kind.startsWith('preproc_') && field(node,'condition') === child) { continue; }
+      visit(child);
+    }
   }
   visit(root);
   function hasInstanceData(info: ClassInfo, seen = new Set<string>()): boolean | undefined {

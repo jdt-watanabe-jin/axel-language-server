@@ -825,7 +825,7 @@ function collectReferences(
   const referenceExclusionKeys = new Set(declarationNameKeys);
   const callTargetDetails = collectCallTargetDetails(rootNode);
 
-  function visit(node: Parser.SyntaxNode): void {
+  function visit(node: Parser.SyntaxNode, preprocessor = false): void {
     const memberReference = memberReferenceFromNode(node, uri, callTargetDetails);
     if (memberReference !== undefined) {
       references.push(memberReference);
@@ -850,6 +850,7 @@ function collectReferences(
       if (!referenceExclusionKeys.has(key)) {
         references.push({
           name: node.text,
+          ...(preprocessor ? { preprocessor: true } : {}),
           uri,
           range,
           ...referenceCallDetails(callTargetDetails.get(key)),
@@ -859,7 +860,10 @@ function collectReferences(
     }
 
     for (const child of node.namedChildren) {
-      visit(child);
+      const directiveOperand = node.type.startsWith('preproc_')
+        && ['condition', 'name', 'argument', 'value', 'parameters'].some(name =>
+          node.childForFieldName(name)?.id === child.id);
+      visit(child, preprocessor || directiveOperand);
     }
   }
 

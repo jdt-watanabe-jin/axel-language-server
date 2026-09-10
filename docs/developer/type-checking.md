@@ -4,6 +4,8 @@ Object-like command prefixes are handled by [macro command recovery](../../src/a
 
 `F(&item);` and `T(*item);` can have declaration-shaped trees because AXEL permits parenthesized pointer declarations. [Call disambiguation](../../src/analyzer/ambiguousCalls.ts) resolves a visible function or method in the current document's lexical scopes, including definitions later in the file, before reparsing the statement in an expression context. Tree-sitter supplies the call and argument nodes; source ranges are preserved, false declarations are removed, and normal argument diagnostics apply. Type names retain their declaration interpretation.
 
+Preprocessor directive operands are marked separately in reference data. Ordinary semantic diagnostics exclude those references, and expression type checking skips conditional directive operands. Undefined identifiers in `#if`, `#elif`, `#ifdef`, and `#ifndef` do not produce unknown-identifier errors; active branch bodies retain ordinary diagnostics. Macro references remain available to navigation and highlighting.
+
 ## Ownership and data flow
 
 Tree-sitter remains the authoritative syntax parser. [DocumentAnalyzer](../../src/analyzer/documentAnalyzer.ts) copies each parse into a document-generation-local [type snapshot](../../src/analyzer/typeChecking/syntax.ts); native nodes are not retained across edits. [WorkspaceIndex](../../src/analyzer/workspaceIndex.ts) supplies definite visible documents, position-aware macros, and the builtin catalog before aggregating type diagnostics with existing diagnostics and applying the configured problem limit.

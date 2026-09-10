@@ -16,6 +16,18 @@ suite('system macros', () => {
     const at = (name: string) => ({ analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf(name)) });
     return { index, analysis, at };
   }
+  test('does not diagnose undefined identifiers in preprocessor conditions', () => {
+    const text='#if __APP_LEDIT__\nint a;\n#elif undefinedFlag + 1\nint b;\n#endif\n#ifdef absent\nint c;\n#endif\n#ifndef otherAbsent\nint d;\n#endif';
+    const {analysis}=fixture(text);
+    assert.deepStrictEqual(analysis.diagnostics,[]);
+    assert.ok(analysis.declarations.some(d=>d.name==='b'));
+  });
+  test('still diagnoses unknown identifiers in active conditional bodies', () => {
+    const text='#if 1\nvoid f(){ __APP_LEDIT__; missingValue; }\n#endif';
+    const {analysis}=fixture(text);
+    assert.ok(analysis.diagnostics.some(d=>d.message=== "Unknown identifier '__APP_LEDIT__'."));
+    assert.ok(analysis.diagnostics.some(d=>d.message=== "Unknown identifier 'missingValue'."));
+  });
   test('shows absolute file and one-based source line', () => {
     const { at } = fixture('string file = __FILE__;\nint line = __LINE__;');
     assert.ok(getHover(at('__FILE__'))?.plainText.includes('D:\\project\\main.axl'));

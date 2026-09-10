@@ -45,6 +45,8 @@ export interface WorkspaceSemanticDiagnosticsIndex {
 }
 
 export function collectSemanticDiagnostics(input: SemanticDiagnosticsInput): AnalysisDiagnostic[] {
+  input = {...input, analysis: {...input.analysis,
+    references: input.analysis.references.filter(reference => !reference.preprocessor)}};
   // Potential declarations cannot prove a duplicate, missing name or signature.
   // Keep unrelated references so an unknown branch does not disable diagnostics.
   const uncertainNames = new Set(input.analysis.uncertainNames ?? []);

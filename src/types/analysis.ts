@@ -144,6 +144,8 @@ export interface AnalysisReference {
   call?: boolean;
   argumentCount?: number;
   typeReference?: boolean;
+  /** Reference in a preprocessor directive, not a runtime expression. */
+  preprocessor?: boolean;
   memberAccess?: AnalysisMemberAccess;
 }
 
