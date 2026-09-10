@@ -421,3 +421,28 @@ function findMatchingCloseParen(text: string, openParenIndex: number): number {
 
   return -1;
 }
+
+/** Expand object-like tokens without substituting inside strings or comments. */
+export function expandObjectMacroText(text: string, lookup: MacroLookup, stack: readonly string[] = []): MacroExpansionResult {
+  let expandedText = '';
+  const steps: MacroExpansionStep[] = [];
+  let truncated = false;
+  for (let i = 0; i < text.length;) {
+    const char = text[i];
+    if (char === '"' || char === "'" || char === '/' && ['/', '*'].includes(text[i+1])) {
+      const end = char !== '/' ? skipQuotedText(text,i,char)
+        : text[i+1] === '/' ? skipLineComment(text,i) : skipBlockComment(text,i);
+      expandedText += text.slice(i,end); i=end; continue;
+    }
+    const name = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(text.slice(i))?.[0];
+    if (!name) { expandedText += char; i++; continue; }
+    const macro = lookup.findMacro(name);
+    if (!macro || macro.parameters !== undefined) { expandedText += name; i += name.length; continue; }
+    if (stack.includes(name) || stack.length >= 8) { truncated=true; expandedText+=name; i+=name.length; continue; }
+    const nested = expandObjectMacroText(macro.replacementText,lookup,[...stack,name]);
+    expandedText += nested.expandedText; truncated ||= nested.truncated;
+    steps.push({macroName:name,before:name,after:macro.replacementText},...nested.steps);
+    i += name.length;
+  }
+  return {expandedText,steps,truncated,diagnostics:[]};
+}

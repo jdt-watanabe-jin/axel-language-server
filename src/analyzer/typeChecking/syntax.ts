@@ -12,8 +12,10 @@ export interface TypeNode {
   fields: Record<string, TypeNode[]>;
 }
 export interface TypeSnapshot { uri: string; root: TypeNode }
-export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string): TypeSnapshot {
+export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacements: readonly TypeNode[] = []): TypeSnapshot {
   function copy(node: Parser.SyntaxNode): TypeNode {
+    const replacement = replacements.find(item => item.start === node.startIndex && item.end === node.endIndex);
+    if (replacement) { return replacement; }
     const children: TypeNode[] = [];
     const fields: Record<string, TypeNode[]> = {};
     for (let i = 0; i < node.childCount; i++) {

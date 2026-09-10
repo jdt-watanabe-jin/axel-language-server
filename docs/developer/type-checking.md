@@ -1,5 +1,7 @@
 # Type-checking architecture and verification
 
+Object-like command prefixes are handled by [macro command recovery](../../src/analyzer/macroCommands.ts). When an erroneous declaration-shaped statement expands to one valid Tree-sitter command statement, the analyzer replaces its false declarations with references from the unchanged argument suffix and substitutes the recovered type snapshot. Source locations remain attached to the original arguments. Macro visibility, inactive regions, `#undef`, and bounded expansion apply; malformed expansions retain diagnostics. This is targeted recovery, not full preprocessing of the document.
+
 ## Ownership and data flow
 
 Tree-sitter remains the authoritative syntax parser. [DocumentAnalyzer](../../src/analyzer/documentAnalyzer.ts) copies each parse into a document-generation-local [type snapshot](../../src/analyzer/typeChecking/syntax.ts); native nodes are not retained across edits. [WorkspaceIndex](../../src/analyzer/workspaceIndex.ts) supplies definite visible documents, position-aware macros, and the builtin catalog before aggregating type diagnostics with existing diagnostics and applying the configured problem limit.

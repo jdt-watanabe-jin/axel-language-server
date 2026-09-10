@@ -1,3 +1,4 @@
+import { recoverMacroCommands } from './macroCommands';
 import { buildTypeSnapshot } from './typeChecking/syntax';
 import type * as Parser from 'tree-sitter';
 import { message } from '../i18n/messages';
@@ -75,12 +76,18 @@ export class DocumentAnalyzer {
           visibilityStart: macro.range.end
         }))
       ].sort(compareMacroVisibility);
+      const recoveredCommands = recoverMacroCommands(tree.rootNode,input.uri,visibleMacroDefinitions,
+        [...inactiveRanges,...uncertainRanges], text=>this.parser.parse(text).rootNode);
+      const commandRanges = recoveredCommands.map(command=>command.range);
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
         uri: input.uri,
         macroDefinitions: visibleMacroDefinitions,
         parseText: (text) => this.parser.parse(text).rootNode
       });
       const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
+      symbolIndex.declarations = symbolIndex.declarations.filter(declaration=>!startsInInactiveRange(declaration.selectionRange,commandRanges));
+      symbolIndex.references = [...symbolIndex.references.filter(reference=>!startsInInactiveRange(reference.range,commandRanges)),
+        ...recoveredCommands.flatMap(command=>command.references)];
       const possibleDeclarations = symbolIndex.declarations.filter(declaration =>
         startsInInactiveRange(declaration.selectionRange, uncertainRanges)
         && !startsInInactiveRange(declaration.selectionRange, inactiveRanges)
@@ -92,7 +99,7 @@ export class DocumentAnalyzer {
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
       const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
       const analysis: AnalyzedDocument = {
-        typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri),
+        typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri, recoveredCommands.map(command=>command.node)),
         tool: normalizeTool(input.tool),
         uncertainRanges,
         uncertainDeclarations: possibleDeclarations,
@@ -105,13 +112,13 @@ export class DocumentAnalyzer {
         uri: input.uri,
         version: input.version,
         diagnostics: [
-          ...syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, inactiveRanges)),
+          ...syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, [...inactiveRanges,...commandRanges])),
           ...systemSyntax.mutations.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)).map(ref => ({
             severity: 'warning' as const, source: 'axel' as const, range: ref.range,
             ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
           }))
         ],
-        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), inactiveRanges),
+        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), [...inactiveRanges,...commandRanges]),
         declarations: symbolIndex.declarations.filter((declaration) => !(declaration.kind === 'macro' && isSystemMacroName(declaration.name))
           && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
