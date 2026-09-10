@@ -166,9 +166,17 @@ export function resolveMemberAccessType(
 }
 
 export function receiverTypeName(input: DeclarationResolutionInput, receiverName: string): string | undefined {
-  return (findLocalDeclaration(input.analysis, receiverName, input.position)
-    ?? visibleDeclarationsByName(input, receiverName)[0])
-    ?.typeName;
+  const local = findLocalDeclaration(input.analysis, receiverName, input.position);
+  const localScope = local && input.analysis.scopes.find(scope => scope.declarationIds.includes(local.id));
+  if (local && localScope?.parentId !== undefined) {
+    return local.typeName;
+  }
+
+  // Out-of-class method bodies have a lexical parent at file scope. Resolve
+  // their owning class fields before globals or unrelated header declarations.
+  const owner = thisReceiverType(input);
+  const member = owner === undefined ? undefined : findDeclarationMember(input, owner, receiverName);
+  return (member ?? local ?? visibleDeclarationsByName(input, receiverName)[0])?.typeName;
 }
 
 export function selectBestDeclarationForCall<T extends AnalysisDeclaration>(
