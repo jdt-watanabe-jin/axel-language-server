@@ -161,7 +161,7 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
   const definitions = ctx.functions.filter(fn => fn.uri === analysis.uri && fn.node.kind === 'function_definition');
   for (let i=0;i<definitions.length;i++) {
     const fn=definitions[i];
-    if (definitions.slice(0,i).some(other => other.name===fn.name && other.owner===fn.owner && other.scope.parent===fn.scope.parent)) {
+    if (definitions.slice(0,i).some(other => other.name===fn.name && other.owner===fn.owner && other.instancePath===fn.instancePath && other.scope.parent===fn.scope.parent)) {
       report(fn.node,'definition',"Function '{0}' is already defined.",fn.name);
     }
   }

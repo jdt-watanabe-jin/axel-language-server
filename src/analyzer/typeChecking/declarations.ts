@@ -1,7 +1,7 @@
 import type { AnalyzedDocument } from '../../types/analysis';
 import { builtinRole, type BuiltinCatalog } from './builtinCatalog';
 import { basic, pointer, unknownType, numericNames, type Binding, type ClassInfo, type FunctionInfo, type Scope, type Type, type TypeContext } from './model';
-import { field, type TypeNode, type TypeSnapshot } from './syntax';
+import { descendants, field, type TypeNode, type TypeSnapshot } from './syntax';
 
 const classKinds = new Set(['class_specifier', 'struct_specifier', 'union_specifier']);
 const declarationKinds = new Set(['object_definition', 'field_declaration', 'type_definition', 'function_definition']);
@@ -200,6 +200,10 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
         if (shaped.type.kind === 'function') {
           const fn = shaped.type.call!;
           fn.owner = owner;
+          // GUI handlers belong to an instance path within the enclosing class.
+          // Preserve syntax identifiers so whitespace does not change identity.
+          const instance = qualified && field(qualified, 'instance');
+          fn.instancePath = instance ? descendants(instance, 'identifier').map(part => part.text).join('.') : undefined;
           if (functionScope) {
             fn.scope = functionScope; functionScope.fn = fn; functionScope.owner = owner;
           }

@@ -15,6 +15,7 @@ export interface Type {
 export interface FunctionInfo {
   name: string; node: TypeNode; uri: string; result: Type; parameters: Type[];
   required: number; variadic: boolean; owner?: ClassInfo; scope: Scope;
+  instancePath?: string;
 }
 export interface Binding { name: string; type: Type; node: TypeNode; scope: Scope; uri: string }
 export interface Scope { parent?: Scope; uri: string; node: TypeNode; owner?: ClassInfo; fn?: FunctionInfo; bindings: Binding[] }
