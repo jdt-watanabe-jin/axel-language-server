@@ -21,8 +21,15 @@ export function recoverMacroCommands(root: Parser.SyntaxNode, uri: string,
   const undefs = root.descendantsOfType('preproc_call').filter(node =>
     node.childForFieldName('directive')?.text.trim() === '#undef'
     && !excluded.some(range => contains(range,nodeToAnalysisRange(node).start)));
-  for (const original of root.descendantsOfType('object_definition')) {
-    const type = original.childForFieldName('type');
+  for (const original of root.descendantsOfType(['object_definition', 'ERROR'])) {
+    const following = original.type === 'ERROR' ? original.nextNamedSibling : null;
+    const prefixIdentifier = original.namedChildCount === 1 && original.firstNamedChild?.type === 'identifier'
+      ? original.firstNamedChild : null;
+    const continuation = prefixIdentifier && original.text.trim() === prefixIdentifier.text && following?.type === 'command_statement'
+      && root.text.slice(original.endIndex, following.startIndex).trim() === '' ? following : null;
+    const type = original.type === 'object_definition' ? original.childForFieldName('type')
+      : continuation ? prefixIdentifier : null;
+    const endNode = continuation ?? original;
     if (!type || !original.hasError || excluded.some(range => contains(range,nodeToAnalysisRange(original).start))) { continue; }
     const start = nodeToAnalysisRange(type).start;
     const visible = createMacroLookup(macros,uri,start);
@@ -39,7 +46,7 @@ export function recoverMacroCommands(root: Parser.SyntaxNode, uri: string,
     const expansion = expandObjectMacroText(type.text,lookup);
     if (expansion.truncated || expansion.diagnostics.length || !expansion.expandedText.trimStart().startsWith('@')) { continue; }
     const wrapper = 'void __command_probe(){';
-    const tail = original.text.slice(type.endIndex-original.startIndex);
+    const tail = root.text.slice(type.endIndex,endNode.endIndex);
     const prefix = wrapper + expansion.expandedText;
     const parsed = parse(prefix+tail+'}');
     const commands = parsed.descendantsOfType('command_statement');
@@ -55,7 +62,8 @@ export function recoverMacroCommands(root: Parser.SyntaxNode, uri: string,
       children:node.children.map(rebase),
       fields:Object.fromEntries(Object.entries(node.fields).map(([key,nodes])=>[key,nodes.map(rebase)]))});
     const snapshot = rebase(buildTypeSnapshot(command,uri).root);
-    snapshot.start=original.startIndex; snapshot.end=original.endIndex; snapshot.range=nodeToAnalysisRange(original);
+    snapshot.start=original.startIndex; snapshot.end=endNode.endIndex;
+    snapshot.range={start:nodeToAnalysisRange(original).start,end:nodeToAnalysisRange(endNode).end};
     const toIndex = (point: {line:number;character:number}): number => {
       const lines=(prefix+tail+'}').split('\n');
       return lines.slice(0,point.line).reduce((sum,line)=>sum+line.length+1,0)+point.character;

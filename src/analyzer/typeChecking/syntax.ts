@@ -14,12 +14,13 @@ export interface TypeNode {
 export interface TypeSnapshot { uri: string; root: TypeNode }
 export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacements: readonly TypeNode[] = []): TypeSnapshot {
   function copy(node: Parser.SyntaxNode): TypeNode {
-    const replacement = replacements.find(item => item.start === node.startIndex && item.end === node.endIndex);
+    const replacement = replacements.find(item => item.start === node.startIndex && item.end >= node.endIndex);
     if (replacement) { return replacement; }
     const children: TypeNode[] = [];
     const fields: Record<string, TypeNode[]> = {};
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i)!;
+      if (replacements.some(item => item.start < child.startIndex && child.endIndex <= item.end)) { continue; }
       const name = node.fieldNameForChild(i);
       if (!child.isNamed && !name) { continue; }
       const item = copy(child);

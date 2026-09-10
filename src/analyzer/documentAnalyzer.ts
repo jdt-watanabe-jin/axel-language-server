@@ -134,7 +134,7 @@ export class DocumentAnalyzer {
         ],
         scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
         includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
-        scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, inactiveRanges)),
+        scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, [...inactiveRanges,...commandRanges])),
         guiClasses: filterGuiClassesForInactiveRanges(guiClasses, [...inactiveRanges, ...uncertainRanges]),
         guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, [...inactiveRanges, ...uncertainRanges])),
         inactiveRanges

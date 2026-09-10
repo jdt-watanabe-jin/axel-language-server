@@ -1,6 +1,6 @@
 # Type-checking architecture and verification
 
-Object-like command prefixes are handled by [macro command recovery](../../src/analyzer/macroCommands.ts). When an erroneous declaration-shaped statement expands to one valid Tree-sitter command statement, the analyzer replaces its false declarations with references from the unchanged argument suffix and substitutes the recovered type snapshot. Source locations remain attached to the original arguments. Macro visibility, inactive regions, `#undef`, and bounded expansion apply; malformed expansions retain diagnostics. This is targeted recovery, not full preprocessing of the document.
+Object-like command prefixes are handled by [macro command recovery](../../src/analyzer/macroCommands.ts). When an erroneous declaration-shaped statement, or a macro identifier followed by an `@script` command node, expands to one valid Tree-sitter command statement, the analyzer replaces its false declarations with references from the unchanged argument suffix and substitutes the recovered type snapshot. Source locations remain attached to the original arguments. An `@script` argument is part of the recovered command, not a separate script execution. Macro visibility, inactive regions, `#undef`, and bounded expansion apply; malformed expansions retain diagnostics. This is targeted recovery, not full preprocessing of the document.
 
 ## Ownership and data flow
 

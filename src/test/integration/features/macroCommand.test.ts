@@ -58,4 +58,24 @@ suite('Macro command statements', () => {
     const {analysis}=analyze('#if 0\n'+prefix+'#endif\nvoid f(){int va; CMD `va`;}');
     assert.ok(analysis.diagnostics.some(d=>d.severity==='error'));
   });
+  test('recovers a macro prefix before an at-prefixed script argument', () => {
+    const {analysis}=analyze(prefix+'void f(){CMD @degchk_Winlist.axl;}');
+    assert.deepStrictEqual(analysis.diagnostics,[]);
+    assert.strictEqual(analysis.typeSnapshot!.root.children[1].fields.body[0].children.filter(n=>n.kind==='command_statement').length,1);
+    assert.ok(!analysis.scriptExecutions.some(script=>script.scriptPath==='degchk_Winlist.axl'));
+  });
+  test('keeps separate commands and argument references after recovery', () => {
+    const {analysis,index}=analyze(prefix+'void f(){int va; CMD @first.axl `va`; @second.axl;}');
+    assert.deepStrictEqual(analysis.diagnostics,[]);
+    const commands=analysis.typeSnapshot!.root.children[1].fields.body[0].children.filter(n=>n.kind==='command_statement');
+    assert.strictEqual(commands.length,2);
+    assert.ok(analysis.scriptExecutions.some(script=>script.scriptPath==='second.axl'));
+    const reference=analysis.references.find(r=>r.name==='va')!;
+    assert.strictEqual(getDefinitions({analysis,position:reference.range.start,workspaceIndex:index}).length,1);
+  });
+  test('retains syntax errors for an undefined prefix before a script', () => {
+    assert.ok(analyze('void f(){CMD @first.axl;}').analysis.diagnostics.some(d=>d.severity==='error'));
+    assert.ok(analyze(prefix+'void f(){CMD + @first.axl;}').analysis.diagnostics.some(d=>d.severity==='error'));
+  });
+
 });
