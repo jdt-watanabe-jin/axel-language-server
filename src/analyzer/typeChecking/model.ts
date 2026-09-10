@@ -24,7 +24,7 @@ export interface ClassInfo {
   baseName?: string; fields: Map<string, Binding>; methods: Map<string, FunctionInfo[]>;
   scope: Scope; defined: boolean;
 }
-export interface ExpressionResult { type: Type; category: ValueCategory; constant?: number | string | boolean; constantExpression?: boolean; unknown?: boolean }
+export interface ExpressionResult { guiReceiver?: { owner: ClassInfo; path: string[] }; type: Type; category: ValueCategory; constant?: number | string | boolean; constantExpression?: boolean; unknown?: boolean }
 export interface TypeContext {
   resolveMacro?: (name: string, node: TypeNode) => AnalysisMacroDefinition | undefined;
   analysis: AnalyzedDocument; documents: readonly AnalyzedDocument[]; catalog: BuiltinCatalog;

@@ -1,3 +1,4 @@
+import { resolveGuiPartPath } from '../guiResolution';
 import { createAxelParser } from '../axelParser';
 import { expandMacroInvocationText } from '../macroExpansion';
 import { containsSourcePosition, resolveSystemMacro } from '../systemMacros';
@@ -341,6 +342,18 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
       if (!name || type.kind === 'unknown') { return unknown(); }
       const found = member(ctx, type, name.text);
       if (found) { return found; }
+      const owner = value.guiReceiver?.owner ?? type.classInfo;
+      if (owner) {
+        const source = ctx.documents.find(document => document.uri === owner.uri);
+        const path = [...value.guiReceiver?.path ?? [], name.text];
+        const part = source && resolveGuiPartPath({analysis:source, position:node.range.start,
+          workspaceIndex:{listVisibleDocuments:()=>[...ctx.documents]}}, owner.name, path);
+        if (part) {
+          const info = lookupClass(ctx, part.part.typeName, owner.scope);
+          return {type:info ? {kind:'class',name:info.name,classInfo:info} : unknownType,
+            category:'storage',guiReceiver:{owner,path}};
+        }
+      }
       problem(ctx, name, 'member', undefined, type);
       return unknown();
     }
