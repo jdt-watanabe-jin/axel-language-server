@@ -72,7 +72,7 @@ export function resolveType(ctx: TypeContext, node: TypeNode | undefined, scope:
 
 function nameOf(node: TypeNode | undefined): string | undefined {
   if (!node) { return undefined; }
-  if (node.kind === 'operator_declarator') { return `operator${field(node, 'operator')?.text ?? node.text.slice(8).trim()}`; }
+  if (node.kind === 'operator_declarator') { return `operator${node.fields.operator?.map(part => part.text).join('') ?? node.text.slice(8).trim()}`; }
   if (node.kind === 'conversion_declarator') { return `convert:${field(node, 'type')?.text ?? ''}`; }
   if (node.kind === 'qualified_declarator') { return nameOf(field(node, 'name')); }
   if (node.kind === 'identifier' || node.kind === 'class_name') { return node.text; }

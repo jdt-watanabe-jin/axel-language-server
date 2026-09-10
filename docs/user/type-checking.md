@@ -14,6 +14,8 @@ A fully defined user class with no instance data, including inherited data, cann
 
 The server uses definite declarations visible through the document, resolved includes, and configured forced includes. Inactive branches do not contribute types. Unresolved names, incomplete syntax, and uncertain preprocessor branches suppress diagnostics that require unavailable type information. Absence of a diagnostic is not proof that an arbitrary AXEL program will compile. The implemented rules are bounded by regression cases; other runtime versions and general combinations of language features require further verification.
 
+Class subscripts use declared `operator[]` signatures, including inherited declarations. Registered `VARRAY` uses an integer index and returns a pointer to an unspecified element type, consistent with `GetAt`. An explicit cast such as `*(int*)values[i]` supplies the element type; the subscript result itself is not assignable. Each VARRAY manages one element type at runtime. Mixing element types in `Add` is a runtime error, not a compile-time diagnostic, so the checker does not infer a permanent element type from an earlier `Add` call.
+
 ## Registering analysis declarations
 
 Use the existing `forcedIncludeFiles` configuration to select an analysis header. Place a companion JSON file beside the entry, replacing its last extension with `.analysis.json`: `builtins.h` uses `builtins.analysis.json`. There is no separate type-checking configuration switch. For a generic LSP client, initialization options can contain:

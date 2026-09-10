@@ -366,6 +366,11 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
         if (type.kind === 'pointer' || type.kind === 'array') { return { type: type.element!, category: 'storage' }; }
         if (role(type) === 'string') { return temporary(basic('int')); }
       }
+      const subscript = member(ctx, type, 'operator[]');
+      const indexNode = field(node, 'index');
+      if (subscript?.type.call && indexNode && (role(type) !== 'VARRAY' || isInteger(index.type))) {
+        return invoke(ctx, node, subscript.type.candidates ?? [subscript.type.call], [indexNode], scope);
+      }
       problem(ctx, node, 'subscript', undefined, type);
       return unknown();
     }
