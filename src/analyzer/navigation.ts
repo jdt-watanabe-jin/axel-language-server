@@ -20,6 +20,7 @@ import {
   findVisibleDeclaration,
   isTypeDeclaration,
   selectBestDeclarationForCall,
+  receiverTypeName,
   thisReceiverType,
   visibleDeclarationsByName
 } from './resolution';
@@ -193,7 +194,7 @@ function findMemberDeclaration(
 ): AnalysisDeclaration | undefined {
   let typeName = memberAccess.receiverName === 'this'
     ? thisReceiverType(input)
-    : findVisibleDeclaration(input, memberAccess.receiverName)?.typeName
+    : receiverTypeName(input, memberAccess.receiverName)
       ?? typeDeclarationName(input, memberAccess.receiverName);
   let memberDeclaration: AnalysisDeclaration | undefined;
 

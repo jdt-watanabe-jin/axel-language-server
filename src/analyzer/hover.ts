@@ -22,6 +22,7 @@ import {
   findLocalDeclaration as resolveLocalDeclaration,
   findVisibleDeclaration,
   selectBestDeclarationForCall,
+  receiverTypeName,
   thisReceiverType,
   visibleDeclarationsByName
 } from './resolution';
@@ -473,7 +474,7 @@ function findMemberDeclaration(
 ): AnalysisDeclaration | undefined {
   let typeName = memberAccess.receiverName === 'this'
     ? thisReceiverType({ ...input, position })
-    : findDeclarationByName(input, memberAccess.receiverName, position)?.typeName
+    : receiverTypeName({ ...input, position }, memberAccess.receiverName)
       ?? typeDeclarationName({ ...input, position }, memberAccess.receiverName);
   let memberDeclaration: AnalysisDeclaration | undefined;
 
@@ -497,7 +498,7 @@ function resolveGuiMemberAccess(
 ): ResolvedGuiPart | undefined {
   const typeName = memberAccess.receiverName === 'this'
     ? thisReceiverType({ ...input, position })
-    : findDeclarationByName(input, memberAccess.receiverName, position)?.typeName;
+    : receiverTypeName({ ...input, position }, memberAccess.receiverName);
   if (typeName === undefined) {
     return undefined;
   }

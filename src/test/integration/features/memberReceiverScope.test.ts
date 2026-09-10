@@ -1,6 +1,9 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getHover } from '../../../analyzer/hover';
+import { getDefinitions } from '../../../analyzer/navigation';
+import { positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('Member receiver scope', () => {
@@ -32,4 +35,28 @@ suite('Member receiver scope', () => {
     const diagnostics = check('socket.Missing();');
     assert.ok(diagnostics.some(d => d.message === "Unknown identifier 'Missing'."));
   });
+  for (const [name, args, signature] of [
+    ['SetDialog', 'this', 'void MySocket::SetDialog(Dialog *dlg)'],
+    ['Close', '', 'void Socket::Close()']
+  ]) {
+    function context() {
+      const root = fixtures.createTempDir();
+      const header = path.join(root, 'api.h');
+      fs.writeFileSync(header, 'void unrelated(int socket) {}');
+      const index = fixtures.createWorkspaceIndex({forcedIncludeFiles:[header]});
+      const text = classes + ` void Dialog::run() { socket.${name}(${args}); }`;
+      const analysis = index.analyzeDocument({uri:'file:///z%3A/receiver.axl',version:1,text});
+      const position = positionFromOffset(text, text.lastIndexOf(name) + 1);
+      return {analysis, position, workspaceIndex:index};
+    }
+    test(`hovers the actual receiver method ${name}`, () => {
+      const hover = getHover(context());
+      assert.ok(hover?.markdown.includes(signature), JSON.stringify(hover));
+    });
+    test(`navigates to the actual receiver method ${name}`, () => {
+      const input = context();
+      const target = input.analysis.declarations.find(d => d.name === name)!;
+      assert.deepStrictEqual(getDefinitions(input), [{uri:target.uri,range:target.selectionRange}]);
+    });
+  }
 });
