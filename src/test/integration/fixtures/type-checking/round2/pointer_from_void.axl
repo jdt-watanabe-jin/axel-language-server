@@ -1,0 +1,5 @@
+
+void Probe_pointer_from_void() {
+int i=1; void *p=&i; int *q=p;
+}
+void main() {}

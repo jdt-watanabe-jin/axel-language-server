@@ -11,6 +11,7 @@ export function toLspDiagnostic(diagnostic: AnalysisDiagnostic, locale?: string)
   return {
     severity: toLspDiagnosticSeverity(diagnostic.severity),
     range: diagnostic.range,
+    ...(diagnostic.code === undefined ? {} : {code: diagnostic.code}),
     message: diagnostic.messageDescriptor === undefined ? diagnostic.message : formatMessage(diagnostic.messageDescriptor, locale),
     source: diagnostic.source
   };

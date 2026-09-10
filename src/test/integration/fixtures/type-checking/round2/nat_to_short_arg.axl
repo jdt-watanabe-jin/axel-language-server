@@ -1,0 +1,5 @@
+void f(short x) {}
+void Probe_nat_to_short_arg() {
+natural n=1nat; f(n);
+}
+void main() {}

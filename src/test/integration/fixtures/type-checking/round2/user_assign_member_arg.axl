@@ -1,0 +1,5 @@
+class A_user_assign_member_arg {public: int x; A_user_assign_member_arg operator=(int v) {x=v; return *this;} }; void f(A_user_assign_member_arg x) {}
+void Probe_user_assign_member_arg() {
+f(1);
+}
+void main() {}

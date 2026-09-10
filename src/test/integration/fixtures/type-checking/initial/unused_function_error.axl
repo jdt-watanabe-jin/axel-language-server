@@ -1,0 +1,5 @@
+void unusedProbe() { natural a=1nat; a*a; }
+void main() {
+
+printf("PROBE_OK\n");
+}

@@ -1,0 +1,5 @@
+
+void Probe_sizeof_void() {
+sizeof(void);
+}
+void main() {}

@@ -1,0 +1,5 @@
+
+void Probe_new_void() {
+void *p=new void;
+}
+void main() {}

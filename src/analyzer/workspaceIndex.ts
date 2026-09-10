@@ -1,3 +1,6 @@
+import { descendants, field } from './typeChecking/syntax';
+import { collectTypeDiagnostics } from './typeChecking/diagnostics';
+import { loadBuiltinCatalog, type BuiltinCatalog } from './typeChecking/builtinCatalog';
 import * as fs from 'fs';
 import { containsSourcePosition, isSystemMacroName, normalizeTool } from './systemMacros';
 import { message } from '../i18n/messages';
@@ -46,6 +49,7 @@ export class WorkspaceIndex {
   private includeRoots: string[];
   private forcedIncludeRoots: string[];
   private forcedIncludeFiles: string[];
+  private builtinCatalogCache: BuiltinCatalog | undefined;
   private defines: string[];
   private tool: string;
   private maxNumberOfProblems: number | undefined;
@@ -369,6 +373,12 @@ export class WorkspaceIndex {
   }
 
   public invalidateUri(uri: string): void {
+    const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
+    this.builtinCatalogCache = undefined;
+    if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().includes(uri)) {
+      this.clearCachedAnalysis();
+      return;
+    }
     this.forcedIncludesIndexed = false;
     const dependents = this.collectDependents(uri);
     for (const dependentUri of dependents) {
@@ -417,10 +427,25 @@ export class WorkspaceIndex {
   }
 
   private withWorkspaceDiagnostics(analysis: AnalyzedDocument): AnalyzedDocument {
+    const macros = this.collectPositionAwareMacroDefinitions(analysis.uri, true);
+    const macrosByName = new Map<string, AnalysisMacroDefinition[]>();
+    for (const macro of macros) {
+      const entries = macrosByName.get(macro.name) ?? [];
+      entries.push(macro); macrosByName.set(macro.name, entries);
+    }
     return {
       ...analysis,
       diagnostics: limitDiagnostics([
         ...analysis.diagnostics,
+        ...collectTypeDiagnostics({analysis,
+          resolveMacro: (name,node) => {
+            const macro = macrosByName.get(name)?.filter(macro => !macro.visibilityStart || comparePositions(macro.visibilityStart,node.range.start)<=0).at(-1);
+            return macro && !('_typeUndef' in macro) ? macro : undefined;
+          },
+          documents: this.collectDefiniteVisibleUris(analysis.uri).flatMap(uri => {
+            const visible = this.documents.get(uri)?.analysis;
+            return visible ? [visible] : [];
+          }), catalog: this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles)}),
         ...this.unresolvedIncludeDiagnostics(analysis),
         ...this.unresolvedScriptExecutionDiagnostics(analysis),
         ...collectSemanticDiagnostics({
@@ -781,15 +806,15 @@ export class WorkspaceIndex {
         .map((guiClass) => ({ uri, guiClass })));
   }
 
-  private collectPositionAwareMacroDefinitions(sourceUri: string): AnalysisMacroDefinition[] {
+  private collectPositionAwareMacroDefinitions(sourceUri: string, recordUndef = false): AnalysisMacroDefinition[] {
     const definitions: AnalysisMacroDefinition[] = [];
     const fileStart = { line: 0, character: 0 };
 
     for (const forcedUri of this.knownForcedIncludeUris()) {
-      this.appendDocumentMacroDefinitions(forcedUri, fileStart, new Set(), definitions);
+      this.appendDocumentMacroDefinitions(forcedUri, fileStart, new Set(), definitions, recordUndef);
     }
 
-    this.appendDocumentMacroDefinitions(sourceUri, undefined, new Set(), definitions);
+    this.appendDocumentMacroDefinitions(sourceUri, undefined, new Set(), definitions, recordUndef);
     return definitions;
   }
 
@@ -797,7 +822,8 @@ export class WorkspaceIndex {
     uri: string,
     visibilityStart: AnalysisPosition | undefined,
     visitedUris: Set<string>,
-    definitions: AnalysisMacroDefinition[]
+    definitions: AnalysisMacroDefinition[],
+    recordUndef = false
   ): void {
     if (visitedUris.has(uri)) {
       return;
@@ -811,6 +837,18 @@ export class WorkspaceIndex {
 
     const visited = new Set([...visitedUris, uri]);
     const events = [
+      ...(recordUndef && analysis.typeSnapshot ? descendants(analysis.typeSnapshot.root,'preproc_call') : [])
+        .filter(node => field(node,'directive')?.text.replace(/\s/g,'') === '#undef'
+          && ![...analysis.inactiveRanges ?? [], ...analysis.uncertainRanges ?? []]
+            .some(range => containsSourcePosition(range,node.range.start)))
+        .map(node => ({range:node.range, run:() => {
+          const name=field(node,'argument')?.text.trim();
+          if (!name) { return; }
+          const removed: AnalysisMacroDefinition & {_typeUndef:true} = {name,uri,range:node.range,
+            selectionRange:node.range,visibilityStart:visibilityStart ?? node.range.end,
+            detail:'',replacementText:'',_typeUndef:true};
+          definitions.push(removed);
+        }})),
       ...analysis.macroDefinitions.map((macro) => ({
         range: macro.range,
         run: () => definitions.push({
@@ -835,7 +873,8 @@ export class WorkspaceIndex {
               resolution.uri,
               visibilityStart ?? include.range.end,
               visited,
-              definitions
+              definitions,
+              recordUndef
             );
           }
         }
@@ -989,6 +1028,7 @@ export class WorkspaceIndex {
   }
 
   private clearCachedAnalysis(): void {
+    this.builtinCatalogCache = undefined;
     this.forcedIncludesIndexed = false;
     for (const uri of this.documents.keys()) {
       this.analyzer.clear(uri);

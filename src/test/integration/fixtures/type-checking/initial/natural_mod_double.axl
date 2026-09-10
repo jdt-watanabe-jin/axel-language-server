@@ -1,0 +1,5 @@
+
+void main() {
+natural a=5nat; a%2.0;
+printf("PROBE_OK\n");
+}

@@ -15,6 +15,7 @@ The server currently supports these Language Server Protocol features:
 - Text document synchronization for AXEL source files.
 - Diagnostics:
   - syntax diagnostics from `tree-sitter-axel`
+  - type diagnostics for the verified AXEL 510 runtime profile; see the [type-checking guide](docs/user/type-checking.md) for registration and limits
   - semantic diagnostics for duplicate declarations, unresolved references, unresolved includes, unresolved AXEL execution files, and selected GUI misuse warnings
 - Document symbols for functions, variables, typedefs, enums and enum members, class members, macros, includes, GUI parts, and resolved GUI event handlers.
 - Hover for declarations, visible references, members, macros, built-ins, include paths, AXEL execution file references, GUI classes, GUI parts, and GUI receiver paths.
@@ -57,9 +58,11 @@ Localized text includes syntax/semantic/include/execution-file diagnostics, buil
 
 Translations live in `src/i18n/ja.ts`. `message()` adds structured descriptors to diagnostics while retaining canonical English analysis messages; the LSP adapter formats them for the session locale. `translate()` formats server-owned hover/completion text at presentation time. Keep argument placeholders consistent; do not translate by matching completed diagnostic strings. Compiled dictionaries ship under `out/i18n/`.
 
-See [testing strategy](docs/testing/strategy.md) for localization verification and [change log](CHANGELOG.md) for unreleased changes.
+See [testing strategy](docs/testing/strategy.md) for localization verification.
 
 ## Development
+
+See [type-checking architecture and verification](docs/developer/type-checking.md) for the type model, builtin registration, corpus, and optional runtime tests.
 
 Install dependencies:
 

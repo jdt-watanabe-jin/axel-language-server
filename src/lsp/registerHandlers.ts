@@ -449,6 +449,9 @@ function registerWatchedFileHandlers(context: HandlerRegistrationContext): void 
     for (const change of event.changes) {
       context.analyzer.invalidateUri?.(change.uri);
     }
+    if (event.changes.length > 0) {
+      context.connection.languages.diagnostics.refresh();
+    }
   });
 }
 

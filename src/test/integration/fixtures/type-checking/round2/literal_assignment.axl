@@ -1,0 +1,5 @@
+
+void Probe_literal_assignment() {
+1=2;
+}
+void main() {}

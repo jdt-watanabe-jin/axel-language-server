@@ -1,0 +1,5 @@
+class A_member_missing {public: int x;};
+void Probe_member_missing() {
+A_member_missing a; a.missing;
+}
+void main() {}

@@ -1,0 +1,5 @@
+void f(const char* x) {}
+void main() {
+f("abc");
+printf("PROBE_OK\n");
+}

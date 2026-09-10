@@ -1,0 +1,5 @@
+
+void main() {
+natural a=1nat; if(a) {}
+printf("PROBE_OK\n");
+}

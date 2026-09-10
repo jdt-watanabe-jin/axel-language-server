@@ -1,0 +1,5 @@
+class natural {public:int x;};
+void Probe_nat_shadow() {
+natural n;
+}
+void main() {}

@@ -1,0 +1,5 @@
+class A_user_conv_short {public:int x; operator int(){return x;}}; void f(short x) {}
+void Probe_user_conv_short() {
+A_user_conv_short a; f(a);
+}
+void main() {}

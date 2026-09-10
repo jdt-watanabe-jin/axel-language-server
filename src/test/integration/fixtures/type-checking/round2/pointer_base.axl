@@ -1,0 +1,5 @@
+class A_pointer_base {public: int x;}; class B_pointer_base:public A_pointer_base {public: int y;};
+void Probe_pointer_base() {
+A_pointer_base a; A_pointer_base *p=&a; B_pointer_base *q=p;
+}
+void main() {}

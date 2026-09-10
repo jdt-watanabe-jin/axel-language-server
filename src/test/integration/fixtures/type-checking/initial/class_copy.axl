@@ -1,0 +1,5 @@
+class A { public: int x; };
+void main() {
+A a; A b; a=b;
+printf("PROBE_OK\n");
+}

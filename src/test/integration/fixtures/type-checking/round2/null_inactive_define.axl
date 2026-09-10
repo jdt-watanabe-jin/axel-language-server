@@ -1,0 +1,7 @@
+#if 0
+#define NULL 0
+#endif
+void Probe_null_inactive_define() {
+int *p=NULL;
+}
+void main() {}

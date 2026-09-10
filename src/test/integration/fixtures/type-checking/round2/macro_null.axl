@@ -1,0 +1,5 @@
+#define NOTHING NULL
+void Probe_macro_null() {
+int *p=NOTHING;
+}
+void main() {}

@@ -1,0 +1,5 @@
+
+void Probe_pointer_const_top() {
+int i=1; int *const p=&i;
+}
+void main() {}

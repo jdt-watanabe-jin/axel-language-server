@@ -1,0 +1,6 @@
+#define NULL 0
+#undef NULL
+void Probe_null_redefine_undef() {
+int *p=NULL;
+}
+void main() {}

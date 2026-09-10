@@ -1,0 +1,5 @@
+class A { public: void f(int x) {} void f(double x) {} };
+void main() {
+A a; short s=1; a.f(s);
+printf("PROBE_OK\n");
+}

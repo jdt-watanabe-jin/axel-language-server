@@ -1,0 +1,5 @@
+
+void Probe_invalid_control() {
+int i=;
+}
+void main() {}

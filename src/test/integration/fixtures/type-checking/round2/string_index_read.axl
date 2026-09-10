@@ -1,0 +1,5 @@
+
+void Probe_string_index_read() {
+string s="abc"; int i=s[0];
+}
+void main() {}

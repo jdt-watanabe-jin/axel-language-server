@@ -1,0 +1,5 @@
+class A_user_operator_short {public: int x; int operator+(int v) {return x+v;} };
+void Probe_user_operator_short() {
+A_user_operator_short a; short s=1; a+s;
+}
+void main() {}

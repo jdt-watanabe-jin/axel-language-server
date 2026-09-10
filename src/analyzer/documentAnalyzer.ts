@@ -1,3 +1,4 @@
+import { buildTypeSnapshot } from './typeChecking/syntax';
 import type * as Parser from 'tree-sitter';
 import { message } from '../i18n/messages';
 import { collectSystemMacroSyntax, isSystemMacroName, normalizeTool, resolveSystemMacro } from './systemMacros';
@@ -91,6 +92,7 @@ export class DocumentAnalyzer {
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
       const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
       const analysis: AnalyzedDocument = {
+        typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri),
         tool: normalizeTool(input.tool),
         uncertainRanges,
         uncertainDeclarations: possibleDeclarations,

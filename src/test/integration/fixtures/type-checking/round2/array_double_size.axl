@@ -1,0 +1,5 @@
+
+void Probe_array_double_size() {
+int a[2.5];
+}
+void main() {}

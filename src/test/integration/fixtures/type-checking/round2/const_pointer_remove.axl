@@ -1,0 +1,5 @@
+
+void Probe_const_pointer_remove() {
+int i=1; const int *p=&i; int *q=p;
+}
+void main() {}

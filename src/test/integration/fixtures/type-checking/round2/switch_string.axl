@@ -1,0 +1,5 @@
+
+void Probe_switch_string() {
+string s="a"; switch(s) {case "a": break;}
+}
+void main() {}

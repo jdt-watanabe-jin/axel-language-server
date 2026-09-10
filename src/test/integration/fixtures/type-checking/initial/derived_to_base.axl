@@ -1,0 +1,7 @@
+class A {public: int x;};
+class B:public A {public: int y;};
+void f(A x) {}
+void main() {
+B b; f(b);
+printf("PROBE_OK\n");
+}

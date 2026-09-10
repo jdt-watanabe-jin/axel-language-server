@@ -1,0 +1,5 @@
+class A_same_fields_classes {public: int x;}; class B_same_fields_classes {public: int x;}; void f(A_same_fields_classes x) {}
+void Probe_same_fields_classes() {
+B_same_fields_classes b; f(b);
+}
+void main() {}

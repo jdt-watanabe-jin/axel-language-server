@@ -1,0 +1,5 @@
+
+void Probe_new_delete() {
+int *p=new int; delete p;
+}
+void main() {}

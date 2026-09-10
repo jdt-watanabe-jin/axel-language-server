@@ -1,0 +1,5 @@
+
+void Probe_sizeof_bad_expr() {
+int i=1; sizeof(i[0]);
+}
+void main() {}

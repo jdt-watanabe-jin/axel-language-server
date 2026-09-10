@@ -1,0 +1,5 @@
+void f(double x) {}
+void Probe_nat_to_double_arg() {
+natural n=1nat; f(n);
+}
+void main() {}

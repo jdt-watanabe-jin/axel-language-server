@@ -19,6 +19,7 @@ export type AnalysisSymbolRole = 'declaration' | 'definition' | 'reference';
 export type AnalysisDiagnosticSeverity = 'error' | 'warning';
 
 export interface AnalysisDiagnostic {
+  code?: string;
   severity: AnalysisDiagnosticSeverity;
   source: 'axel';
   message: string;
@@ -293,6 +294,7 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  typeSnapshot?: import('../analyzer/typeChecking/syntax').TypeSnapshot;
   tool?: string;
   systemMacroReferences?: { name: string; range: AnalysisRange }[];
   completionExcludedRanges?: AnalysisRange[];

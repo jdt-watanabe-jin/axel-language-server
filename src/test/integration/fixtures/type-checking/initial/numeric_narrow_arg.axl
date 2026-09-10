@@ -1,0 +1,5 @@
+void f(int x) {}
+void main() {
+f(1.5);
+printf("PROBE_OK\n");
+}

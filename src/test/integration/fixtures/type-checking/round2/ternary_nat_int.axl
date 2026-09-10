@@ -1,0 +1,5 @@
+
+void Probe_ternary_nat_int() {
+natural n=1nat; int i=1; i?n:i;
+}
+void main() {}

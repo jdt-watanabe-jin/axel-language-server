@@ -1,0 +1,5 @@
+void f(int x); void f(double x); void f(int x) {}
+void Probe_different_prototypes() {
+f(1);
+}
+void main() {}

@@ -1,0 +1,5 @@
+class A_user_assignment_arg { public: A_user_assignment_arg operator=(int x) { return *this; } }; void f(A_user_assignment_arg x) {}
+void Probe_user_assignment_arg() {
+f(1);
+}
+void main() {}

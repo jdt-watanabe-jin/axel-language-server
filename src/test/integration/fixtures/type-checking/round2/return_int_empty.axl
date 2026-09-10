@@ -1,0 +1,5 @@
+int f() { return; }
+void Probe_return_int_empty() {
+
+}
+void main() {}

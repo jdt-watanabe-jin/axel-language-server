@@ -1,0 +1,5 @@
+
+void Probe_nat_assign_double() {
+natural n=1nat; n=2.5;
+}
+void main() {}

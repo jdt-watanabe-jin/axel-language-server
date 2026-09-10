@@ -1,0 +1,5 @@
+
+void main() {
+string a="a"; if(a) {}
+printf("PROBE_OK\n");
+}

@@ -1,0 +1,5 @@
+
+void Probe_type_nat_not() {
+natural n=2nat; void *p=(!n);
+}
+void main() {}

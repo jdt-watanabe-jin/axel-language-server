@@ -1,0 +1,5 @@
+void f(int x);
+void Probe_prototype_only() {
+
+}
+void main() {}

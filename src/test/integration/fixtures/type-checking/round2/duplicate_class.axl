@@ -1,0 +1,5 @@
+class A_duplicate_class {public: int x;}; class A_duplicate_class {public: int x;};
+void Probe_duplicate_class() {
+
+}
+void main() {}

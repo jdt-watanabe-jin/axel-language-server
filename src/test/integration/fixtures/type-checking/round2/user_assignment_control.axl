@@ -1,0 +1,5 @@
+class A_user_assignment_control { public: A_user_assignment_control operator=(int x) { return *this; } };
+void Probe_user_assignment_control() {
+A_user_assignment_control a; a=1;
+}
+void main() {}

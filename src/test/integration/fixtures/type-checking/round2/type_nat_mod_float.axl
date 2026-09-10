@@ -1,0 +1,5 @@
+
+void Probe_type_nat_mod_float() {
+natural n=2nat; float f=1.5; void *p=(n%f);
+}
+void main() {}

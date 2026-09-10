@@ -1,0 +1,5 @@
+
+void Probe_const_ptr_uninitialized() {
+const int *p;
+}
+void main() {}

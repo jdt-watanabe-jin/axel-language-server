@@ -1,0 +1,5 @@
+
+void main() {
+natural a=2nat; natural b=1nat; if(a>=b) printf("GE_OK\n");
+printf("PROBE_OK\n");
+}

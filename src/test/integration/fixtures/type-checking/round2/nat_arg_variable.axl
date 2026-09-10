@@ -1,0 +1,5 @@
+void f(natural x) {}
+void Probe_nat_arg_variable() {
+int i=1; f(i);
+}
+void main() {}

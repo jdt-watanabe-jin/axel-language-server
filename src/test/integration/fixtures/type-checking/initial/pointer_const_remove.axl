@@ -1,0 +1,5 @@
+
+void main() {
+const int a=1; const int *p=&a; int *q=p;
+printf("PROBE_OK\n");
+}

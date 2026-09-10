@@ -1,0 +1,5 @@
+void f(int x) {}
+void Probe_definition_only() {
+f(1);
+}
+void main() {}

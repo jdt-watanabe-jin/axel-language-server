@@ -524,7 +524,7 @@ suite('WorkspaceIndex semantic diagnostics', () => {
     const mainPath = path.join(tempDir, 'main.axl');
     const headerPath = path.join(tempDir, 'types.h');
     const uri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(headerPath, 'class IncludedType {};');
+    fs.writeFileSync(headerPath, 'class IncludedType {int value;};');
     const index = createWorkspaceIndex();
 
     const analysis = index.indexOpenDocument({

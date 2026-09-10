@@ -73,6 +73,7 @@ suite('registerHandlers', () => {
 
   test('invalidates watched files through the workspace index', () => {
     const invalidatedUris: string[] = [];
+    let diagnosticRefreshes = 0;
     let watchedFilesHandler: ((event: { changes: { uri: string }[] }) => void) | undefined;
     const connection = {
       onInitialize: () => undefined,
@@ -81,6 +82,7 @@ suite('registerHandlers', () => {
       },
       languages: {
         diagnostics: {
+          refresh: () => { diagnosticRefreshes++; },
           on: () => undefined
         },
         semanticTokens: {
@@ -123,6 +125,7 @@ suite('registerHandlers', () => {
     watchedFilesHandler?.({ changes: [{ uri: 'file:///types.h' }] });
 
     assert.deepStrictEqual(invalidatedUris, ['file:///types.h']);
+    assert.strictEqual(diagnosticRefreshes, 1, 'Header changes must request fresh diagnostics without a source edit');
   });
 
   test('applies workspace index options from initialization options', () => {

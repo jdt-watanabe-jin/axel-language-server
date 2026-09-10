@@ -1,0 +1,5 @@
+
+void Probe_pointer_const_add() {
+int i=1; int *p=&i; const int *q=p;
+}
+void main() {}

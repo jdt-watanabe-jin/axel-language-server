@@ -1,0 +1,5 @@
+
+void Probe_pointer_nullptr() {
+int *p=nullptr;
+}
+void main() {}

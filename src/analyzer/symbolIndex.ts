@@ -11,6 +11,8 @@ import type {
 import { isGuiPartTypeName } from './guiClassKinds';
 import { isDeclarationNodeType, isTypeSpecifierNodeType } from './nodeKinds';
 import { getDeclaratorName, nodeToAnalysisRange } from './syntaxTree';
+import { buildScopeIndex } from './scopeIndex';
+import { findLocalDeclaration } from './resolution';
 
 export interface SymbolIndex {
   declarations: AnalysisDeclaration[];
@@ -41,10 +43,65 @@ export function buildSymbolIndex(
   collectDeclarations(rootNode, uri, [], declarations, declarationNameKeys, knownGuiClassNames);
   addNonIndexedDeclarationReferenceExclusions(rootNode, declarationNameKeys);
 
+  const valueReferenceKeys = disambiguateBinaryStatements(rootNode, uri, declarations, declarationNameKeys);
   return {
     declarations,
-    references: collectReferences(rootNode, uri, declarationNameKeys)
+    references: collectReferences(rootNode, uri, declarationNameKeys, valueReferenceKeys)
   };
+}
+
+export interface AmbiguousBinaryExpression {
+  left: Parser.SyntaxNode;
+  right: Parser.SyntaxNode;
+  operator: '*' | '&';
+}
+
+// AXEL type names and value names share the same lexical grammar. This shape is
+// a binary statement only when name resolution identifies its left side as a value.
+export function ambiguousBinaryExpressionFromNode(node: Parser.SyntaxNode): AmbiguousBinaryExpression | undefined {
+  if (node.type !== 'object_definition' || node.namedChildCount !== 2) { return undefined; }
+  let parent = node.parent;
+  while (parent?.type.startsWith('preproc_')) { parent = parent.parent; }
+  if (parent?.type !== 'compound_statement') { return undefined; }
+  const left = node.childForFieldName('type');
+  const pointer = node.childForFieldName('declarator');
+  const right = pointer?.childForFieldName('declarator');
+  const operator = pointer?.children[0]?.text;
+  if (left?.type !== 'class_name' || pointer?.type !== 'pointer_declarator'
+    || pointer.childCount !== 2 || right?.type !== 'identifier'
+    || (operator !== '*' && operator !== '&')) { return undefined; }
+  return { left, right, operator };
+}
+
+function isValueDeclaration(declaration: AnalysisDeclaration): boolean {
+  return declaration.kind === 'variable' || declaration.kind === 'parameter'
+    || declaration.kind === 'field' || declaration.kind === 'enumMember';
+}
+
+function disambiguateBinaryStatements(
+  root: Parser.SyntaxNode,
+  uri: AnalysisDocumentUri,
+  declarations: AnalysisDeclaration[],
+  declarationNameKeys: Set<string>
+): Set<string> {
+  const valueNames = new Set(declarations.filter(isValueDeclaration).map(declaration => declaration.name));
+  const candidates = root.descendantsOfType('object_definition')
+    .map(ambiguousBinaryExpressionFromNode)
+    .filter((candidate): candidate is AmbiguousBinaryExpression => candidate !== undefined && valueNames.has(candidate.left.text));
+  const valueReferenceKeys = new Set<string>();
+  if (candidates.length === 0) { return valueReferenceKeys; }
+  const analysis = { uri, declarations, scopes: buildScopeIndex(root, uri, declarations) };
+  for (const candidate of candidates) {
+    const leftRange = nodeToAnalysisRange(candidate.left);
+    const resolved = findLocalDeclaration(analysis, candidate.left.text, leftRange.start);
+    if (resolved === undefined || !isValueDeclaration(resolved)) { continue; }
+    const rightKey = rangeKey(nodeToAnalysisRange(candidate.right));
+    const declarationIndex = declarations.findIndex(declaration => rangeKey(declaration.selectionRange) === rightKey);
+    if (declarationIndex !== -1) { declarations.splice(declarationIndex, 1); }
+    declarationNameKeys.delete(rightKey);
+    valueReferenceKeys.add(rangeKey(leftRange));
+  }
+  return valueReferenceKeys;
 }
 
 function collectDeclarations(
@@ -761,7 +818,8 @@ function trailingLineCommentStart(text: string): number | undefined {
 function collectReferences(
   rootNode: Parser.SyntaxNode,
   uri: AnalysisDocumentUri,
-  declarationNameKeys: Set<string>
+  declarationNameKeys: Set<string>,
+  valueReferenceKeys: ReadonlySet<string>
 ): AnalysisReference[] {
   const references: AnalysisReference[] = [];
   const referenceExclusionKeys = new Set(declarationNameKeys);
@@ -795,7 +853,7 @@ function collectReferences(
           uri,
           range,
           ...referenceCallDetails(callTargetDetails.get(key)),
-          ...(isTypeReferenceNameNode(node) ? { typeReference: true } : {})
+          ...(isTypeReferenceNameNode(node) && !valueReferenceKeys.has(key) ? { typeReference: true } : {})
         });
       }
     }

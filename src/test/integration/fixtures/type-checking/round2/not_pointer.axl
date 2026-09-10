@@ -1,0 +1,5 @@
+
+void Probe_not_pointer() {
+int i=1; *i;
+}
+void main() {}

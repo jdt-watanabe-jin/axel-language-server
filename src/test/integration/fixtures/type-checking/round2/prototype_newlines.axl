@@ -1,0 +1,6 @@
+void f(int x);
+void f(int x) {}
+void Probe_prototype_newlines() {
+f(1);
+}
+void main() {}

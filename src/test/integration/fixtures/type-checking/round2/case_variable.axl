@@ -1,0 +1,5 @@
+
+void Probe_case_variable() {
+int i=1; int j=2; switch(i) {case j: break;}
+}
+void main() {}

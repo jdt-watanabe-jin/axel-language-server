@@ -1,0 +1,5 @@
+class natural {public:int x;};
+void Probe_natural_shadow_field() {
+natural n; n.x=1;
+}
+void main() {}

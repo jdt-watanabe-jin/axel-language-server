@@ -1,0 +1,5 @@
+
+void Probe_local_class() {
+class A_local_class {public: int x;}; A_local_class a;
+}
+void main() {}

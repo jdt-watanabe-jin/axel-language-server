@@ -1,0 +1,5 @@
+class A_class_condition { public: int x; };
+void Probe_class_condition() {
+A_class_condition a; if(a) {}
+}
+void main() {}

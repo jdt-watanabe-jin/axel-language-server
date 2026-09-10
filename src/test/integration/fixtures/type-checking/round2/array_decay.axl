@@ -1,0 +1,5 @@
+
+void Probe_array_decay() {
+int a[2]; int *p=a;
+}
+void main() {}

@@ -1,0 +1,5 @@
+
+void Probe_type_nat_ge() {
+natural n=2nat; void *p=(n>=n);
+}
+void main() {}

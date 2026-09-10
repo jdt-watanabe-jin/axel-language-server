@@ -1,0 +1,5 @@
+class A_pointer_derived {public: int x;}; class B_pointer_derived:public A_pointer_derived {public: int y;};
+void Probe_pointer_derived() {
+B_pointer_derived b; B_pointer_derived *p=&b; A_pointer_derived *q=p;
+}
+void main() {}

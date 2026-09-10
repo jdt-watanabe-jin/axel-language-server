@@ -1,0 +1,5 @@
+enum A_enum_global_constant {X_enum_global_constant=1};
+void Probe_enum_global_constant() {
+
+}
+void main() {}

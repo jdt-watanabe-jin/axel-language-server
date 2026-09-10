@@ -1,0 +1,5 @@
+class natural {public:int x;};
+void Probe_natural_shadow_mul() {
+natural n; n*1;
+}
+void main() {}

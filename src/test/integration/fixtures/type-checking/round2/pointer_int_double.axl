@@ -1,0 +1,5 @@
+
+void Probe_pointer_int_double() {
+int i=1; int *p=&i; double *q=p;
+}
+void main() {}

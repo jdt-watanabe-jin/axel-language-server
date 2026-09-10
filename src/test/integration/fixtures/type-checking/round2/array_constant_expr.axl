@@ -1,0 +1,5 @@
+
+void Probe_array_constant_expr() {
+int a[1+2];
+}
+void main() {}

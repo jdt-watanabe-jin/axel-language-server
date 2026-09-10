@@ -1,0 +1,5 @@
+
+void Probe_enum_runtime_value() {
+int i=1; enum A_enum_runtime_value { X_enum_runtime_value=i };
+}
+void main() {}

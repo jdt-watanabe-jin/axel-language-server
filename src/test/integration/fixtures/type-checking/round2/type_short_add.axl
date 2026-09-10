@@ -1,0 +1,5 @@
+
+void Probe_type_short_add() {
+short s=1; void *p=(s+0);
+}
+void main() {}

@@ -1,0 +1,5 @@
+class A_shadow_class {public: int x;}; void f(A_shadow_class x) {}
+void Probe_shadow_class() {
+class A_shadow_class {public: int x;}; A_shadow_class a; f(a);
+}
+void main() {}

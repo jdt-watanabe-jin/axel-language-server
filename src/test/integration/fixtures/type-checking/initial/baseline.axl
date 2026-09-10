@@ -1,0 +1,5 @@
+
+void main() {
+
+printf("PROBE_OK\n");
+}

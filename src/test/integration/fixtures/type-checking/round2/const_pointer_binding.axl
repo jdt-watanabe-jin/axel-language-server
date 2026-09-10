@@ -1,0 +1,5 @@
+
+void Probe_const_pointer_binding() {
+int i=1; const int *p=&i;
+}
+void main() {}

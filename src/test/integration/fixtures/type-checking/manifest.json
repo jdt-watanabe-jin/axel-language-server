@@ -1,0 +1,2947 @@
+{
+  "profile": "axel-510-sxm-2000000",
+  "executableSha256": "69a698f55ac734dfcccc06215720be600752fa1f814064e40f02f12e91025838",
+  "rangePrecision": "compiler-source-line",
+  "cases": [
+    {
+      "id": "initial/baseline",
+      "sourceFile": "initial/baseline.axl",
+      "sha256": "578368ff6c90292c9286cf92754630eef2b6248083241fe155c77232c5065875",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#baseline",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_mul_natural",
+      "sourceFile": "initial/natural_mul_natural.axl",
+      "sha256": "c3d00e110d656415cdc05fd5089cb017dda40872e1c17b5e4ca6db592644471d",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "initial/summary.json#natural_mul_natural",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 36
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(*,natural,natural)"
+        }
+      ]
+    },
+    {
+      "id": "initial/natural_mul_int",
+      "sourceFile": "initial/natural_mul_int.axl",
+      "sha256": "e86a395b8b084a27dceb7f27657305b18edbfc07748d73cb115cdfb9449f3146",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_mul_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_mul_short",
+      "sourceFile": "initial/natural_mul_short.axl",
+      "sha256": "b1db8ed0339df54b0953f3f1b3c8c2055d1d74ec199fdeb3a57db69ca32ff891",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_mul_short",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_mul_double",
+      "sourceFile": "initial/natural_mul_double.axl",
+      "sha256": "4b7a8ff4111b0449cd3522f5ddc44a3ff24e5ab3991a125adc0cc1fc98cfc880",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_mul_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/int_mul_natural",
+      "sourceFile": "initial/int_mul_natural.axl",
+      "sha256": "f089e3762d29045030b4a8539215292cd865a31507420e4b635aa75fd74d7360",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#int_mul_natural",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_div_natural",
+      "sourceFile": "initial/natural_div_natural.axl",
+      "sha256": "1cdee8bbfc78776fb95bdd944b5de5077d3293fe8392426460d2091346a2f527",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_div_natural",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_cast_int",
+      "sourceFile": "initial/natural_cast_int.axl",
+      "sha256": "cb5a2602b08057cffca21f1c82535e8d7aedf7b28cf270c646b12a293028be5c",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_cast_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_init_int",
+      "sourceFile": "initial/natural_init_int.axl",
+      "sha256": "0038c34acdf57d0719e74d62fc4290ac89b1ea8b52950efc7547e171df6f5566",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_init_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_arg_int",
+      "sourceFile": "initial/natural_arg_int.axl",
+      "sha256": "e12234f80ee66cbdaa54fe049c90e5dfaba4c865b6c9fb6619993397f064fd75",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_arg_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_return_int",
+      "sourceFile": "initial/natural_return_int.axl",
+      "sha256": "8fa3c073425d74f4c65ae9f471818ca66c45cc49a194e09e73ef66274c91cf16",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_return_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/int_arg_natural",
+      "sourceFile": "initial/int_arg_natural.axl",
+      "sha256": "3e0f09dc1739c28f1e89792797908125862b1554c1ef99a3a9612d7440d0f89c",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#int_arg_natural",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_condition",
+      "sourceFile": "initial/natural_condition.axl",
+      "sha256": "13bd673f649f9b9ccbb077d50fbe87843cd3f84ad86c3fc95bc14653ef9b7ed2",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_condition",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_not",
+      "sourceFile": "initial/natural_not.axl",
+      "sha256": "1927c71a8204fcb31632a7e682d331e08052e8416843dd423c5d339a744e04dc",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_not",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/string_condition",
+      "sourceFile": "initial/string_condition.axl",
+      "sha256": "93b2e5a3d841be0cfe280f6bd52c746a831e720943899340a9675eda8b3a696f",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#string_condition",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/string_charptr_arg",
+      "sourceFile": "initial/string_charptr_arg.axl",
+      "sha256": "7784adba8030d3e32e1ef60023c158f5aa57ba74631b9ef69c5fc694f75ff731",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "initial/summary.json#string_charptr_arg",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 9
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(string,char*)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "initial/string_index_assign",
+      "sourceFile": "initial/string_index_assign.axl",
+      "sha256": "9c0a9a8b6ecbe3d01dd84963c6493f4eda99b0cd1b81a883d5e27700706fbc60",
+      "expectedError": true,
+      "compilerCodes": [
+        "C33"
+      ],
+      "evidenceId": "initial/summary.json#string_index_assign",
+      "observation": "compiler_error_reported",
+      "category": "assignment",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 24
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C33",
+          "message": "#E: 二項演算が不正です(=,int,int)"
+        }
+      ]
+    },
+    {
+      "id": "initial/string_subtract",
+      "sourceFile": "initial/string_subtract.axl",
+      "sha256": "27de6b085d6a680508e6b0377e833f95837d936b23f3d1a8f5acfe513ca438bb",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#string_subtract",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/string_multiply",
+      "sourceFile": "initial/string_multiply.axl",
+      "sha256": "10d9545ee105b6b02839017bc21a8b3d8e5e852ef2dda84eca58bea95ab35db5",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#string_multiply",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/class_copy",
+      "sourceFile": "initial/class_copy.axl",
+      "sha256": "15512e943122926e4662d0111f158b379b057fc0bdec3c740393cfdeb23d2686",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#class_copy",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/class_init_copy",
+      "sourceFile": "initial/class_init_copy.axl",
+      "sha256": "e6c59137bc3e6c8aa717234f3bd5877af8e634dec29dd1a72ccfbaafaf84a9e1",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#class_init_copy",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/const_assign",
+      "sourceFile": "initial/const_assign.axl",
+      "sha256": "e06301d24aff71366905751022f776e74e7205bd1671271a3e337c6b374b5720",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#const_assign",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/numeric_narrow_arg",
+      "sourceFile": "initial/numeric_narrow_arg.axl",
+      "sha256": "60e4559ebda877e9abb6cc83c886c783bbba26dae258ce4dbd1706374ec2d45d",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#numeric_narrow_arg",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/numeric_overload",
+      "sourceFile": "initial/numeric_overload.axl",
+      "sha256": "08084f7785474f779699e2562a439fbf5ea70849d06d5d9a77518c2391a737af",
+      "expectedError": true,
+      "compilerCodes": [
+        "C26"
+      ],
+      "evidenceId": "initial/summary.json#numeric_overload",
+      "observation": "compiler_error_reported",
+      "category": "definition",
+      "expectedRange": {
+        "start": {
+          "line": 1,
+          "character": 0
+        },
+        "end": {
+          "line": 1,
+          "character": 38
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 1,
+          "code": "C26",
+          "message": "#E: 関数定義がエラーです(f)"
+        }
+      ]
+    },
+    {
+      "id": "initial/ambiguous_overload",
+      "sourceFile": "initial/ambiguous_overload.axl",
+      "sha256": "9895c8c16a4f7d6839b1f5105720472a293879421fcb9d9ff65adb361f340303",
+      "expectedError": true,
+      "compilerCodes": [
+        "C26"
+      ],
+      "evidenceId": "initial/summary.json#ambiguous_overload",
+      "observation": "compiler_error_reported",
+      "category": "definition",
+      "expectedRange": {
+        "start": {
+          "line": 1,
+          "character": 0
+        },
+        "end": {
+          "line": 1,
+          "character": 25
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 1,
+          "code": "C26",
+          "message": "#E: 関数定義がエラーです(f)"
+        }
+      ]
+    },
+    {
+      "id": "initial/array_float_index",
+      "sourceFile": "initial/array_float_index.axl",
+      "sha256": "75e5beee397bb027f32a4016341ab25363e54f741c704acd2c7ddfbe05ce3e4b",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "initial/summary.json#array_float_index",
+      "observation": "compiler_error_reported",
+      "category": "subscript",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 17
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません([],(*),double)"
+        }
+      ]
+    },
+    {
+      "id": "initial/array_assignment",
+      "sourceFile": "initial/array_assignment.axl",
+      "sha256": "4bf8741c578463a4ec5cca67f10eb9ce10be9b0b95e9a62cd5a817816f02dd94",
+      "expectedError": true,
+      "compilerCodes": [
+        "C33"
+      ],
+      "evidenceId": "initial/summary.json#array_assignment",
+      "observation": "compiler_error_reported",
+      "category": "assignment",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 24
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C33",
+          "message": "#E: 二項演算が不正です(=,(*),(*))"
+        }
+      ]
+    },
+    {
+      "id": "initial/pointer_zero",
+      "sourceFile": "initial/pointer_zero.axl",
+      "sha256": "d947db24c79f9a31e151b1a963b55a4358f82f20ae1e11ec64308c7e7cf8f105",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "initial/summary.json#pointer_zero",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 9
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "initial/pointer_int",
+      "sourceFile": "initial/pointer_int.axl",
+      "sha256": "422fdd292ac7a8ec0381a14db9d9be459e35860fef3efe8c9f498cb2f2944643",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "initial/summary.json#pointer_int",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 18
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "initial/pointer_const_remove",
+      "sourceFile": "initial/pointer_const_remove.axl",
+      "sha256": "64d9a602f1c4e64d03ccc13f1f7a006424c35a701ac1e9428428e874019982d2",
+      "expectedError": true,
+      "compilerCodes": [
+        "C68"
+      ],
+      "evidenceId": "initial/summary.json#pointer_const_remove",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 41
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C68",
+          "message": "#E: Initial error at invalid value type"
+        }
+      ]
+    },
+    {
+      "id": "initial/derived_to_base",
+      "sourceFile": "initial/derived_to_base.axl",
+      "sha256": "12be8475ffaa0b00c07833569c66b5c3e3040df80ae7d250d8177c4acf5d09f6",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "initial/summary.json#derived_to_base",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 4,
+          "character": 0
+        },
+        "end": {
+          "line": 4,
+          "character": 10
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 4,
+          "code": "C39",
+          "message": "#E: 型変換できません(B,A)"
+        },
+        {
+          "line": 4,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "initial/base_to_derived",
+      "sourceFile": "initial/base_to_derived.axl",
+      "sha256": "bba55ddc7eb5b8dd42007d4ee2551acef2780c5ebe4da96261eb81367d0e3d82",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "initial/summary.json#base_to_derived",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 4,
+          "character": 0
+        },
+        "end": {
+          "line": 4,
+          "character": 10
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 4,
+          "code": "C39",
+          "message": "#E: 型変換できません(A,B)"
+        },
+        {
+          "line": 4,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "initial/invalid_control",
+      "sourceFile": "initial/invalid_control.axl",
+      "sha256": "624a08a8b4799aa28749607321d9a5cdeb7586efc3483ade3af11b7431facf33",
+      "expectedError": true,
+      "compilerCodes": [
+        "C5"
+      ],
+      "evidenceId": "initial/summary.json#invalid_control",
+      "observation": "compiler_error_reported",
+      "category": "syntax",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 7
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "initial/version_values",
+      "sourceFile": "initial/version_values.axl",
+      "sha256": "9d28a8c7d6d8af141185d6c9be7feab98b2280a030a0642595a7fa08745f38fd",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#version_values",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/const_assign_value",
+      "sourceFile": "initial/const_assign_value.axl",
+      "sha256": "0706d9cf3eae79c60539d3e22c18bc6cce8b8f2c54285717d6a0eb2da62edf81",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#const_assign_value",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_increment",
+      "sourceFile": "initial/natural_increment.axl",
+      "sha256": "8269dad66c0d95a12e4bd6f38b65bc4aef7f3101f408a25d7413e3b5f87bf521",
+      "expectedError": true,
+      "compilerCodes": [
+        "C30"
+      ],
+      "evidenceId": "initial/summary.json#natural_increment",
+      "observation": "compiler_error_reported",
+      "category": "unary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 20
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C30",
+          "message": "#E: 単項演算子が見つかりません(++,natural)"
+        }
+      ]
+    },
+    {
+      "id": "initial/natural_add_int",
+      "sourceFile": "initial/natural_add_int.axl",
+      "sha256": "7914581d439c995fb253abb7c8e751c8c6d3505af8552c6d1c08fdd000830352",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_add_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_mod_double",
+      "sourceFile": "initial/natural_mod_double.axl",
+      "sha256": "659ff6e3d1cac0eae848fc01a42696836566f77e10181371d69a5b1b03606014",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_mod_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/natural_ge",
+      "sourceFile": "initial/natural_ge.axl",
+      "sha256": "f39abc0301cb252f052d99b09f5c3975fc2385e4954f2c53bc0f23551a023535",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#natural_ge",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/unused_function_error",
+      "sourceFile": "initial/unused_function_error.axl",
+      "sha256": "eb6962b6c870051c3be3db04b078c84aa4f25afbf10e4feddba7ee100116d1f0",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "initial/summary.json#unused_function_error",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 43
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(*,natural,natural)"
+        }
+      ]
+    },
+    {
+      "id": "initial/class_method_overload",
+      "sourceFile": "initial/class_method_overload.axl",
+      "sha256": "e20d7eb4277b2a70f401eae71f8e80efb66c158fce08efba31689f6e08f8ee92",
+      "expectedError": true,
+      "compilerCodes": [
+        "C26"
+      ],
+      "evidenceId": "initial/summary.json#class_method_overload",
+      "observation": "compiler_error_reported",
+      "category": "definition",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 57
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C26",
+          "message": "#E: 関数定義がエラーです(f)"
+        }
+      ]
+    },
+    {
+      "id": "initial/pointer_null",
+      "sourceFile": "initial/pointer_null.axl",
+      "sha256": "bb3723016bf47239f5d5afdefc3d798d88f0e1ada4df158a57d022981f15c36b",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#pointer_null",
+      "observation": "accepted"
+    },
+    {
+      "id": "initial/pointer_const_control",
+      "sourceFile": "initial/pointer_const_control.axl",
+      "sha256": "668ac775803de98d3f1c2214bac8efb1c56a7aee6f28b92fcd526956d138b2ec",
+      "expectedError": true,
+      "compilerCodes": [
+        "C68"
+      ],
+      "evidenceId": "initial/summary.json#pointer_const_control",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 31
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C68",
+          "message": "#E: Initial error at invalid value type"
+        }
+      ]
+    },
+    {
+      "id": "initial/pointer_plain_control",
+      "sourceFile": "initial/pointer_plain_control.axl",
+      "sha256": "2a57b0e41ee245ea2fbc01ff78a66f2344d19103bd684d868a1d179c9930d14b",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "initial/summary.json#pointer_plain_control",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_arg_variable",
+      "sourceFile": "round2/nat_arg_variable.axl",
+      "sha256": "beab93a85c5f342c0e162f1bfce79a9e05259e03ff075a018b9ac1b9326a90a1",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_arg_variable",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_arg_expression",
+      "sourceFile": "round2/nat_arg_expression.axl",
+      "sha256": "81da224343677f11af9397b99f28ecf096fc611fee4296bcab4c06421ea8df68",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_arg_expression",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_arg_double",
+      "sourceFile": "round2/nat_arg_double.axl",
+      "sha256": "ff7c83390879fc16e923c641a5ed552f26a9efcf10d95a5e504c337daf37d253",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_arg_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_arg_short",
+      "sourceFile": "round2/nat_arg_short.axl",
+      "sha256": "4513237dfde53bbbc5ee2781c5ae938fa0bfb4a13409a9cdcd8d4f038758bcd6",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/results.json#nat_arg_short",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 16
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(short,natural)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/nat_return_double",
+      "sourceFile": "round2/nat_return_double.axl",
+      "sha256": "f62d5478df6eeda73949e359cdf2d35ae06f1471e175cb2aa3226cc31b46903d",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_return_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_to_double_arg",
+      "sourceFile": "round2/nat_to_double_arg.axl",
+      "sha256": "77d62f2fc74682401654a446e909ec9918a1669c59d75e6f9a7cd9bca9a5387c",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_to_double_arg",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_to_short_arg",
+      "sourceFile": "round2/nat_to_short_arg.axl",
+      "sha256": "729c8c9bb49f07c63af77ec0c02774db01846efa70a18b93514cc34cb309cc51",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/results.json#nat_to_short_arg",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 21
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(natural,short)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/nat_add_double",
+      "sourceFile": "round2/nat_add_double.axl",
+      "sha256": "8c151fb72be7e6d4084bcb553840735bb86e212d33f2c0d1d4c07051900f5e2d",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_add_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/double_add_nat",
+      "sourceFile": "round2/double_add_nat.axl",
+      "sha256": "57c6603a96f78dc6035dede040e0ebd3c15f011a058c8a674d82245a892a8d9e",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#double_add_nat",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/int_div_nat",
+      "sourceFile": "round2/int_div_nat.axl",
+      "sha256": "985d193c7e2e41cee3acd235053306dd2a9c3770d2523a994c78087591762c4a",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#int_div_nat",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/double_mul_nat",
+      "sourceFile": "round2/double_mul_nat.axl",
+      "sha256": "b9ebc54de3d7c4b729de8516dc6343229ab0c04b7f8162d4c42e3dbcc103853c",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#double_mul_nat",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_mod_float",
+      "sourceFile": "round2/nat_mod_float.axl",
+      "sha256": "11baf4bfbd881ab43aaf7023b3471f386b5870817edd79c2b4aad7c1a8cb116d",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_mod_float",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_assign_double",
+      "sourceFile": "round2/nat_assign_double.axl",
+      "sha256": "de05d1c3cc9cc570f2e6c3c1bb3b33ccf5653c994146de3a6f8e2f9a593d7a59",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_assign_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_compound_int",
+      "sourceFile": "round2/nat_compound_int.axl",
+      "sha256": "bc0a527515359268b00ecdcd5ce831a9a6acef0fe2628e518c959430814eabc2",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_compound_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_compound_nat",
+      "sourceFile": "round2/nat_compound_nat.axl",
+      "sha256": "db3f034da7c0ad4e8489568b89a901337093a7acd42e3cedcc8edd1276ae1c61",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/results.json#nat_compound_nat",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 37
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(*=,natural,natural)"
+        }
+      ]
+    },
+    {
+      "id": "round2/nat_condition_while",
+      "sourceFile": "round2/nat_condition_while.axl",
+      "sha256": "a244145d8dd00b743e30ff2c8db6d6debc99d919d162f15f231a68bbf1b1ec51",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_condition_while",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_logical",
+      "sourceFile": "round2/nat_logical.axl",
+      "sha256": "cfd0f612d4a879daa7b9283d7c63ee2de6f19a646da0ad462c0b68d80ccb69bb",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_logical",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/class_condition",
+      "sourceFile": "round2/class_condition.axl",
+      "sha256": "72df9f12b46ca0ac09b6d941b0b5da652f242c8dbb61244145bdab522779f242",
+      "expectedError": true,
+      "compilerCodes": [
+        "C73"
+      ],
+      "evidenceId": "round2/results.json#class_condition",
+      "observation": "compiler_error_reported",
+      "category": "condition",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 29
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C73",
+          "message": "#E: コンパイル内部エラー"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_conversion",
+      "sourceFile": "round2/user_conversion.axl",
+      "sha256": "447d6b8dd854ebad3c1a1d98d38887ddf670ae6338fce3c336671a166e04ea50",
+      "expectedError": true,
+      "compilerCodes": [
+        "C28"
+      ],
+      "evidenceId": "round2/results.json#user_conversion",
+      "observation": "compiler_error_reported",
+      "category": "operator_definition",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 86
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C28",
+          "message": "#E: operator 定義がエラーです"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_assignment_arg",
+      "sourceFile": "round2/user_assignment_arg.axl",
+      "sha256": "6336c1a86969d3f7a6f7badc993e6fbeeff0e619fb34cd93e6639acc3bc3e179",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/results.json#user_assignment_arg",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 5
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(int,A_user_assignment_arg)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_assignment_control",
+      "sourceFile": "round2/user_assignment_control.axl",
+      "sha256": "2f25b032dfa0315574049ef7583a645ec134d470f9bc5f32f6dc31b3f008ea05",
+      "expectedError": true,
+      "compilerCodes": [
+        "C56"
+      ],
+      "evidenceId": "round2/results.json#user_assignment_control",
+      "observation": "compiler_error_reported",
+      "category": "object_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 33
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C56",
+          "message": "#E: Variable class is invalid occurred(a)"
+        }
+      ]
+    },
+    {
+      "id": "round2/typedef_alias",
+      "sourceFile": "round2/typedef_alias.axl",
+      "sha256": "16a66ba13dc254c461da1b3c0c9044920f3098beb1cf77b7015a4874fee84eba",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#typedef_alias",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/same_fields_classes",
+      "sourceFile": "round2/same_fields_classes.axl",
+      "sha256": "7a42fc0583f3b06c999824bf8b40f2d34ecf0429d6f8bd192d4de9af920783bb",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/results.json#same_fields_classes",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 30
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(B_same_fields_classes,A_same_fields_classes)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/shadow_class",
+      "sourceFile": "round2/shadow_class.axl",
+      "sha256": "3faf821b50ba1d035405d92c2ccd8e39a49f31bb4a75633c127c44f710f2e35d",
+      "expectedError": true,
+      "compilerCodes": [
+        "C52",
+        "C5"
+      ],
+      "evidenceId": "round2/results.json#shadow_class",
+      "observation": "compiler_error_reported",
+      "category": "duplicate_class",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 62
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C52",
+          "message": "#E: Duplicate class occurred(A_shadow_class)"
+        },
+        {
+          "line": 2,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "round2/forward_class",
+      "sourceFile": "round2/forward_class.axl",
+      "sha256": "f42d152be56692d0714a8e6b42289dc3d1ab03643059463021a196991c9ff1e0",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#forward_class",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/duplicate_class",
+      "sourceFile": "round2/duplicate_class.axl",
+      "sha256": "9098ddc054ac2e1885b9a3abc013db2612ab3ed6fd8ad50583d235f1c6609c48",
+      "expectedError": true,
+      "compilerCodes": [
+        "C52",
+        "C5"
+      ],
+      "evidenceId": "round2/results.json#duplicate_class",
+      "observation": "compiler_error_reported",
+      "category": "duplicate_class",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 83
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C52",
+          "message": "#E: Duplicate class occurred(A_duplicate_class)"
+        },
+        {
+          "line": 0,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "round2/prototype_definition",
+      "sourceFile": "round2/prototype_definition.axl",
+      "sha256": "ddee165b9dbcc66bbfc9e6031658b203bf84da2bc5b8046a9f040102d498328d",
+      "expectedError": true,
+      "compilerCodes": [
+        "C57"
+      ],
+      "evidenceId": "round2/results.json#prototype_definition",
+      "observation": "compiler_error_reported",
+      "category": "prototype",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 31
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C57",
+          "message": "#E: variable declaration error(f)"
+        }
+      ]
+    },
+    {
+      "id": "round2/different_prototypes",
+      "sourceFile": "round2/different_prototypes.axl",
+      "sha256": "7a4b58c058cd2f8fb8bab62d8c6af8a0ba197e0bfdbb206f63f549785a2554eb",
+      "expectedError": true,
+      "compilerCodes": [
+        "C57"
+      ],
+      "evidenceId": "round2/results.json#different_prototypes",
+      "observation": "compiler_error_reported",
+      "category": "prototype",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 49
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C57",
+          "message": "#E: variable declaration error(f)"
+        },
+        {
+          "line": 0,
+          "code": "C57",
+          "message": "#E: variable declaration error(f)"
+        }
+      ]
+    },
+    {
+      "id": "round2/method_outside",
+      "sourceFile": "round2/method_outside.axl",
+      "sha256": "92842a4ae45ec1e6d13ba892bcffb4940eddfb64efae67ca8d917e61d65d752b",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#method_outside",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/member_missing",
+      "sourceFile": "round2/member_missing.axl",
+      "sha256": "c7406f10cf1fd8d2927e07c42143f8359f24f035bffd6726a917a008c620d6ea",
+      "expectedError": true,
+      "compilerCodes": [
+        "C17"
+      ],
+      "evidenceId": "round2/results.json#member_missing",
+      "observation": "compiler_error_reported",
+      "category": "member",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 30
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C17",
+          "message": "#E: メンバが見つかりません(missing)"
+        }
+      ]
+    },
+    {
+      "id": "round2/not_callable",
+      "sourceFile": "round2/not_callable.axl",
+      "sha256": "73c646f888de6261b1607db3b257c271340bf48a73c89b4c9c0dca4b82568790",
+      "expectedError": true,
+      "compilerCodes": [
+        "C19"
+      ],
+      "evidenceId": "round2/results.json#not_callable",
+      "observation": "compiler_error_reported",
+      "category": "not_callable",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 13
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C19",
+          "message": "#E: operator の呼び出しが不正です(int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/not_pointer",
+      "sourceFile": "round2/not_pointer.axl",
+      "sha256": "7ecbd95df49cc6ebd92ba977a2639e037a2f7879c28e45a97330974d49fba00d",
+      "expectedError": true,
+      "compilerCodes": [
+        "C30"
+      ],
+      "evidenceId": "round2/results.json#not_pointer",
+      "observation": "compiler_error_reported",
+      "category": "unary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 12
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C30",
+          "message": "#E: 単項演算子が見つかりません(*,int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/not_subscriptable",
+      "sourceFile": "round2/not_subscriptable.axl",
+      "sha256": "0c944766432a372560ddd26fa69091f3a6aadbc8931c832ca30ada8309da95a8",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/results.json#not_subscriptable",
+      "observation": "compiler_error_reported",
+      "category": "subscript",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 14
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません([],int,int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/pointer_derived",
+      "sourceFile": "round2/pointer_derived.axl",
+      "sha256": "1454c1fd882cff831e7885ac14cfc56bb8a54cf42bd9234d66fada65cb2e2630",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_derived",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_base",
+      "sourceFile": "round2/pointer_base.axl",
+      "sha256": "d4d8539e0e5a83c2ad37c80b49d22336d378fce7fcd1e6cbf34d9322142697c2",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_base",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_void",
+      "sourceFile": "round2/pointer_void.axl",
+      "sha256": "316d0ef62cbc52cf71bfe16e1d04ec221e9e7774b57ec86a0a32c7bf9dbf7920",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_void",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_from_void",
+      "sourceFile": "round2/pointer_from_void.axl",
+      "sha256": "eefdad2c3ef6c6208999607cd3805c937293cbdf3e5bd96123776be4fbdd77fa",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_from_void",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_const_add",
+      "sourceFile": "round2/pointer_const_add.axl",
+      "sha256": "50b64b8f696c76ea5fd4a4c52ff1ad5c60e91a7a0684dba7516955c97660200e",
+      "expectedError": true,
+      "compilerCodes": [
+        "C68"
+      ],
+      "evidenceId": "round2/results.json#pointer_const_add",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 35
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C68",
+          "message": "#E: Initial error at invalid value type"
+        }
+      ]
+    },
+    {
+      "id": "round2/pointer_const_address",
+      "sourceFile": "round2/pointer_const_address.axl",
+      "sha256": "e0b9e3772ee8463ef72bcf79d31c69317fb9af98c22d5b4e9db9bcebcbadd1af",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_const_address",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/const_pointer_binding",
+      "sourceFile": "round2/const_pointer_binding.axl",
+      "sha256": "c4e72a2341ae305087577dd2f1804233d0efc1362832fdab6010549f2c3decc5",
+      "expectedError": true,
+      "compilerCodes": [
+        "C68"
+      ],
+      "evidenceId": "round2/results.json#const_pointer_binding",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 25
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C68",
+          "message": "#E: Initial error at invalid value type"
+        }
+      ]
+    },
+    {
+      "id": "round2/const_pointer_remove",
+      "sourceFile": "round2/const_pointer_remove.axl",
+      "sha256": "6a5c822c57f39bf738a8a0c899d99887f48bb8323b93b5ac672d808ed0a98e30",
+      "expectedError": true,
+      "compilerCodes": [
+        "C68"
+      ],
+      "evidenceId": "round2/results.json#const_pointer_remove",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 35
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C68",
+          "message": "#E: Initial error at invalid value type"
+        }
+      ]
+    },
+    {
+      "id": "round2/pointer_null_assignment",
+      "sourceFile": "round2/pointer_null_assignment.axl",
+      "sha256": "62d152ca1a8baaf663d6a7024025977e88ce113d62e74c69ddb1d2ed15d39763",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_null_assignment",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_zero_assignment",
+      "sourceFile": "round2/pointer_zero_assignment.axl",
+      "sha256": "9e4c4c91467277c60b8d4f3c77069fa62d9551f5c06bd935368634b49f2cac12",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/results.json#pointer_zero_assignment",
+      "observation": "compiler_error_reported",
+      "category": "assignment",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 12
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/pointer_nullptr",
+      "sourceFile": "round2/pointer_nullptr.axl",
+      "sha256": "c682bd68a1d9771069e375c3b5e537e889b84e15508f6724d88d5f7945df44e2",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#pointer_nullptr",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/macro_zero",
+      "sourceFile": "round2/macro_zero.axl",
+      "sha256": "91a7dbb9eb973667e87d139329f5645ebf30a876014994f5f03e2d372bbd87f2",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/results.json#macro_zero",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 12
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/macro_null",
+      "sourceFile": "round2/macro_null.axl",
+      "sha256": "045239cd988a0b4da6c3a2811e72532d5cefb2db5ef8a4000c9bcbfbda2b12a3",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#macro_null",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/redefine_null",
+      "sourceFile": "round2/redefine_null.axl",
+      "sha256": "d273af9c615d6794ea942eac8dddaa8e354de7c3cc022c440189c0f166853f14",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/results.json#redefine_null",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 12
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/array_decay",
+      "sourceFile": "round2/array_decay.axl",
+      "sha256": "a855faf4bbb148b4e7c1416ebb03224e99319905ddfefd083d21c516fd94e027",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#array_decay",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/array_runtime_size",
+      "sourceFile": "round2/array_runtime_size.axl",
+      "sha256": "641ecf2f321493ce2b87de632699a216c364bd7d6cf82056e85a1c1c11c6a980",
+      "expectedError": true,
+      "compilerCodes": [
+        "C37",
+        "C57"
+      ],
+      "evidenceId": "round2/results.json#array_runtime_size",
+      "observation": "compiler_error_reported",
+      "category": "constant_expression",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 18
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C37",
+          "message": "#E: 定数ではありません"
+        },
+        {
+          "line": 2,
+          "code": "C57",
+          "message": "#E: variable declaration error"
+        }
+      ]
+    },
+    {
+      "id": "round2/array_double_size",
+      "sourceFile": "round2/array_double_size.axl",
+      "sha256": "c3b087b0c54fd4afd55d70216ed581268c6d264603b9c54b5a31bb071097e628",
+      "expectedError": true,
+      "compilerCodes": [
+        "C37",
+        "C57"
+      ],
+      "evidenceId": "round2/results.json#array_double_size",
+      "observation": "compiler_error_reported",
+      "category": "constant_expression",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 11
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C37",
+          "message": "#E: 定数ではありません"
+        },
+        {
+          "line": 2,
+          "code": "C57",
+          "message": "#E: variable declaration error"
+        }
+      ]
+    },
+    {
+      "id": "round2/enum_runtime_value",
+      "sourceFile": "round2/enum_runtime_value.axl",
+      "sha256": "0942543793a09fb0e45225ead834143812f09bf145141acf71cc72e71be30928",
+      "expectedError": true,
+      "compilerCodes": [
+        "C5"
+      ],
+      "evidenceId": "round2/results.json#enum_runtime_value",
+      "observation": "compiler_error_reported",
+      "category": "syntax",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 62
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "round2/switch_string",
+      "sourceFile": "round2/switch_string.axl",
+      "sha256": "9f226643f18ba79f5989467282813eda535806efe4bb2fe5242b12fda9180da5",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#switch_string",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/switch_double",
+      "sourceFile": "round2/switch_double.axl",
+      "sha256": "1b877c7863b561f974b8674df73be8554914d9ae706a2a17671dc1adc89ad163",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#switch_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/case_variable",
+      "sourceFile": "round2/case_variable.axl",
+      "sha256": "89d8eae73f6799583b9e61c62668b04e903e9c1b40a88d0f352b9dbe34368f8d",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#case_variable",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/sizeof_void",
+      "sourceFile": "round2/sizeof_void.axl",
+      "sha256": "5635f84a9523c6f2f70a2a6031a5917e4818b1526052ce6ea4b7677d612881f3",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#sizeof_void",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/sizeof_bad_expr",
+      "sourceFile": "round2/sizeof_bad_expr.axl",
+      "sha256": "33a2d9440b17e090edc3fa332335283fa301a95179930ad8e431ef0edbce5519",
+      "expectedError": null,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#sizeof_bad_expr",
+      "observation": "compiler_crash"
+    },
+    {
+      "id": "round2/new_delete",
+      "sourceFile": "round2/new_delete.axl",
+      "sha256": "afc61488c06fd8a8bc3c6d227d1558df3d6b0820ec1662bb3206f974da7044d7",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#new_delete",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/delete_int",
+      "sourceFile": "round2/delete_int.axl",
+      "sha256": "b44dbb7db62f96b61a8a79480096801388795c1afd8c6caf9a04f811422615e8",
+      "expectedError": true,
+      "compilerCodes": [
+        "C73"
+      ],
+      "evidenceId": "round2/direct-results.json#delete_int",
+      "observation": "compiler_error_reported",
+      "category": "delete",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 18
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C73",
+          "message": "#E: コンパイル内部エラー"
+        }
+      ]
+    },
+    {
+      "id": "round2/new_void",
+      "sourceFile": "round2/new_void.axl",
+      "sha256": "6567a8854c1bf58491f7170a6e36ac99a0be7297cc5fd9b334a05b3057d3cf93",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#new_void",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/return_void_value",
+      "sourceFile": "round2/return_void_value.axl",
+      "sha256": "665baa2a59e2e7eb7fcf5d7dca600be9c7a004d6ee6ac9272f9d9e6023afaca6",
+      "expectedError": true,
+      "compilerCodes": [
+        "C44"
+      ],
+      "evidenceId": "round2/direct-results.json#return_void_value",
+      "observation": "compiler_error_reported",
+      "category": "return",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 22
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C44",
+          "message": "#E: return が不正です"
+        }
+      ]
+    },
+    {
+      "id": "round2/return_int_empty",
+      "sourceFile": "round2/return_int_empty.axl",
+      "sha256": "11b7a7bf03b8189027853f33b1703528e5d584eb1d9476d3afac3bd4a2e25774",
+      "expectedError": true,
+      "compilerCodes": [
+        "C47"
+      ],
+      "evidenceId": "round2/results.json#return_int_empty",
+      "observation": "compiler_error_reported",
+      "category": "return",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 19
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C47",
+          "message": "#E: 戻り値が必要です"
+        }
+      ]
+    },
+    {
+      "id": "round2/return_int_missing",
+      "sourceFile": "round2/return_int_missing.axl",
+      "sha256": "813a31a9638d0e2867b84494c6f709de2cc5406de5d91bb600eb1a2e5d2b3937",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#return_int_missing",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/literal_assignment",
+      "sourceFile": "round2/literal_assignment.axl",
+      "sha256": "57509dbe12b6a695241c722b886a264c8772244b60a52f4654b24e35e942c8e3",
+      "expectedError": true,
+      "compilerCodes": [
+        "C33"
+      ],
+      "evidenceId": "round2/results.json#literal_assignment",
+      "observation": "compiler_error_reported",
+      "category": "assignment",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 4
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C33",
+          "message": "#E: 二項演算が不正です(=,int,int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/temporary_assignment",
+      "sourceFile": "round2/temporary_assignment.axl",
+      "sha256": "8c37059c8c6c92dd3e20507224be5bcfa68544708e233092e64bfb4a0f748d55",
+      "expectedError": true,
+      "compilerCodes": [
+        "C33"
+      ],
+      "evidenceId": "round2/results.json#temporary_assignment",
+      "observation": "compiler_error_reported",
+      "category": "assignment",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 17
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C33",
+          "message": "#E: 二項演算が不正です(=,int,int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/const_increment",
+      "sourceFile": "round2/const_increment.axl",
+      "sha256": "e4a97e68f3c488fd45d5591c610894a497b97c29e4a1519d68a87fd548be71e1",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#const_increment",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/string_index_read",
+      "sourceFile": "round2/string_index_read.axl",
+      "sha256": "d672ac756c21983d3eccecce87eeb58b369117397c1797800e8b0c2373682d99",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#string_index_read",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_mul_control",
+      "sourceFile": "round2/nat_mul_control.axl",
+      "sha256": "9dc49b0a8e5f1e21ceaebfcb3065c1401b3e0c607fc57cf922670e2a923c993c",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/results.json#nat_mul_control",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 20
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(*,natural,natural)"
+        }
+      ]
+    },
+    {
+      "id": "round2/nat_int_control",
+      "sourceFile": "round2/nat_int_control.axl",
+      "sha256": "07ed01543e102a2d43fdc4cd6c85d0c44ffa2185008432d38efe5a3b367af089",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#nat_int_control",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/baseline",
+      "sourceFile": "round2/baseline.axl",
+      "sha256": "bb894b28fcd07de1d3ed81f75c8e0b30ea038d71cd2ec57245bacc87bc282255",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/results.json#baseline",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/invalid_control",
+      "sourceFile": "round2/invalid_control.axl",
+      "sha256": "b514514eaefc748cc5d8e841809722bf262603615c32e6a6d1fee9b72aded8ee",
+      "expectedError": true,
+      "compilerCodes": [
+        "C5"
+      ],
+      "evidenceId": "round2/results.json#invalid_control",
+      "observation": "compiler_error_reported",
+      "category": "syntax",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 7
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "round2/nat_arg_cast",
+      "sourceFile": "round2/nat_arg_cast.axl",
+      "sha256": "d5b2e8979607d4b37e95c59c327f1aabb29494695568ac02eae386c13d61fe25",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#nat_arg_cast",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_to_short_cast",
+      "sourceFile": "round2/nat_to_short_cast.axl",
+      "sha256": "93c2423f92174dad66c023ec33b3a00016086914f17d2cc6053792ac48b86bc2",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#nat_to_short_cast",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_arg_short_expr",
+      "sourceFile": "round2/nat_arg_short_expr.axl",
+      "sha256": "c772d73017a6ae4a955b21b767174db19ca8c2b0ee46b272371e6800494b8dd6",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#nat_arg_short_expr",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/user_conversion_standard",
+      "sourceFile": "round2/user_conversion_standard.axl",
+      "sha256": "644fc56888433246804fda6e89e0e3a9d570f4cbc72301f8a63728ab321a45b4",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#user_conversion_standard",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/user_conversion_member",
+      "sourceFile": "round2/user_conversion_member.axl",
+      "sha256": "5db2cf4ced929ef2a229fe7bbe4a988145d8f1c31aeff929cf5220f7af6ced29",
+      "expectedError": true,
+      "compilerCodes": [
+        "C28"
+      ],
+      "evidenceId": "round2/supplement/results.json#user_conversion_member",
+      "observation": "compiler_error_reported",
+      "category": "operator_definition",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 97
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C28",
+          "message": "#E: operator 定義がエラーです"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_assign_member",
+      "sourceFile": "round2/user_assign_member.axl",
+      "sha256": "01727b258796305dfa80838c84a8bb6d524dadd9be38b22665b387a044324874",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#user_assign_member",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/user_assign_member_arg",
+      "sourceFile": "round2/user_assign_member_arg.axl",
+      "sha256": "48b5247167f408d9391836a40c5b9ab9e96d5b7d8078819640cd095a79196118",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/supplement/results.json#user_assign_member_arg",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 5
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(int,A_user_assign_member_arg)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_operator_add",
+      "sourceFile": "round2/user_operator_add.axl",
+      "sha256": "bb98f02c83131db8a070347bf20c46c4fd3e0ae7d1cdae5770a522f0a6f01f57",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#user_operator_add",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/user_operator_short",
+      "sourceFile": "round2/user_operator_short.axl",
+      "sha256": "8fbef5f689d4b82dc4c268b2cc0fcc6150f3e22c9d11edce86659718eac43a2d",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#user_operator_short",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/prototype_newlines",
+      "sourceFile": "round2/prototype_newlines.axl",
+      "sha256": "1dac40dcfb00d5c4beaa9f31a3eaaf85ff95427102328ce2731a02fb4cf5df27",
+      "expectedError": true,
+      "compilerCodes": [
+        "C57"
+      ],
+      "evidenceId": "round2/supplement/results.json#prototype_newlines",
+      "observation": "compiler_error_reported",
+      "category": "prototype",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 14
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C57",
+          "message": "#E: variable declaration error(f)"
+        }
+      ]
+    },
+    {
+      "id": "round2/prototype_only",
+      "sourceFile": "round2/prototype_only.axl",
+      "sha256": "c15e664b79ca229ad5c8e614b81f51da9a970171b4864f45203dde0263960d3d",
+      "expectedError": true,
+      "compilerCodes": [
+        "C57"
+      ],
+      "evidenceId": "round2/supplement/results.json#prototype_only",
+      "observation": "compiler_error_reported",
+      "category": "prototype",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 14
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C57",
+          "message": "#E: variable declaration error(f)"
+        }
+      ]
+    },
+    {
+      "id": "round2/definition_only",
+      "sourceFile": "round2/definition_only.axl",
+      "sha256": "b3e00a76064f68a522b43dc79111c61e3a0820daff642e3baa6eac89a31c6bfc",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#definition_only",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/local_class",
+      "sourceFile": "round2/local_class.axl",
+      "sha256": "44ae31dc1c4cc3516f19f9d44c02ce16f20303ef7459bd01d7681413dac72b29",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#local_class",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/const_ptr_uninitialized",
+      "sourceFile": "round2/const_ptr_uninitialized.axl",
+      "sha256": "50aaee9b116099de674a783b1e50390e0d2877ea1d3b4f2ac327b3b2bfee4dd5",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#const_ptr_uninitialized",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/const_ptr_assign_later",
+      "sourceFile": "round2/const_ptr_assign_later.axl",
+      "sha256": "1b985f0be40b61c00d71996e2db006f32610e11475895ec589bafd3879998987",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#const_ptr_assign_later",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_const_top",
+      "sourceFile": "round2/pointer_const_top.axl",
+      "sha256": "fe3c23de5c1bca2efa8b9c2f1d5bf9f277bb645c23d27b84994d962a2e01d30c",
+      "expectedError": true,
+      "compilerCodes": [
+        "C5"
+      ],
+      "evidenceId": "round2/supplement/results.json#pointer_const_top",
+      "observation": "compiler_error_reported",
+      "category": "syntax",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 25
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "round2/pointer_unrelated",
+      "sourceFile": "round2/pointer_unrelated.axl",
+      "sha256": "e827454836002322f3961fff9f8fe13dcedd41be7c2bef8ff8f215c4e34b1c82",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#pointer_unrelated",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_int_double",
+      "sourceFile": "round2/pointer_int_double.axl",
+      "sha256": "e255579209e1ee9e40b94f835ee94db50163ba4d3c1f1fce93ea9243d0294a7b",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#pointer_int_double",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/pointer_scalar_float",
+      "sourceFile": "round2/pointer_scalar_float.axl",
+      "sha256": "4b777c8241aefaa144c6d85a02d779408344e679bb8ead13fbadf86e60d3b31c",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/supplement/results.json#pointer_scalar_float",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 22
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),float)"
+        }
+      ]
+    },
+    {
+      "id": "round2/null_redefine_undef",
+      "sourceFile": "round2/null_redefine_undef.axl",
+      "sha256": "373b1aaddceb9a1c379fc13a3bc39b3ca8afcbb474d16642f08992a3bc396f57",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#null_redefine_undef",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/null_inactive_define",
+      "sourceFile": "round2/null_inactive_define.axl",
+      "sha256": "a12a3fa4de554b51d82a48124a7976acfa81a8f3c6d3e41531252756a7d633cc",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#null_inactive_define",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/nat_shadow",
+      "sourceFile": "round2/nat_shadow.axl",
+      "sha256": "58a29c2a9e5cda25060dd9db053e2943f4ae67c740b13a372164b21812024297",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#nat_shadow",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/switch_mismatch",
+      "sourceFile": "round2/switch_mismatch.axl",
+      "sha256": "cfdb8465c90362723d8a5e602095b2a107d15f32626bd7d16b8bda64818128dc",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32",
+        "C46"
+      ],
+      "evidenceId": "round2/supplement/results.json#switch_mismatch",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 40
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(==,string,int)"
+        },
+        {
+          "line": 2,
+          "code": "C46",
+          "message": "#E: case が不正です"
+        }
+      ]
+    },
+    {
+      "id": "round2/switch_object",
+      "sourceFile": "round2/switch_object.axl",
+      "sha256": "8134ac45476675200f3e29424b7595bd2d181cd82b599ed77e0d3ca5209e81dc",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32",
+        "C46"
+      ],
+      "evidenceId": "round2/supplement/results.json#switch_object",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 45
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(==,A_switch_object,int)"
+        },
+        {
+          "line": 2,
+          "code": "C46",
+          "message": "#E: case が不正です"
+        }
+      ]
+    },
+    {
+      "id": "round2/array_constant_expr",
+      "sourceFile": "round2/array_constant_expr.axl",
+      "sha256": "59ae15d1454df71bf7ebf05feefc9c652d3def993f363e607380d6d6f1dacb57",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#array_constant_expr",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/array_const_var",
+      "sourceFile": "round2/array_const_var.axl",
+      "sha256": "d11ca9c83314b047a77cd63a211950660cbb0cab269838ae12d12916b335755a",
+      "expectedError": true,
+      "compilerCodes": [
+        "C37",
+        "C57"
+      ],
+      "evidenceId": "round2/supplement/results.json#array_const_var",
+      "observation": "compiler_error_reported",
+      "category": "constant_expression",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 24
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C37",
+          "message": "#E: 定数ではありません"
+        },
+        {
+          "line": 2,
+          "code": "C57",
+          "message": "#E: variable declaration error"
+        }
+      ]
+    },
+    {
+      "id": "round2/enum_global_constant",
+      "sourceFile": "round2/enum_global_constant.axl",
+      "sha256": "65b31dba75fe93867076dba4e7979a120619a091ceeed8275490138f397511de",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#enum_global_constant",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/enum_global_variable",
+      "sourceFile": "round2/enum_global_variable.axl",
+      "sha256": "de81093496dfe2475ab098d15a40dec594d06d42507491c1061eb508cf708d48",
+      "expectedError": true,
+      "compilerCodes": [
+        "C5"
+      ],
+      "evidenceId": "round2/supplement/results.json#enum_global_variable",
+      "observation": "compiler_error_reported",
+      "category": "syntax",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 64
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C5",
+          "message": "#E: シンタックスエラーがあります"
+        }
+      ]
+    },
+    {
+      "id": "round2/return_void_expr",
+      "sourceFile": "round2/return_void_expr.axl",
+      "sha256": "a58394c957186b6dfc111a46f3c55fb39079b380ef3925d34a321f8b0c12b0dd",
+      "expectedError": true,
+      "compilerCodes": [
+        "C44"
+      ],
+      "evidenceId": "round2/supplement/results.json#return_void_expr",
+      "observation": "compiler_error_reported",
+      "category": "return",
+      "expectedRange": {
+        "start": {
+          "line": 0,
+          "character": 0
+        },
+        "end": {
+          "line": 0,
+          "character": 22
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 0,
+          "code": "C44",
+          "message": "#E: return が不正です"
+        }
+      ]
+    },
+    {
+      "id": "round2/ternary_nat_int",
+      "sourceFile": "round2/ternary_nat_int.axl",
+      "sha256": "cc4ef0fbd3f640bbdbb1551e8cc8f52a28ad92db0611a7f5e45ea01b8dfec881",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/supplement/results.json#ternary_nat_int",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/user_conv_short",
+      "sourceFile": "round2/user_conv_short.axl",
+      "sha256": "586f4f16f39ec048bf43fe246bbfc7507a1e80bb02c55eda3af1398cd848640e",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/focused/results.json#user_conv_short",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 26
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(A_user_conv_short,short)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_conv_nat",
+      "sourceFile": "round2/user_conv_nat.axl",
+      "sha256": "a4516dc5611cccbf13b966bd7869b053a54ca80798a043f4e7ae60f0bb7c05bd",
+      "expectedError": true,
+      "compilerCodes": [
+        "C39",
+        "C22"
+      ],
+      "evidenceId": "round2/focused/results.json#user_conv_nat",
+      "observation": "compiler_error_reported",
+      "category": "argument_type",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 24
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C39",
+          "message": "#E: 型変換できません(A_user_conv_nat,natural)"
+        },
+        {
+          "line": 2,
+          "code": "C22",
+          "message": "#E: 引数が不正です(f,0)"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_binary_conversion",
+      "sourceFile": "round2/user_binary_conversion.axl",
+      "sha256": "b78044b6039abe8415103a58cd0d5af2544e409c42b7f6c94d3ac5707a14045d",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#user_binary_conversion",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 60
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(*,A_user_binary_conversion,B_user_binary_conversion)"
+        }
+      ]
+    },
+    {
+      "id": "round2/user_bool_condition",
+      "sourceFile": "round2/user_bool_condition.axl",
+      "sha256": "2aa84e70e2fd6bcb059cec6eef66d8155ce57d2c15d5cfe396df72559db73e4f",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/focused/results.json#user_bool_condition",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/natural_shadow_field",
+      "sourceFile": "round2/natural_shadow_field.axl",
+      "sha256": "eb5d79e32ce67c3fc2e7375275a81a6e2916b37bd94ad61fc39d7ccacb2aeb0a",
+      "expectedError": false,
+      "compilerCodes": [],
+      "evidenceId": "round2/focused/results.json#natural_shadow_field",
+      "observation": "accepted"
+    },
+    {
+      "id": "round2/natural_shadow_mul",
+      "sourceFile": "round2/natural_shadow_mul.axl",
+      "sha256": "b723b1b1144b50d5dbc410e07e666f6e4cb68c6218496e3db25d3fd57182e65b",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#natural_shadow_mul",
+      "observation": "compiler_error_reported",
+      "category": "binary_operator",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 15
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(*,natural,int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_nat_div",
+      "sourceFile": "round2/type_nat_div.axl",
+      "sha256": "d086652d53863aadc3aa5e03ca0399ed2c42136b847e57b9ef5b597214c9245f",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_nat_div",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 30
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_nat_ge",
+      "sourceFile": "round2/type_nat_ge.axl",
+      "sha256": "37ff2b45fe664d775bfef0459867bf55b8aa67593d1503a6321734b87e660613",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_nat_ge",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 31
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_nat_not",
+      "sourceFile": "round2/type_nat_not.axl",
+      "sha256": "1af155e244e3c0e3b506f067632bd20568c21a87d859aca78f2d026575379eec",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_nat_not",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 29
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_string_eq",
+      "sourceFile": "round2/type_string_eq.axl",
+      "sha256": "21fb5c876f96ba5a2cda80a378ad930457f695cfc39a317914a3b7c935d4ebe9",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_string_eq",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 29
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_int_div_nat",
+      "sourceFile": "round2/type_int_div_nat.axl",
+      "sha256": "b4ad2632af5b563788107109b3566fa87bcf6094d3e71e22d93b6618c496324e",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_int_div_nat",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 30
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_nat_mod_float",
+      "sourceFile": "round2/type_nat_mod_float.axl",
+      "sha256": "f89c00bca4abb2078b1145d8c9c85bc8600096b2a8f87a109c330d9214dbcaab",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_nat_mod_float",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 43
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),natural)"
+        }
+      ]
+    },
+    {
+      "id": "round2/type_short_add",
+      "sourceFile": "round2/type_short_add.axl",
+      "sha256": "3ef6869d156a81f96389c3844da23d638ca608c25a41e56be51f67011f7a95f1",
+      "expectedError": true,
+      "compilerCodes": [
+        "C32"
+      ],
+      "evidenceId": "round2/focused/results.json#type_short_add",
+      "observation": "compiler_error_reported",
+      "category": "initialization",
+      "expectedRange": {
+        "start": {
+          "line": 2,
+          "character": 0
+        },
+        "end": {
+          "line": 2,
+          "character": 25
+        }
+      },
+      "observedErrors": [
+        {
+          "line": 2,
+          "code": "C32",
+          "message": "#E: 二項演算子が見つかりません(=,(*),int)"
+        }
+      ]
+    }
+  ]
+}

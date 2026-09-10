@@ -1,0 +1,5 @@
+
+void Probe_int_div_nat() {
+natural n=1nat; 2/n;
+}
+void main() {}

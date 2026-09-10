@@ -1,0 +1,5 @@
+class A_pointer_unrelated {public:int x;}; class B_pointer_unrelated {public:double y;};
+void Probe_pointer_unrelated() {
+A_pointer_unrelated a; A_pointer_unrelated *p=&a; B_pointer_unrelated *q=p;
+}
+void main() {}

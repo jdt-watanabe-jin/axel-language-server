@@ -1,0 +1,5 @@
+natural f() { return 1; }
+void main() {
+f();
+printf("PROBE_OK\n");
+}

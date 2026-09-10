@@ -1,0 +1,5 @@
+
+void Probe_nat_condition_while() {
+natural n=1nat; while(n) {break;}
+}
+void main() {}

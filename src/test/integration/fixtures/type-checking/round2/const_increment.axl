@@ -1,0 +1,5 @@
+
+void Probe_const_increment() {
+const int a=1; ++a;
+}
+void main() {}

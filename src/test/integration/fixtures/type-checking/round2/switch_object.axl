@@ -1,0 +1,5 @@
+class A_switch_object {public:int x;};
+void Probe_switch_object() {
+A_switch_object a; switch(a) {case 1: break;}
+}
+void main() {}

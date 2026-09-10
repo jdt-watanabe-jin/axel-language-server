@@ -1,0 +1,5 @@
+
+void Probe_delete_int() {
+int i=1; delete i;
+}
+void main() {}

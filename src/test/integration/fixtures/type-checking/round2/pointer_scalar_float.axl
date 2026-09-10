@@ -1,0 +1,5 @@
+
+void Probe_pointer_scalar_float() {
+float f=1.0; int *p=f;
+}
+void main() {}

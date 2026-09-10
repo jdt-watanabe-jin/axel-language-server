@@ -1,0 +1,5 @@
+
+void Probe_switch_mismatch() {
+string s="a"; switch(s) {case 1: break;}
+}
+void main() {}

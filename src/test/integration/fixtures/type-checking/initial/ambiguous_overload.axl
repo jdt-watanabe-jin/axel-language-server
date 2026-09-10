@@ -1,0 +1,6 @@
+void f(int x,double y) {}
+void f(double x,int y) {}
+void main() {
+f(1,1);
+printf("PROBE_OK\n");
+}

@@ -1,0 +1,5 @@
+int i=1; enum A_enum_global_variable {X_enum_global_variable=i};
+void Probe_enum_global_variable() {
+
+}
+void main() {}

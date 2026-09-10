@@ -1,0 +1,5 @@
+
+void Probe_switch_double() {
+double d=1.5; switch(d) {case 1.5: break;}
+}
+void main() {}

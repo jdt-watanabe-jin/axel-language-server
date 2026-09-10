@@ -1,0 +1,5 @@
+class A_user_bool_condition {public:int x; operator bool(){return true;}};
+void Probe_user_bool_condition() {
+A_user_bool_condition a; if(a) {}
+}
+void main() {}

@@ -1,0 +1,5 @@
+
+void Probe_array_runtime_size() {
+int n=2; int a[n];
+}
+void main() {}

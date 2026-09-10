@@ -78,4 +78,13 @@ watchはNodeの `--watch-path` を使う。利用するNodeとOSがこのオプ�
 
 性能を測るときは、Mochaの時間とビルド込みの時間を区別する。CIの負荷によって性能上限に達した場合は、実測と処理量を調査し、安易に上限を緩めない。
 
-Externalは `AXEL_TEST_SAMPLE` と `AXEL_TEST_FORCED_INCLUDE` で実データのパスを指定できる。未指定時の開発環境パスは `external/groupbox.test.ts` を参照。明示実行で入力が欠けている場合はskipせず失敗する。標準CIは同梱fixtureで回帰検証し、実データ互換性は利用可能な環境で別途確認する。
+groupbox Externalは `AXEL_TEST_SAMPLE` と `AXEL_TEST_FORCED_INCLUDE` で実データのパスを指定できる。未指定時の開発環境パスは `external/groupbox.test.ts` を参照。明示実行で入力が欠けている場合はskipせず失敗する。標準CIは同梱fixtureで回帰検証し、実データ互換性は利用可能な環境で別途確認する。
+
+
+## Type checking
+
+See the [developer guide](../developer/type-checking.md) for architecture and verification, and the [user guide](../user/type-checking.md) for analysis-header registration and diagnostic limits.
+
+`npm run test:integration -- --grep "Type checking"` exercises the actual parser and workspace diagnostics against 156 ordinary recorded cases and one separately tracked compiler crash, plus operator, declaration, and invalidation regressions. The crash is not an ordinary accepted case or type error. Standard tests do not start AXEL.
+
+Runtime verification requires explicit `AXEL_TEST_RUNTIME=1` and `AXEL_TEST_RUNTIME_EXE`, then `npm run test:external -- --grep "Type checking: external runtime"`. The developer guide documents additional environment variables, evidence output, and the separate opt-in for the known crash. Without runtime opt-in, these runtime tests skip. This differs from the groupbox external test, which requires its product data when explicitly selected.

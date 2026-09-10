@@ -1,0 +1,5 @@
+class A_method_outside {public: int x;}; int A_method_outside::f() { return x; }
+void Probe_method_outside() {
+A_method_outside a; a.f();
+}
+void main() {}

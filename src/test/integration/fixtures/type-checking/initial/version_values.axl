@@ -1,0 +1,5 @@
+
+void main() {
+printf("AXEL=%d SXM=%d\n", __AXELVERSION__, __SXM_VERSION__);
+printf("PROBE_OK\n");
+}

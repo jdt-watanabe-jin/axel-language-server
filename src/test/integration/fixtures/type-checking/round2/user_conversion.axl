@@ -1,0 +1,5 @@
+class A_user_conversion { public: int operator int() { return 1; } }; void f(int x) {}
+void Probe_user_conversion() {
+A_user_conversion a; f(a);
+}
+void main() {}

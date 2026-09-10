@@ -1,0 +1,5 @@
+
+void Probe_nat_compound_nat() {
+natural n=1nat; natural m=2nat; n*=m;
+}
+void main() {}

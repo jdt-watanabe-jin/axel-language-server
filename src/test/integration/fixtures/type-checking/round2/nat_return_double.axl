@@ -1,0 +1,5 @@
+natural f() { double d=1.5; return d; }
+void Probe_nat_return_double() {
+
+}
+void main() {}

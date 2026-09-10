@@ -1,0 +1,5 @@
+typedef int Alias_typedef_alias; void f(int x) {}
+void Probe_typedef_alias() {
+Alias_typedef_alias a=1; f(a);
+}
+void main() {}

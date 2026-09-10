@@ -1,0 +1,5 @@
+
+void Probe_type_string_eq() {
+string s="a"; void *p=(s==s);
+}
+void main() {}

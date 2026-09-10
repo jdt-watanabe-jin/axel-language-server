@@ -1,0 +1,5 @@
+
+void Probe_not_subscriptable() {
+int i=1; i[0];
+}
+void main() {}

@@ -1,0 +1,5 @@
+
+void main() {
+natural a=2nat; natural b=3nat; a*b;
+printf("PROBE_OK\n");
+}
