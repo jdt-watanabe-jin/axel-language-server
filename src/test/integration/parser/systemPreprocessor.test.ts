@@ -3,6 +3,19 @@ import { createAxelParser } from '../../../analyzer/axelParser';
 import { collectInactivePreprocessorRanges, evaluatePreprocessor } from '../../../analyzer/preprocessorEvaluation';
 
 suite('system preprocessor', () => {
+  test('always defines the console macro with the Tool value and ignores overrides', () => {
+    for (const [tool, value] of [['axel', 1], ['ismo', 0], ['asca', 0], ['spicechart', 0]] as const) {
+      for (const prefix of ['', '#define __AXELCONSOLE__ 9\n#undef __AXELCONSOLE__\n']) {
+        for (const condition of ['#ifdef __AXELCONSOLE__', `#if defined(__AXELCONSOLE__) && __AXELCONSOLE__ == ${value}`, '#ifndef __AXELCONSOLE__']) {
+          const root = createAxelParser().parse(`${prefix}${condition}\nint active;\n#else\nint inactive;\n#endif\n`).rootNode;
+          assert.strictEqual(root.hasError, false);
+          const offset = prefix === '' ? 0 : 2;
+          assert.deepStrictEqual(collectInactivePreprocessorRanges(root, [{ name: '__AXELCONSOLE__', value: '9' }], tool).map(range => range.start.line), [offset + (condition.startsWith('#ifndef') ? 1 : 3)]);
+        }
+      }
+    }
+  });
+
   test('evaluates the system version as 510 and ignores overrides for every tool', () => {
     for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
       for (const prefix of ['', '#define __AXELVERSION__ 0\n#undef __AXELVERSION__\n']) {

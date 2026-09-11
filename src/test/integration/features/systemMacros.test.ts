@@ -66,6 +66,29 @@ suite('system macros', () => {
     assert.ok(getHover(at('__AXELVERSION__'))?.plainText.includes('__AXELVERSION__ (int)\n510'));
     assert.deepStrictEqual(getDefinitions(at('__AXELVERSION__')), []);
   });
+  test('updates the console system macro when Tool changes without a document edit', () => {
+    const text = '#if __AXELCONSOLE__\nint console;\n#else\nint gui;\n#endif\nint mode = __AXELCONSOLE__;';
+    const { index } = fixture(text);
+    for (const [tool, value, declaration] of [['axel', 1, 'console'], ['ismo', 0, 'gui'], ['asca', 0, 'gui'], ['spicechart', 0, 'gui'], ['axel', 1, 'console']] as const) {
+      index.configure({ tool });
+      const analysis = index.analyzeDocument({ uri, version: 1, text });
+      const context = { analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf('__AXELCONSOLE__')) };
+      assert.deepStrictEqual(analysis.diagnostics, []);
+      assert.deepStrictEqual(analysis.declarations.map(d => d.name).sort(), [declaration, 'mode'].sort());
+      assert.ok(getHover(context)?.plainText.includes(`__AXELCONSOLE__ (int)\n${value}`));
+      assert.ok(getCompletions({ ...context, text }).some(item => item.name === '__AXELCONSOLE__'));
+      assert.ok(collectSemanticTokens(analysis).some(token => token.tokenType === 'macro'));
+      assert.deepStrictEqual(getDefinitions(context), []);
+      assert.strictEqual(prepareRename(context), null);
+    }
+  });
+  test('expands and protects the console system macro for every tool', () => {
+    for (const [tool, expansion] of [['axel', '1 + 1'], ['ismo', '0 + 0'], ['asca', '0 + 0'], ['spicechart', '0 + 0']]) {
+      const { analysis, at } = fixture('#define __AXELCONSOLE__ 9\n#undef __AXELCONSOLE__\n#define MODE(x) x + __AXELCONSOLE__\nint mode = MODE(__AXELCONSOLE__);', tool);
+      assert.strictEqual(analysis.diagnostics.filter(d => d.severity === 'warning').length, 2);
+      assert.ok(getHover(at('MODE('))?.plainText.includes(`Expansion:\n${expansion}`));
+    }
+  });
   test('shows absolute file and one-based source line', () => {
     const { at } = fixture('string file = __FILE__;\nint line = __LINE__;');
     assert.ok(getHover(at('__FILE__'))?.plainText.includes('D:\\project\\main.axl'));
