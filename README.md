@@ -48,9 +48,11 @@ Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid
 
 `__AXELCONSOLE__` is always defined as an integer: `1` for Tool `axel`, and `0` for every other supported Tool. Its value follows Tool configuration changes without a document edit or server restart.
 
+`__AXEL_INTERNAL__` is always defined as an integer. Pass `internalFeatures` in initialization options and configuration settings: `enabled` selects `1`, and `disabled` selects `0`. Omitted or invalid values select `enabled`. Changes refresh analysis without editing the document or restarting the server. Use `#if __AXEL_INTERNAL__` to select a branch by value; `#ifdef __AXEL_INTERNAL__` is true for both settings.
+
 Tool `ismo` defines only `__APP_LEDIT__=1`, `asca` defines only `__APP_SEDIT__=1`, and `spicechart` defines only `__APP_SCHART__=1`. Tool `axel` defines none of these application macros. A non-selected macro is undefined, not defined as zero.
 
-The twenty-two names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
+The twenty-three names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
 
 Hover, completion, diagnostics, and conditional evaluation share these definitions. System macros have no source definition or rename target, and no references list or function signature. Unknown runtime conditions retain possible branches instead of marking one inactive. Uncertain declarations are not treated as definitely visible; diagnostics depending only on their uncertainty are suppressed. Correlations between separate unknown branches are not evaluated.
 

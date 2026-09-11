@@ -176,7 +176,7 @@ export function getCompletions(input: CompletionInput): AnalysisCompletionItem[]
   if ((context.kind === 'expression' || context.kind === 'topLevel')
     && !(input.analysis.completionExcludedRanges ?? []).some(range => containsSourcePosition(range, input.position))) {
     for (const name of systemMacroNames(input.analysis.tool)) {
-      const macro = resolveSystemMacro(name, input.analysis.uri, input.position, input.analysis.tool, input.analysis.targetPlatform)!;
+      const macro = resolveSystemMacro(name, input.analysis.uri, input.position, input.analysis.tool, input.analysis.targetPlatform, input.analysis.internalFeatures)!;
       items.push({ name, kind: 'macro', detail: describeSystemMacro(macro, input.locale) });
     }
   }

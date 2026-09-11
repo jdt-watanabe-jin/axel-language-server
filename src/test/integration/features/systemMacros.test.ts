@@ -16,6 +16,31 @@ suite('system macros', () => {
     const at = (name: string) => ({ analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf(name)) });
     return { index, analysis, at };
   }
+  test('switches the internal system macro without editing the document', () => {
+    const text = '#if __AXEL_INTERNAL__\nint internal;\n#else\nint external;\n#endif\n#ifdef __AXEL_INTERNAL__\nint defined;\n#endif\nint mode = __AXEL_INTERNAL__;\n#define MODE(x) x + __AXEL_INTERNAL__\nint expanded = MODE(__AXEL_INTERNAL__);';
+    const index = new WorkspaceIndex();
+    for (const [internalFeatures, value, active] of [[undefined, 1, 'internal'], ['disabled', 0, 'external'], ['enabled', 1, 'internal'], ['invalid', 1, 'internal']] as const) {
+      index.configure({ internalFeatures });
+      const analysis = index.analyzeDocument({ uri, version: 1, text });
+      const at = (name: string) => ({ analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf(name)) });
+      assert.deepStrictEqual(analysis.diagnostics, []);
+      assert.deepStrictEqual(analysis.declarations.map(d => d.name).sort(), [active, 'defined', 'mode', 'MODE', 'expanded'].sort());
+      assert.ok(getHover(at('__AXEL_INTERNAL__'))?.plainText.includes('__AXEL_INTERNAL__ (int)\n' + value));
+      assert.ok(getHover(at('MODE('))?.plainText.includes('Expansion:\n' + value + ' + ' + value));
+      assert.ok(getCompletions({ ...at('__AXEL_INTERNAL__'), text }).some(item => item.name === '__AXEL_INTERNAL__'));
+      assert.ok(collectSemanticTokens(analysis).some(token => token.tokenType === 'macro'));
+      assert.deepStrictEqual(getDefinitions(at('__AXEL_INTERNAL__')), []);
+      assert.strictEqual(prepareRename(at('__AXEL_INTERNAL__')), null);
+    }
+  });
+  test('protects the internal system macro from source and configured defines', () => {
+    const index = new WorkspaceIndex();
+    index.configure({ internalFeatures: 'disabled', defines: ['__AXEL_INTERNAL__=9'] });
+    const text = '#define __AXEL_INTERNAL__ 9\n#undef __AXEL_INTERNAL__\nint mode = __AXEL_INTERNAL__;';
+    const analysis = index.analyzeDocument({ uri, version: 1, text });
+    assert.strictEqual(analysis.diagnostics.filter(d => d.severity === 'warning').length, 2);
+    assert.ok(getHover({ analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf('__AXEL_INTERNAL__')) })?.plainText.includes('__AXEL_INTERNAL__ (int)\n0'));
+  });
   test('does not diagnose undefined identifiers in preprocessor conditions', () => {
     const text='#if __APP_LEDIT__\nint a;\n#elif undefinedFlag + 1\nint b;\n#endif\n#ifdef absent\nint c;\n#endif\n#ifndef otherAbsent\nint d;\n#endif';
     const {analysis}=fixture(text);

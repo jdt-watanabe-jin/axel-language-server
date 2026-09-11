@@ -60,7 +60,7 @@ export interface WorkspaceDeclarationIndex {
 export function getHover(input: HoverInput): AnalysisHover | null {
   const systemReference = systemMacroAt(input.analysis, input.position);
   if (systemReference !== undefined) {
-    const macro = resolveSystemMacro(systemReference.name, input.analysis.uri, systemReference.range.start, input.analysis.tool, input.analysis.targetPlatform);
+    const macro = resolveSystemMacro(systemReference.name, input.analysis.uri, systemReference.range.start, input.analysis.tool, input.analysis.targetPlatform, input.analysis.internalFeatures);
     if (macro !== undefined) { return hoverFromText(describeSystemMacro(macro, input.locale), 'text'); }
   }
   const includeHover = findIncludeHover(input);
@@ -159,7 +159,7 @@ function hoverForMacroInvocation(
     )
   };
   const expansion = expandMacroInvocationText(invocation.rawText, lookup, {
-    systemContext: { uri: input.analysis.uri, position: invocation.range.start, tool: input.analysis.tool, targetPlatform: input.analysis.targetPlatform }
+    systemContext: { uri: input.analysis.uri, position: invocation.range.start, tool: input.analysis.tool, targetPlatform: input.analysis.targetPlatform, internalFeatures: input.analysis.internalFeatures }
   });
   if (expansion.diagnostics.length > 0) {
     return undefined;

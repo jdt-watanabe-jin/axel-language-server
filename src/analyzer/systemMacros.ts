@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 import type { AnalysisPosition, AnalysisRange, AnalyzedDocument } from '../types/analysis';
 import { translate } from '../i18n/messages';
 
-export const SYSTEM_MACRO_NAMES = [...PLATFORM_MACRO_NAMES, '__AXEL__', '__AXELVERSION__', '__AXELCONSOLE__', '__FILE__', '__LINE__', '__DATE__', '__TIME__', '__TIMESTAMP__', '__APP_LEDIT__', '__APP_SEDIT__', '__APP_SCHART__'] as const;
+export const SYSTEM_MACRO_NAMES = [...PLATFORM_MACRO_NAMES, '__AXEL_INTERNAL__', '__AXEL__', '__AXELVERSION__', '__AXELCONSOLE__', '__FILE__', '__LINE__', '__DATE__', '__TIME__', '__TIMESTAMP__', '__APP_LEDIT__', '__APP_SEDIT__', '__APP_SCHART__'] as const;
 const applicationTools: Record<string, string> = { __APP_LEDIT__: 'ismo', __APP_SEDIT__: 'asca', __APP_SCHART__: 'spicechart' };
 const runtimeFormats: Record<string, string> = { __DATE__: 'yy/mm/dd', __TIME__: 'hh:mm:ss', __TIMESTAMP__: 'yy/mm/dd hh:mm:ss' };
 
@@ -21,6 +21,10 @@ export function isSystemMacroName(name: string): boolean {
   return (SYSTEM_MACRO_NAMES as readonly string[]).includes(name);
 }
 
+export function normalizeInternalFeatures(value: unknown): 'enabled' | 'disabled' {
+  return value === 'disabled' ? 'disabled' : 'enabled';
+}
+
 export function normalizeTool(tool: unknown): string {
   return typeof tool === 'string' && ['axel', 'ismo', 'asca', 'spicechart'].includes(tool) ? tool : 'axel';
 }
@@ -29,7 +33,7 @@ export function systemMacroNames(tool?: string): string[] {
   return SYSTEM_MACRO_NAMES.filter(name => !(name in applicationTools) || applicationTools[name] === normalizeTool(tool));
 }
 
-export function resolveSystemMacro(name: string, uri: string, position: AnalysisPosition, tool?: string, targetPlatform?: string): SystemMacroValue | undefined {
+export function resolveSystemMacro(name: string, uri: string, position: AnalysisPosition, tool?: string, targetPlatform?: string, internalFeatures?: string): SystemMacroValue | undefined {
   if (!isSystemMacroName(name)) { return undefined; }
   const platformValue = platformMacroValue(name, targetPlatform);
   if (platformValue !== undefined) { return { name, typeName: 'int', defined: true, value: platformValue }; }
@@ -37,6 +41,7 @@ export function resolveSystemMacro(name: string, uri: string, position: Analysis
     const defined = applicationTools[name] === normalizeTool(tool);
     return { name, typeName: 'int', defined, ...(defined ? { value: 1 } : {}) };
   }
+  if (name === '__AXEL_INTERNAL__') { return { name, typeName: 'int', defined: true, value: normalizeInternalFeatures(internalFeatures) === 'enabled' ? 1 : 0 }; }
   if (name === '__AXEL__') { return { name, typeName: 'int', defined: true, value: 1 }; }
   if (name === '__AXELVERSION__') { return { name, typeName: 'int', defined: true, value: 510 }; }
   if (name === '__AXELCONSOLE__') { return { name, typeName: 'int', defined: true, value: normalizeTool(tool) === 'axel' ? 1 : 0 }; }

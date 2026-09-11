@@ -287,6 +287,7 @@ export interface AnalysisResolvedScriptExecution {
 export interface AnalyzeDocumentInput {
   tool?: string;
   targetPlatform?: string;
+  internalFeatures?: string;
   uncertainNames?: readonly string[];
   uri: string;
   version: number;
@@ -301,6 +302,7 @@ export interface AnalyzedDocument {
   typeSnapshot?: import('../analyzer/typeChecking/syntax').TypeSnapshot;
   tool?: string;
   targetPlatform?: string;
+  internalFeatures?: string;
   systemMacroReferences?: { name: string; range: AnalysisRange }[];
   completionExcludedRanges?: AnalysisRange[];
   uncertainRanges?: AnalysisRange[];

@@ -1,6 +1,6 @@
 import { normalizeTargetPlatform } from './targetPlatform';
 import * as path from 'path';
-import { normalizeTool } from './systemMacros';
+import { normalizeInternalFeatures, normalizeTool } from './systemMacros';
 import type { WorkspaceIndexOptions } from './workspaceIndex';
 
 const ENVIRONMENT_PATH_SEPARATOR = ';';
@@ -28,6 +28,7 @@ export function mergeWorkspaceIndexOptions(
   const maxNumberOfProblems = overrides.maxNumberOfProblems ?? base.maxNumberOfProblems;
   const defines = overrides.defines ?? base.defines;
   return {
+    ...(overrides.internalFeatures === undefined ? {} : { internalFeatures: normalizeInternalFeatures(overrides.internalFeatures) }),
     includeRoots: normalizePaths(overrides.includeRoots ?? base.includeRoots ?? []),
     ...(overrides.targetPlatform === undefined ? {} : { targetPlatform: normalizeTargetPlatform(overrides.targetPlatform) }),
     ...(overrides.tool === undefined ? {} : { tool: normalizeTool(overrides.tool) }),

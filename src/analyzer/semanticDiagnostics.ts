@@ -34,7 +34,7 @@ import {
 } from './resolution';
 
 export interface SemanticDiagnosticsInput {
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'tool' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations'>;
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations'>;
   workspaceIndex?: WorkspaceSemanticDiagnosticsIndex;
 }
 
@@ -290,7 +290,7 @@ const KNOWN_VALUE_NAMES = new Set([
 ]);
 
 function unresolvedIdentifierDiagnostics(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'tool'>,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
   if (hasSyntaxDiagnostics(analysis.diagnostics)) {
@@ -310,11 +310,11 @@ function unresolvedIdentifierDiagnostics(
 
 function isKnownIdentifierReference(
   reference: AnalysisReference,
-  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'tool'>,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): boolean {
   if (isSystemMacroName(reference.name) && reference.memberAccess === undefined) {
-    return resolveSystemMacro(reference.name, analysis.uri, reference.range.start, analysis.tool, analysis.targetPlatform)?.defined === true;
+    return resolveSystemMacro(reference.name, analysis.uri, reference.range.start, analysis.tool, analysis.targetPlatform, analysis.internalFeatures)?.defined === true;
   }
   if (KNOWN_VALUE_NAMES.has(reference.name)
     || BUILTIN_TYPE_NAMES.has(reference.name)

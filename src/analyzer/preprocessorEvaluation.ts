@@ -37,21 +37,23 @@ export function collectInactivePreprocessorRanges(
   rootNode: Parser.SyntaxNode,
   predefinedSymbols: readonly AnalysisPreprocessorSymbol[] = [],
   tool?: string,
-  targetPlatform?: string
+  targetPlatform?: string,
+  internalFeatures?: string
 ): AnalysisRange[] {
-  return evaluatePreprocessor(rootNode, predefinedSymbols, tool, targetPlatform).inactiveRanges;
+  return evaluatePreprocessor(rootNode, predefinedSymbols, tool, targetPlatform, internalFeatures).inactiveRanges;
 }
 
 export function evaluatePreprocessor(
   rootNode: Parser.SyntaxNode,
   predefinedSymbols: readonly AnalysisPreprocessorSymbol[] = [],
   tool?: string,
-  targetPlatform?: string
+  targetPlatform?: string,
+  internalFeatures?: string
 ): PreprocessorEvaluation {
   const result: PreprocessorEvaluation = { inactiveRanges: [], uncertainRanges: [], uncertainNames: [] };
   const macros = macroDefinitionsFromSymbols(predefinedSymbols);
   for (const name of systemMacroNames(tool)) {
-    const macro = resolveSystemMacro(name, '', { line: 0, character: 0 }, tool, targetPlatform);
+    const macro = resolveSystemMacro(name, '', { line: 0, character: 0 }, tool, targetPlatform, internalFeatures);
     macros.set(name, name !== '__LINE__' && typeof macro?.value === 'number' ? { value: String(macro.value) } : { unknownValue: true });
   }
   visitChildren(rootNode.namedChildren, macros, result, true, predefinedSymbols.filter(symbol => symbol.sourceRange !== undefined));

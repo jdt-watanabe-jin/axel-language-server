@@ -3,7 +3,7 @@ import { descendants, field } from './typeChecking/syntax';
 import { collectTypeDiagnostics } from './typeChecking/diagnostics';
 import { loadBuiltinCatalog, type BuiltinCatalog } from './typeChecking/builtinCatalog';
 import * as fs from 'fs';
-import { containsSourcePosition, isSystemMacroName, normalizeTool } from './systemMacros';
+import { containsSourcePosition, isSystemMacroName, normalizeInternalFeatures, normalizeTool } from './systemMacros';
 import { message } from '../i18n/messages';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -32,6 +32,7 @@ import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logg
 export interface WorkspaceIndexOptions extends ForcedIncludeOptions {
   tool?: string;
   targetPlatform?: string;
+  internalFeatures?: string;
   includeRoots?: string[];
   defines?: string[];
   analyzer?: DocumentAnalyzer;
@@ -56,6 +57,7 @@ export class WorkspaceIndex {
   private defines: string[];
   private tool: string;
   private targetPlatform: string;
+  private internalFeatures: string;
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
@@ -78,6 +80,7 @@ export class WorkspaceIndex {
     this.forcedIncludeRoots = normalizePaths(options.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(options.forcedIncludeFiles ?? []);
     this.defines = options.defines ?? [];
+    this.internalFeatures = normalizeInternalFeatures(options.internalFeatures);
     this.tool = normalizeTool(options.tool);
     this.targetPlatform = normalizeTargetPlatform(options.targetPlatform);
     this.logSystemMacroConfiguration(options);
@@ -97,6 +100,7 @@ export class WorkspaceIndex {
     this.forcedIncludeRoots = normalizePaths(merged.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(merged.forcedIncludeFiles ?? []);
     this.defines = merged.defines ?? [];
+    this.internalFeatures = normalizeInternalFeatures(merged.internalFeatures);
     this.tool = normalizeTool(merged.tool);
     this.targetPlatform = normalizeTargetPlatform(merged.targetPlatform);
     this.maxNumberOfProblems = merged.maxNumberOfProblems;
@@ -115,7 +119,7 @@ export class WorkspaceIndex {
         return cached.analysis;
       }
 
-      const analysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, targetPlatform: this.targetPlatform });
+      const analysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
       this.documents.set(input.uri, {
         analysis,
         version: input.version,
@@ -174,7 +178,7 @@ export class WorkspaceIndex {
       return cached.analysis;
     }
 
-    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, targetPlatform: this.targetPlatform });
+    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
     this.documents.set(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
@@ -431,7 +435,7 @@ export class WorkspaceIndex {
     }
 
     const text = fs.readFileSync(normalizedPath, 'utf8');
-    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, targetPlatform: this.targetPlatform });
+    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
@@ -553,7 +557,7 @@ export class WorkspaceIndex {
 
     const analysis = this.analyzer.analyzeDocument({
       ...input,
-      tool: this.tool, targetPlatform: this.targetPlatform,
+      tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform,
       knownGuiClasses,
       preprocessorSymbols,
       uncertainNames,
@@ -679,7 +683,7 @@ export class WorkspaceIndex {
       }
 
       const text = fs.readFileSync(normalizedPath, 'utf8');
-      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, targetPlatform: this.targetPlatform });
+      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
       this.documents.set(uri, {
         analysis: initialAnalysis,
         filePath: normalizedPath,
