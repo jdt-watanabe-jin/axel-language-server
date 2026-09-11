@@ -116,3 +116,7 @@ Run lint:
 ```sh
 npm run lint
 ```
+
+### Hover and completion settings
+
+Pass `hover` and `autocomplete` at the top level of initialization options or `workspace/didChangeConfiguration.settings`. Each accepts `"default"` (enabled, the default) or `"disabled"`. A disabled hover returns `null`; disabled completion returns an empty list, including manually requested completion. Other language features remain enabled. Changes apply to subsequent requests without restarting, and omitted or invalid values select `"default"`. These settings do not control snippets or word suggestions supplied by the editor.

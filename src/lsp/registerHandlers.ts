@@ -91,12 +91,17 @@ interface RefactorHandlerConnection {
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
   let locale: string | undefined;
+  let featureSettings: Record<string, unknown> = {};
+  const updateFeatures = (settings: unknown): void => {
+    featureSettings = settings !== null && typeof settings === 'object' ? settings as Record<string, unknown> : {};
+  };
   context.connection.onInitialize((params) => {
     locale = params.locale;
+    updateFeatures(params.initializationOptions);
     context.analyzer.configure?.(params.initializationOptions);
     return createInitializeResult();
   });
-  registerConfigurationChangeHandlers(context);
+  registerConfigurationChangeHandlers(context, updateFeatures);
   registerDocumentLifecycleHandlers(context);
   registerWatchedFileHandlers(context);
   registerBackgroundRefreshHandlers(context);
@@ -123,6 +128,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   });
 
   context.connection.onHover((params: HoverParams) => {
+    if (featureSettings.hover === 'disabled') { return null; }
     const document = context.documents.get(params.textDocument.uri);
     return measureLspRequest(context, 'lsp.hover', positionRequestDetails(params, document), () => {
       if (document === undefined) {
@@ -150,6 +156,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   });
 
   context.connection.onCompletion((params: CompletionParams) => {
+    if (featureSettings.autocomplete === 'disabled') { return []; }
     const document = context.documents.get(params.textDocument.uri);
     return measureLspRequest(context, 'lsp.completion', positionRequestDetails(params, document), () => {
       if (document === undefined) {
@@ -455,9 +462,10 @@ function registerWatchedFileHandlers(context: HandlerRegistrationContext): void 
   });
 }
 
-function registerConfigurationChangeHandlers(context: HandlerRegistrationContext): void {
+function registerConfigurationChangeHandlers(context: HandlerRegistrationContext, updateFeatures: (settings: unknown) => void): void {
   const connection = context.connection as ConfigurationHandlerConnection;
   connection.onDidChangeConfiguration?.((params) => {
+    updateFeatures(params.settings);
     context.analyzer.configure?.(params.settings);
     for (const document of context.documents.all()) {
       indexDocument(context, document);
