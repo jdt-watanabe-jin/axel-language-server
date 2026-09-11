@@ -122,7 +122,7 @@ export class DocumentAnalyzer {
             ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
           }))
         ],
-        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods }), [...inactiveRanges,...recoveredStatementRanges]),
+        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods, excludedRanges: [...inactiveRanges, ...recoveredStatementRanges] }), [...inactiveRanges,...recoveredStatementRanges]),
         declarations: symbolIndex.declarations.filter((declaration) => !(declaration.kind === 'macro' && isSystemMacroName(declaration.name))
           && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),

@@ -1,9 +1,10 @@
 import type * as Parser from 'tree-sitter';
-import type { AnalysisGuiClass, AnalysisGuiMethod, AnalysisGuiPart, AnalysisSymbol, AnalysisSymbolKind } from '../types/analysis';
+import type { AnalysisGuiClass, AnalysisGuiMethod, AnalysisGuiPart, AnalysisRange, AnalysisSymbol, AnalysisSymbolKind } from '../types/analysis';
 import { isDeclarationNodeType, isIncludeNodeType, isTypeSpecifierNodeType } from './nodeKinds';
 import { getDeclaratorName, nodeToAnalysisRange } from './syntaxTree';
 
 export interface CollectDocumentSymbolsOptions {
+  excludedRanges?: readonly AnalysisRange[];
   guiClasses?: readonly AnalysisGuiClass[];
   guiMethods?: readonly AnalysisGuiMethod[];
 }
@@ -15,16 +16,22 @@ export function collectDocumentSymbols(
   const symbols: AnalysisSymbol[] = [];
   const nestedGuiMethods = nestableGuiMethods(options);
 
+  const externalMethods = new Map<AnalysisSymbol, { owner: string; name: string; selectionRange: AnalysisRange }>();
+  const context: SymbolContext = { nestedGuiMethods, externalMethods, excludedRanges: options.excludedRanges ?? [] };
   for (const child of rootNode.namedChildren) {
-    symbols.push(...symbolsFromNode(child, { nestedGuiMethods }));
+    symbols.push(...symbolsFromNode(child, context));
   }
 
-  return attachGuiSymbols(symbols, options);
+  return attachGuiSymbols(attachExternalMethods(symbols, externalMethods), options);
 }
 
 interface SymbolContext {
   nestedGuiMethods: ReadonlySet<string>;
   containerKind?: AnalysisSymbolKind;
+  containerName?: string;
+  excludedRanges: readonly AnalysisRange[];
+  externalMethods: Map<AnalysisSymbol, { owner: string; name: string; selectionRange: AnalysisRange }>;
+
 }
 
 function symbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol | null {
@@ -49,6 +56,13 @@ function symbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): Analys
 }
 
 function symbolsFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol[] {
+  const start = nodeToAnalysisRange(node).start;
+  if (context.excludedRanges.some(range => (
+    (start.line > range.start.line || (start.line === range.start.line && start.character >= range.start.character))
+    && (start.line < range.end.line || (start.line === range.end.line && start.character < range.end.character))
+  ))) {
+    return [];
+  }
   const anonymousEnumMembers = anonymousEnumMemberSymbolsFromNode(node);
   if (anonymousEnumMembers !== undefined) {
     return anonymousEnumMembers;
@@ -133,14 +147,68 @@ function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolConte
     return null;
   }
 
-  const kind = declarationKind(node.type, nameNode.text, context.containerKind, node);
-  return {
+  const callable = node.type === 'function_definition' || containsFunctionDeclarator(node);
+  const scope = nameNode.type === 'qualified_declarator' ? nameNode.childForFieldName('scope') : null;
+  const memberNodes = scope === null ? [] : nameNode.children.filter((_, index) => nameNode.fieldNameForChild(index) === 'name');
+  const member = memberNodes[0] ?? null;
+  const memberEnd = memberNodes[memberNodes.length - 1];
+  const memberName = member === null ? '' : nameNode.text.slice(member.startIndex - nameNode.startIndex, memberEnd.endIndex - nameNode.startIndex);
+  // An instance path belongs to GUI event handling, not an ordinary class method.
+  const qualified = callable && scope !== null && member !== null && nameNode.childForFieldName('instance') === null;
+  const owner = qualified ? scope.text : context.containerName;
+  const localName = qualified ? memberName : nameNode.text;
+  let kind = declarationKind(node.type, localName, qualified ? 'class' : context.containerKind, node);
+  if (callable && owner === localName && node.childForFieldName('type') === null) {
+    kind = 'constructor';
+  }
+  const symbol: AnalysisSymbol = {
     name: nameNode.text,
     kind,
-    detail: kind,
+    detail: qualified ? `${kind} ${normalizeSymbolText(node.text.slice(0, (node.childForFieldName('body')?.startIndex ?? node.endIndex) - node.startIndex))}` : kind,
     range: nodeToAnalysisRange(node),
     selectionRange: nodeToAnalysisRange(nameNode)
   };
+  if (qualified && context.containerKind === undefined) {
+    context.externalMethods.set(symbol, {
+      owner: scope.text,
+      name: memberName,
+      selectionRange: { start: nodeToAnalysisRange(member).start, end: nodeToAnalysisRange(memberEnd).end }
+    });
+  }
+  return symbol;
+}
+
+function attachExternalMethods(
+  symbols: AnalysisSymbol[],
+  externalMethods: SymbolContext['externalMethods']
+): AnalysisSymbol[] {
+  const owners = new Map<string, AnalysisSymbol[]>();
+  for (const symbol of symbols) {
+    if (['class', 'struct', 'union'].includes(symbol.kind)) {
+      const matches = owners.get(symbol.name) ?? [];
+      matches.push(symbol);
+      owners.set(symbol.name, matches);
+    }
+  }
+  const changedOwners = new Set<AnalysisSymbol>();
+  const remaining = symbols.filter(symbol => {
+    const method = externalMethods.get(symbol);
+    const matches = method === undefined ? undefined : owners.get(method.owner);
+    if (method === undefined || matches?.length !== 1) {
+      return true;
+    }
+    symbol.name = method.name;
+    symbol.selectionRange = method.selectionRange;
+    const owner = matches[0];
+    (owner.children ??= []).push(symbol);
+    changedOwners.add(owner);
+    // Keep the class's physical range: expanding it would cover unrelated declarations.
+    return false;
+  });
+  for (const owner of changedOwners) {
+    owner.children = sortSymbols(owner.children!);
+  }
+  return remaining;
 }
 
 function typeSymbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol | null {
@@ -179,7 +247,7 @@ function childSymbolsFromTypeNode(
     return [];
   }
 
-  return bodyNode.namedChildren.flatMap((child) => symbolsFromNode(child, { ...context, containerKind: kind }));
+  return bodyNode.namedChildren.flatMap((child) => symbolsFromNode(child, { ...context, containerKind: kind, containerName: node.childForFieldName('name')?.text }));
 }
 
 function enumMemberSymbolsFromNode(enumNode: Parser.SyntaxNode, enumName: string): AnalysisSymbol[] {

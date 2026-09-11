@@ -29,6 +29,7 @@ export interface AnalysisDiagnostic {
 
 export type AnalysisSymbolKind =
   | 'operator'
+  | 'constructor'
   | 'function'
   | 'method'
   | 'parameter'
@@ -52,7 +53,7 @@ export interface AnalysisSymbol {
   children?: AnalysisSymbol[];
 }
 
-export type AnalysisDeclarationKind = Exclude<AnalysisSymbolKind, 'operator'>;
+export type AnalysisDeclarationKind = Exclude<AnalysisSymbolKind, 'operator' | 'constructor'>;
 
 export interface AnalysisDeclaration {
   id: AnalysisSymbolId;

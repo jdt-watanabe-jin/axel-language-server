@@ -4,10 +4,90 @@ import * as fs from 'fs';
 import { createAxelParser } from '../../../analyzer/axelParser';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { collectDocumentSymbols } from '../../../analyzer/documentSymbols';
+import { SymbolKind } from 'vscode-languageserver/node';
+import { toLspDocumentSymbol } from '../../../lsp/documentSymbols';
 import type { AnalysisSymbol } from '../../../types/analysis';
 
 
 suite('collectDocumentSymbols', () => {
+
+  test('nests external methods and preserves overloads, declarations and navigation', () => {
+    const text = [
+      'class Version { static Version makeVersion(int value); };',
+      'static Version Version::makeVersion(int value) { Version v; return v; }',
+      'static Version Version::makeVersion() { Version v; return v; }',
+      'void unrelated() {}'
+    ].join('\n');
+    const tree = createAxelParser().parse(text);
+    assert.strictEqual(tree.rootNode.hasError, false);
+    const symbols = collectDocumentSymbols(tree.rootNode).map(toLspDocumentSymbol);
+    assert.deepStrictEqual(symbols.map(s => s.name), ['Version', 'unrelated']);
+    const methods = symbols[0].children!;
+    assert.deepStrictEqual(methods.map(s => [s.name, s.kind]), [
+      ['makeVersion', SymbolKind.Method], ['makeVersion', SymbolKind.Method], ['makeVersion', SymbolKind.Method]
+    ]);
+    assert.deepStrictEqual(methods.map(s => s.selectionRange.start.line), [0, 1, 2]);
+    assert.strictEqual(methods[1].selectionRange.start.character, text.split('\n')[1].indexOf('makeVersion'));
+    assert.match(methods[1].detail!, /\(int value\)/);
+    assert.match(methods[2].detail!, /\(\)/);
+    assert.strictEqual(symbols[0].range.end.line, 0);
+  });
+
+  test('classifies inline and external constructors and external operators', () => {
+    const tree = createAxelParser().parse([
+      'class Version { Version(int value) {} };',
+      'Version::Version() {}',
+      'bool Version::operator==(Version other) { return 1; }'
+    ].join('\n'));
+    assert.strictEqual(tree.rootNode.hasError, false);
+    const symbols = collectDocumentSymbols(tree.rootNode).map(toLspDocumentSymbol);
+    assert.strictEqual(symbols.length, 1);
+    assert.deepStrictEqual(symbols[0].children!.map(s => [s.name, s.kind]), [
+      ['Version', SymbolKind.Constructor], ['Version', SymbolKind.Constructor], ['operator==', SymbolKind.Operator]
+    ]);
+  });
+
+  test('keeps qualified names for methods whose class is absent', () => {
+    const tree = createAxelParser().parse('Version::Version() {}\nvoid Version::reset() {}\nvoid freeFunction() {}');
+    assert.strictEqual(tree.rootNode.hasError, false);
+    assert.deepStrictEqual(collectDocumentSymbols(tree.rootNode).map(toLspDocumentSymbol).map(s => [s.name, s.kind]), [
+      ['Version::Version', SymbolKind.Constructor], ['Version::reset', SymbolKind.Method], ['freeFunction', SymbolKind.Function]
+    ]);
+  });
+
+  test('preserves the complete destructor name and selection range', () => {
+    const tree = createAxelParser().parse('class Version {};\nVersion::~Version() {}');
+    assert.strictEqual(tree.rootNode.hasError, false);
+    const method = collectDocumentSymbols(tree.rootNode)[0].children![0];
+    assert.strictEqual(method.name, '~Version');
+    assert.strictEqual(method.kind, 'method');
+    assert.deepStrictEqual(method.selectionRange, {
+      start: { line: 1, character: 9 }, end: { line: 1, character: 17 }
+    });
+  });
+
+  test('finds the owner even when its definition follows the method', () => {
+    const tree = createAxelParser().parse('void Version::reset() {}\nclass Version {};');
+    const symbols = collectDocumentSymbols(tree.rootNode);
+    assert.strictEqual(symbols.length, 1);
+    assert.strictEqual(symbols[0].children![0].name, 'reset');
+  });
+
+  test('does not lose active methods when a class is in an inactive branch', () => {
+    const analyzer = new DocumentAnalyzer();
+    const result = analyzer.analyzeDocument({ uri: 'file:///external.axl', version: 1, text: [
+      '#if 0', 'class Version {};', '#endif', 'void Version::reset() {}'
+    ].join('\n') });
+    assert.deepStrictEqual(result.symbols.map(s => [s.name, s.kind]), [['Version::reset', 'method']]);
+  });
+
+  test('does not attach external definitions to ambiguous class names', () => {
+    const tree = createAxelParser().parse('class Version {};\nclass Version {};\nvoid Version::reset() {}');
+    const symbols = collectDocumentSymbols(tree.rootNode);
+    assert.strictEqual(symbols.length, 3);
+    assert.strictEqual(symbols[2].kind, 'method');
+  });
+
   test('extracts function, object, typedef, and type symbols', () => {
     const parser = createAxelParser();
     const tree = parser.parse([
