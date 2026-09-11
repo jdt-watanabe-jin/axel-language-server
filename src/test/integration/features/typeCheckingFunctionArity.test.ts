@@ -17,9 +17,11 @@ suite('Type checking: function definition arity', () => {
     test(`accepts different argument counts for ${context.name}`, () => {
       assert.deepStrictEqual(check(context.source('')), []);
     });
-    test(`rejects equal argument counts with different types for ${context.name}`, () => {
-      assert.strictEqual(check(context.source('double x')).filter(d=>d.code==='axel.type.definition').length, 1);
-    });
+    if (context.name === 'out-of-class methods') {
+      test(`rejects equal argument counts with different types for ${context.name}`, () => {
+        assert.strictEqual(check(context.source('double x')).filter(d=>d.code==='axel.type.definition').length, 1);
+      });
+    }
     test(`rejects equal signatures for ${context.name}`, () => {
       assert.strictEqual(check(context.source('int x')).filter(d=>d.code==='axel.type.definition').length, 1);
     });

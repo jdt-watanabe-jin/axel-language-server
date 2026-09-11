@@ -1,13 +1,10 @@
-import { fixturePath } from '../fixture';
 import * as assert from 'assert';
-import * as fs from 'fs';
 import { createAxelParser } from '../../../analyzer/axelParser';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { collectDocumentSymbols } from '../../../analyzer/documentSymbols';
 import { SymbolKind } from 'vscode-languageserver/node';
 import { toLspDocumentSymbol } from '../../../lsp/documentSymbols';
 import type { AnalysisSymbol } from '../../../types/analysis';
-
 
 suite('collectDocumentSymbols', () => {
 
@@ -92,8 +89,9 @@ suite('collectDocumentSymbols', () => {
     const parser = createAxelParser();
     const tree = parser.parse([
       '#define N 100',
+      '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
       'typedef int Count;',
-      'int value;',
+      'int *value;',
       'void main() {}',
       'class Widget {};',
       'struct Point {};',
@@ -106,12 +104,26 @@ suite('collectDocumentSymbols', () => {
 
     assert.ok(names.includes('typedef:Count'));
     assert.ok(names.includes('variable:value'));
+    assert.deepStrictEqual(symbols.find(symbol => symbol.name === 'value')?.selectionRange, {
+      start: { line: 3, character: 5 }, end: { line: 3, character: 10 }
+    });
     assert.ok(names.includes('function:main'));
     assert.ok(names.includes('class:Widget'));
     assert.ok(names.includes('struct:Point'));
     assert.ok(names.includes('union:Payload'));
     assert.ok(names.includes('enum:Mode'));
     assert.ok(names.includes('macro:N'));
+    assert.deepStrictEqual(symbols.filter(symbol => symbol.kind === 'macro').map(symbol => symbol.detail), [
+      '#define N 100', '#define MAX(a, b) ((a) > (b) ? (a) : (b))'
+    ]);
+    const main = toLspDocumentSymbol(symbols.find(symbol => symbol.name === 'main')!);
+    assert.strictEqual(main.kind, SymbolKind.Function);
+    assert.deepStrictEqual(main.range, {
+      start: { line: 4, character: 0 }, end: { line: 4, character: 14 }
+    });
+    assert.deepStrictEqual(main.selectionRange, {
+      start: { line: 4, character: 5 }, end: { line: 4, character: 9 }
+    });
   });
 
   test('adds enum members as children of enum symbols', () => {
@@ -120,6 +132,7 @@ suite('collectDocumentSymbols', () => {
 
     const symbols = collectDocumentSymbols(tree.rootNode);
 
+    assert.deepStrictEqual(toLspDocumentSymbol(symbols[0]).children?.map(child => child.kind), [SymbolKind.EnumMember, SymbolKind.EnumMember]);
     assert.deepStrictEqual(symbols, [{
       name: 'Mode',
       kind: 'enum',
@@ -190,7 +203,6 @@ suite('collectDocumentSymbols', () => {
       'class string {',
       'public:',
       '  int Length();',
-      '  int IsNull();',
       '  string Mid(int cpos, int clen);',
       '};'
     ].join('\n'));
@@ -202,7 +214,6 @@ suite('collectDocumentSymbols', () => {
       kind: 'class',
       children: [
         { name: 'Length', kind: 'method' },
-        { name: 'IsNull', kind: 'method' },
         { name: 'Mid', kind: 'method' }
       ]
     }]);
@@ -263,8 +274,8 @@ suite('collectDocumentSymbols', () => {
   });
 
   test('adds anonymous enum members without an empty parent symbol', () => {
-    const parser = createAxelParser();
-    const tree = parser.parse([
+    const analysis = new DocumentAnalyzer().analyzeDocument({
+      uri: 'file:///anonymous-enum.axl', version: 1, text: [
       'class string {',
       'public:',
       '  enum {',
@@ -272,9 +283,10 @@ suite('collectDocumentSymbols', () => {
       '    Reverse = 1 << 1,',
       '  };',
       '};'
-    ].join('\n'));
+    ].join('\n') });
 
-    const symbols = collectDocumentSymbols(tree.rootNode);
+    assert.deepStrictEqual(analysis.diagnostics, []);
+    const symbols = analysis.symbols;
 
     assert.deepStrictEqual(symbols.map(symbolSummary), [{
       name: 'string',
@@ -311,6 +323,7 @@ suite('collectDocumentSymbols', () => {
         'class mydialog : public GCDialog {',
         '  GCVBoxLayout {',
         '    GCCheckBox One;',
+        '    GCCheckBox Two;',
         '    GCGroupBox box {',
         '      GCCheckBox Two;',
         '    };',
@@ -326,6 +339,7 @@ suite('collectDocumentSymbols', () => {
       kind: 'class',
       children: [
         { name: 'One', kind: 'field' },
+        { name: 'Two', kind: 'field' },
         {
           name: 'box',
           kind: 'field',
@@ -350,66 +364,6 @@ suite('collectDocumentSymbols', () => {
     }]);
   });
 
-  test('outlines GUI parts from the regression fixture', () => {
-    const analyzer = new DocumentAnalyzer();
-    const sourcePath = fixturePath('hover-regression.axl');
-    const analysis = analyzer.analyzeDocument({
-      uri: `file:///${sourcePath.replace(/\\/g, '/')}`,
-      version: 1,
-      text: fs.readFileSync(sourcePath, 'utf8')
-    });
-
-    const dialog = analysis.symbols.find((symbol) => symbol.name === 'mydialog');
-
-    assert.deepStrictEqual(dialog?.children?.map(symbolSummary), [
-      { name: 'One', kind: 'field' },
-      { name: 'Two', kind: 'field' },
-      {
-        name: 'Check1',
-        kind: 'field',
-        children: [
-          { name: 'OnCreate', kind: 'method' }
-        ]
-      },
-      {
-        name: 'box',
-        kind: 'field',
-        children: [
-          { name: 'Two', kind: 'field' }
-        ]
-      },
-      { name: 'OnCreate', kind: 'method' }
-    ]);
-  });
-
-  test('extracts macro document symbols', () => {
-    const parser = createAxelParser();
-    const tree = parser.parse([
-      '#define N 100',
-      '#define MAX(a, b) ((a) > (b) ? (a) : (b))'
-    ].join('\n'));
-
-    const symbols = collectDocumentSymbols(tree.rootNode);
-
-    assert.deepStrictEqual(symbols.map((symbol) => ({
-      name: symbol.name,
-      kind: symbol.kind,
-      detail: symbol.detail
-    })), [
-      { name: 'N', kind: 'macro', detail: '#define N 100' },
-      { name: 'MAX', kind: 'macro', detail: '#define MAX(a, b) ((a) > (b) ? (a) : (b))' }
-    ]);
-  });
-
-  test('uses name range as selection range', () => {
-    const parser = createAxelParser();
-    const tree = parser.parse('void main() {}');
-    const symbols = collectDocumentSymbols(tree.rootNode);
-
-    assert.strictEqual(symbols[0].name, 'main');
-    assert.deepStrictEqual(symbols[0].selectionRange.start, { line: 0, character: 5 });
-    assert.deepStrictEqual(symbols[0].selectionRange.end, { line: 0, character: 9 });
-  });
 });
 
 function symbolSummary(symbol: Pick<AnalysisSymbol, 'name' | 'kind' | 'children'>): {

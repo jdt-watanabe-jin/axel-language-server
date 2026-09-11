@@ -1,18 +1,13 @@
-import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { assertCaseDiagnostics, loadTypeCheckingCases } from '../../support/typeCheckingCorpus';
+import { assertCaseDiagnostics, loadTypeCheckingCases, selectTypeCheckingConformanceCases } from '../../support/typeCheckingCorpus';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('Type checking: runtime conformance', () => {
   const fixtures = useWorkspaceFixtures();
   const cases = loadTypeCheckingCases();
-  test('tracks exactly one compiler crash separately from 156 ordinary cases', () => {
-    assert.deepStrictEqual(cases.filter(c => c.expectedError === null).map(c => c.id), ['round2/sizeof_bad_expr']);
-    assert.strictEqual(cases.filter(c => c.expectedError !== null).length, 156);
-  });
-  for (const runtimeCase of cases.filter(c => c.expectedError !== null)) {
+  for (const runtimeCase of selectTypeCheckingConformanceCases(cases)) {
     test(runtimeCase.id, () => {
       const root = fixtures.createTempDir();
       const header = path.join(root, 'axel.h');

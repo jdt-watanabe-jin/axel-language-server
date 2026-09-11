@@ -2,62 +2,6 @@ import * as assert from 'assert';
 import { registerHandlers } from '../../lsp/registerHandlers';
 import { createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
-  test('logs semantic token request timing when logger supports info', () => {
-    let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
-    const infoMessages: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: (handler: typeof semanticTokensHandler) => {
-            semanticTokensHandler = handler;
-          }
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
-    const documents = {
-      get: () => createTestDocument('int value;'),
-      onDidOpen: () => undefined,
-      onDidChangeContent: () => undefined,
-      onDidClose: () => undefined
-    };
-    const analyzer = {
-      analyzeDocument: () => (emptyAnalysis({ uri: 'file:///main.axl', version: 1 }))
-    };
-
-    registerHandlers({
-      connection: connection as never,
-      documents: documents as never,
-      analyzer,
-      logger: {
-        info: (message) => infoMessages.push(message),
-        error: () => undefined
-      }
-    });
-
-    semanticTokensHandler?.({
-      textDocument: { uri: 'file:///main.axl' }
-    });
-
-    assert.ok(infoMessages.some((message) => (
-      message.includes('operation=lsp.semanticTokens')
-      && message.includes('uri=file:///main.axl')
-      && /durationMs=\d+/.test(message)
-    )));
-  });
 
   test('logs completion request timing when logger supports info', () => {
     let completionHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
@@ -185,6 +129,8 @@ suite('registerHandlers', () => {
 
     assert.strictEqual(sentMessages.length, 1);
     assert.match(sentMessages[0], /operation=lsp\.semanticTokens/);
+    assert.ok(sentMessages[0].includes('uri=file:///main.axl'));
+    assert.match(sentMessages[0], /durationMs=\d+/);
   });
 });
 

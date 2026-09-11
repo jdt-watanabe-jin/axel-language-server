@@ -18,14 +18,17 @@ suite('Type checking: registered overloads and observed expression results', () 
     return index.analyzeDocument({ uri: pathToFileURL(path.join(root, 'probe.axl')).toString(), version: 1, text: source });
   }
   const natural = 'class natural {public:int value;};';
+  test('accepts natural comparison as an if condition', () => {
+    assert.deepStrictEqual(analyze(natural, 'void main(){natural n=2nat; if(n>=n){n=3nat;}}').diagnostics, []);
+  });
   test('selects the nonfirst exact member overload', () => {
     const result = analyze(natural + 'class A {}; class API {public: int f(int); int f(A);};',
       'void main(){API api; A a; api.f(a);}');
     assert.deepStrictEqual(result.diagnostics, []);
   });
-  test('defers unmeasured integer candidate ranking', () => {
+  test('defers unmeasured integer and float candidate ranking', () => {
     const result = analyze(natural + 'class API {public: int f(double); int *f(int);};',
-      'void main(){API api; short s=1; int *p=api.f(s);}');
+      'void main(){API api; short s=1; int *p=api.f(s); float value=1.0; int *q=api.f(value);}');
     assert.deepStrictEqual(result.diagnostics, []);
   });
   test('selects the nonlast exact global overload', () => {
@@ -33,19 +36,9 @@ suite('Type checking: registered overloads and observed expression results', () 
       'void main(){A a; int *p=f(a);}');
     assert.deepStrictEqual(result.diagnostics, []);
   });
-  test('defers unmeasured float candidate ranking', () => {
-    const result = analyze(natural + 'class API {public: int f(int); int *f(double);};',
-      'void main(){API api; float value=1.0; int *p=api.f(value);}');
-    assert.deepStrictEqual(result.diagnostics, []);
-  });
   test('defers unmeasured operator candidate ranking', () => {
     const result = analyze(natural + 'class API {public: int operator+(double); int *operator+(int);};',
       'void main(){API api; short value=1; int *p=api+value;}');
-    assert.deepStrictEqual(result.diagnostics, []);
-  });
-  test('retains common result without inventing an ambiguity error', () => {
-    const result = analyze(natural + 'class API {public: int f(int,double); int f(double,int);};',
-      'void main(){API api; short s=1; api.f(s,s);}');
     assert.deepStrictEqual(result.diagnostics, []);
   });
   test('does not assume exact numeric match outranks other viable candidates', () => {
@@ -54,9 +47,12 @@ suite('Type checking: registered overloads and observed expression results', () 
     assert.deepStrictEqual(result.diagnostics, []);
   });
   test('uses a common candidate result to diagnose the surrounding expression', () => {
-    const result = analyze(natural + 'class API {public: int f(int); int f(double);};',
-      'void main(){API api; int *p=api.f(1);}');
-    assert.ok(result.diagnostics.some(d => d.code === 'axel.type.initialization'));
+    const result = analyze(natural + 'class API {public: int f(int,double); int f(double,int);};',
+      'void main(){API api; short s=1; api.f(s,s);\nint *p=api.f(s,s);}');
+    assert.deepStrictEqual(result.diagnostics.map(d => ({code: d.code, range: d.range})), [{
+      code: 'axel.type.initialization',
+      range: {start: {line: 1, character: 7}, end: {line: 1, character: 17}}
+    }]);
   });
   for (const [expression, type] of [['n/2', 'natural'], ['n/2.0', 'natural'], ['n+2.0', 'double'], ['-n', 'natural'], ['+n', 'natural'], ['n+1', 'int'], ['n-1', 'int'], ['n*2.0', 'natural'], ['n<<1', 'int'], ['n>>1', 'int'], ['n%n', 'natural']]) {
     test(`uses measured result ${type} for ${expression}`, () => {
@@ -65,6 +61,7 @@ suite('Type checking: registered overloads and observed expression results', () 
       assert.ok(diagnostic, JSON.stringify(result.diagnostics));
       assert.deepStrictEqual(diagnostic.messageDescriptor?.args, ['void*', type]);
       assert.strictEqual(result.diagnostics.length, 1, JSON.stringify(result.diagnostics));
+      assert.ok(!result.diagnostics.some(d => d.code === 'axel.type.binary_operator' || d.code === 'axel.type.unary_operator'));
     });
   }
   test('checks compound division separately from binary division', () => {
@@ -77,7 +74,4 @@ suite('Type checking: registered overloads and observed expression results', () 
       assert.ok(result.diagnostics.some(d => d.code === 'axel.type.binary_operator'), JSON.stringify(result.diagnostics));
     });
   }
-  test('accepts observed shift and compound addition', () => {
-    assert.deepStrictEqual(analyze(natural, 'void main(){natural n=2nat; n<<1; n+=1;}').diagnostics, []);
-  });
 });

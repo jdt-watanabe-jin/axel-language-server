@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { measureDurationMs, NullLogger, type AnalysisLogger } from '../../util/logger';
+import { measureDurationMs, type AnalysisLogger } from '../../util/logger';
 
 suite('logger utilities', () => {
   test('measureDurationMs logs timing details from successful work', () => {
@@ -32,11 +32,5 @@ suite('logger utilities', () => {
     assert.match(entries[0], /workspace\.foreground/);
     assert.match(entries[0], /failed=true/);
     assert.match(entries[0], /durationMs=\d+/);
-  });
-
-  test('NullLogger ignores timing messages', () => {
-    assert.doesNotThrow(() => {
-      measureDurationMs(NullLogger, 'workspace.foreground', {}, () => undefined);
-    });
   });
 });

@@ -18,23 +18,20 @@ suite('LSP system macros', function () {
     'int s = __APP_SEDIT__;'
   ].join('\n');
 
-  test('uses the supplied tool on each server start and defaults omitted settings to axel', async () => {
-    for (const tool of ['ismo', 'asca', undefined]) {
-      const server = startLspServer();
-      try {
-        await server.request('initialize', {
-          processId: null, rootUri: null, capabilities: {},
-          initializationOptions: tool === undefined ? {} : { tool }
-        });
-        await server.notify('initialized', {});
-        await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text } });
-        const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
-        assert.ok(report.kind === 'full');
-        for (const [name, activeTool] of [['__APP_LEDIT__', 'ismo'], ['__APP_SEDIT__', 'asca']]) {
-          assert.strictEqual(report.items.some(item => item.message.includes(name)), tool !== activeTool, JSON.stringify(report));
-        }
-      } finally { await server.stop(); }
-    }
+  test('defaults omitted tool settings to axel', async () => {
+    const server = startLspServer();
+    try {
+      await server.request('initialize', {
+        processId: null, rootUri: null, capabilities: {}, initializationOptions: {}
+      });
+      await server.notify('initialized', {});
+      await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text } });
+      const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
+      assert.ok(report.kind === 'full');
+      for (const name of ['__APP_LEDIT__', '__APP_SEDIT__']) {
+        assert.ok(report.items.some(item => item.message.includes(name)), JSON.stringify(report));
+      }
+    } finally { await server.stop(); }
   });
 
   test('updates notifications and language results on tool changes without editing the document', async () => {

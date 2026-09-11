@@ -14,11 +14,8 @@ suite('Type checking: GUI part member access', () => {
     return new WorkspaceIndex().analyzeDocument({uri:'file:///radio.axl',version:1,
       text:source + ` void main(){Dialog dlg; ${body}}`}).diagnostics.filter(d=>d.code?.startsWith('axel.type.'));
   }
-  test('resolves named parts through anonymous layout containers', () => {
-    assert.deepStrictEqual(check('int p=dlg.radio.GetOnRadioPosition();'), []);
-  });
-  test('resolves child parts using their instance path', () => {
-    assert.deepStrictEqual(check('int checked=dlg.radio.btn1.IsChecked(); dlg.radio.btn2.SetChecked(1);'), []);
+  test('resolves parent and child parts through anonymous layout containers', () => {
+    assert.deepStrictEqual(check('int p=dlg.radio.GetOnRadioPosition(); int checked=dlg.radio.btn1.IsChecked(); dlg.radio.btn2.SetChecked(1);'), []);
   });
   test('retains the builtin method result type for surrounding checks', () => {
     assert.ok(check('int*p=dlg.radio.btn1.IsChecked();').some(d=>d.code==='axel.type.initialization'));

@@ -21,3 +21,16 @@ export function createTestDocument(text: string): TestDocument {
     getText: () => text
   };
 }
+
+// Neutral registrations shared by request boundary fixtures; overrides capture the request under test.
+export function createHandlerConnection(overrides: Record<string, unknown> = {}) {
+  return {
+    onInitialize: () => undefined,
+    onDidChangeWatchedFiles: () => undefined,
+    languages: { diagnostics: { on: () => undefined }, semanticTokens: { on: () => undefined } },
+    onHover: () => undefined, onCompletion: () => undefined, onDefinition: () => undefined,
+    onReferences: () => undefined, onPrepareRename: () => undefined, onRenameRequest: () => undefined,
+    onCodeAction: () => undefined, onSignatureHelp: () => undefined, onDocumentSymbol: () => undefined,
+    console: { error: () => undefined }, ...overrides
+  };
+}

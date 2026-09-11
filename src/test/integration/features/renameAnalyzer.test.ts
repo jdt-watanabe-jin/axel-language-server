@@ -7,18 +7,6 @@ import { analyzeMarked, positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('rename analyzer', () => {
-  test('prepare rename succeeds on a local variable reference', () => {
-    const { analysis, position } = analyzeMarked('void main() { int local; |local = 1; }');
-
-    assert.deepStrictEqual(prepareRename({
-      analysis,
-      position,
-      workspaceIndex: createWorkspaceIndex()
-    }), {
-      start: { line: 0, character: 25 },
-      end: { line: 0, character: 30 }
-    });
-  });
 
   test('prepare rename rejects undeclared functions', () => {
     const { analysis, position } = analyzeMarked('void main() { |printf("x"); }');
@@ -32,6 +20,15 @@ suite('rename analyzer', () => {
 
   test('rename updates all references in the current file', () => {
     const { analysis, position } = analyzeMarked('void main() { int local; |local = local + 1; }');
+
+    assert.deepStrictEqual(prepareRename({
+      analysis,
+      position,
+      workspaceIndex: createWorkspaceIndex()
+    }), {
+      start: { line: 0, character: 25 },
+      end: { line: 0, character: 30 }
+    });
 
     const result = getRenameEdits({
       analysis,

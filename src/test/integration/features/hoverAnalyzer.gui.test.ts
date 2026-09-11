@@ -298,6 +298,7 @@ suite('getHover', () => {
       '};',
       'void mydialog::OnCreate() {',
       '  |One.SetChecked(1);',
+      '  box.Two.SetChecked(1);',
       '}'
     ].join('\n'));
 
@@ -307,31 +308,13 @@ suite('getHover', () => {
       workspaceIndex: createWorkspaceIndex()
     });
 
+    assert.deepStrictEqual(getHover({ analysis, position: { line: 6, character: 6 }, workspaceIndex: createWorkspaceIndex() }), {
+      markdown: '```axel\nGCCheckBox mydialog::box.Two\n```',
+      plainText: 'GCCheckBox mydialog::box.Two'
+    });
     assert.deepStrictEqual(hover, {
       markdown: '```axel\nGCCheckBox mydialog::One\n```',
       plainText: 'GCCheckBox mydialog::One'
-    });
-  });
-
-  test('resolves implicit nested dialog GUI parts in an external GUI method body', () => {
-    const { analysis, position } = analyzeMarked([
-      'class mydialog : public GCDialog {',
-      '  GCGroupBox box { GCCheckBox Two; };',
-      '};',
-      'void mydialog::OnCreate() {',
-      '  box.|Two.SetChecked(1);',
-      '}'
-    ].join('\n'));
-
-    const hover = getHover({
-      analysis,
-      position,
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nGCCheckBox mydialog::box.Two\n```',
-      plainText: 'GCCheckBox mydialog::box.Two'
     });
   });
 
@@ -368,6 +351,5 @@ suite('getHover', () => {
     assertExternalHover(hover, 'GCPushButton MyDialog::group.button', headerPath);
   });
 });
-
 
 const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();

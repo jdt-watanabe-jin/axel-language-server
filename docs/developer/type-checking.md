@@ -30,7 +30,7 @@ Document versions alone do not identify an analysis context. Changes in visible 
 
 The checked-in [corpus manifest](../../src/test/integration/fixtures/type-checking/manifest.json) fixes source hashes, expected compiler errors, error codes, and evidence identifiers for 156 ordinary cases and one separately tracked compiler crash. A crash has `expectedError: null`; it is not an accepted program or an ordinary type error. The corpus covers the initial observations and their follow-up experiments, rather than asserting complete equivalence with AXEL.
 
-The [conformance suite](../../src/test/integration/features/typeCheckingConformance.test.ts) runs source through the actual analyzer and workspace diagnostics. Small handwritten registered headers make ordinary CI independent of product header copies and an installed AXEL runtime. [Declaration tests](../../src/test/integration/features/typeDeclarationResolution.test.ts), [operator and overload tests](../../src/test/integration/features/typeCheckingOverloads.test.ts), and [context invalidation tests](../../src/test/integration/features/typeCheckingContext.test.ts) cover supporting behavior beyond the corpus. Parser node/field contracts are checked separately in [syntax integration tests](../../src/test/integration/parser/typeCheckingSyntax.test.ts).
+The [conformance suite](../../src/test/integration/features/typeCheckingConformance.test.ts) runs 135 selected ordinary cases through the actual analyzer and workspace diagnostics. The 21 redundant ordinary cases remain as evidence; the selection and reasons are explicit in [the corpus helper](../../src/test/support/typeCheckingCorpus.ts). Small handwritten registered headers make ordinary CI independent of product header copies and an installed AXEL runtime. [Declaration tests](../../src/test/integration/features/typeDeclarationResolution.test.ts), [operator and overload tests](../../src/test/integration/features/typeCheckingOverloads.test.ts), and [context invalidation tests](../../src/test/integration/features/typeCheckingContext.test.ts) cover supporting behavior beyond the corpus. Parser grammar contracts belong in tree-sitter-axel; server regressions assert diagnostics and feature results from actual source.
 
 ```sh
 npm run test:unit -- --grep "Type checking"
@@ -41,12 +41,11 @@ Ordinary checks do not start AXEL. Successful corpus checks establish agreement 
 
 ## Optional runtime verification
 
-The [external runner](../../src/test/external/typeCheckingRuntime.test.ts) is opt-in and requires Windows and the verified executable. It checks the executable SHA256 against the corpus manifest before running. From PowerShell:
+The [evidence collector](../../src/tools/collectTypeCheckingEvidence.ts) is opt-in and requires Windows and the verified executable. It checks the executable SHA256 against the corpus manifest before running. From PowerShell:
 
 ```powershell
-$env:AXEL_TEST_RUNTIME = '1'
 $env:AXEL_TEST_RUNTIME_EXE = 'D:/SX-Meister/bin/axel.exe'
-npm run test:external -- --grep "Type checking: external runtime"
+npm run collect:runtime
 ```
 
 Optional environment variables:
@@ -60,4 +59,4 @@ Optional environment variables:
 
 The runner invokes `axel.exe -nogui` with an isolated directory for each case. A driver calls `LoadFunction` to compile the source without executing its `main`. Evidence includes the executable identity, stdout/stderr, compiler codes, load result, exit status, timing, and per-case observations. Compiler errors take precedence over a successful load marker or exit code. Timeouts and abnormal exits remain separate from ordinary acceptance; the known crash never increases the ordinary conformance count.
 
-External verification is separate from the product-header compatibility tests selected by `AXEL_TEST_SAMPLE` and `AXEL_TEST_FORCED_INCLUDE`. See the [testing strategy](../testing/strategy.md) for the complete test layers.
+Evidence collection is separate from all test commands, including `test:complete`, and from the product-header compatibility tests selected by `AXEL_TEST_SAMPLE` and `AXEL_TEST_FORCED_INCLUDE`. See the [testing strategy](../testing/strategy.md) for the complete test layers.

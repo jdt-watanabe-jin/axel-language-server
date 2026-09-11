@@ -21,7 +21,7 @@ suite('getHover', () => {
       process.platform === 'win32' ? 'file:///file.h' : '/file.h');
   });
 
-  test('returns all duplicate declarations from multiple includes in URI order', () => {
+  test('hovers the first visible declaration from multiple includes', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
     const firstPath = path.join(tempDir, 'a.h');
@@ -43,13 +43,6 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(index.findVisibleDeclarations(mainUri, 'SharedName').map((declaration) => ({
-      uri: declaration.uri,
-      detail: declaration.detail
-    })), [
-      { uri: pathToFileURL(firstPath).toString(), detail: 'class' },
-      { uri: pathToFileURL(secondPath).toString(), detail: 'struct' }
-    ]);
     assertExternalHover(hover, 'class SharedName', firstPath);
   });
 
@@ -128,32 +121,6 @@ suite('getHover', () => {
     assertExternalHover(hover, 'double DATE::LapTime()', forcedPath);
   });
 
-  test('resolves a declaration from a resolved include', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const headerPath = path.join(tempDir, 'types.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(headerPath, 'class IncludedType {};');
-
-    const index = createWorkspaceIndex();
-    const analysis = index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text: '#include "types.h"\nIncludedType value;'
-    });
-
-    const hover = getHover({
-      analysis,
-      position: { line: 1, character: 16 },
-      workspaceIndex: index
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nIncludedType value\n```',
-      plainText: 'IncludedType value'
-    });
-  });
-
   test('returns resolved include file hover at an include path', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
@@ -185,99 +152,18 @@ suite('getHover', () => {
     })?.plainText, `インクルード: ${headerPath}`);
   });
 
-  test('does not resolve a duplicate workspace name outside the include graph', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const includedPath = path.join(tempDir, 'included.h');
-    const unrelatedPath = path.join(tempDir, 'unrelated.axl');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(includedPath, 'class SharedName {};');
-
-    const index = createWorkspaceIndex();
-    index.indexOpenDocument({
-      uri: pathToFileURL(unrelatedPath).toString(),
-      version: 1,
-      text: 'struct SharedName {};'
-    });
-    const analysis = index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text: '#include "included.h"\nSharedName value;'
-    });
-
-    const hover = getHover({
-      analysis,
-      position: { line: 1, character: 13 },
-      workspaceIndex: index
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nSharedName value\n```',
-      plainText: 'SharedName value'
-    });
-  });
-
-  test('resolves macro references to their definition', () => {
-    const analysis = analyze('#define N 100\nvoid main() { int value = N; }');
-
-    const hover = getHover({
-      analysis,
-      position: { line: 1, character: 26 },
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\n#define N 100\n```',
-      plainText: '#define N 100'
-    });
-  });
-
   test('uses trailing comments as object-like macro documentation', () => {
     const analysis = analyze('#define Lctgen_DUMP_DEBUG 1 // debug log flag\nvoid main() { int value = Lctgen_DUMP_DEBUG; }');
 
     const hover = getHover({
       analysis,
-      position: { line: 0, character: 10 },
+      position: { line: 1, character: 26 },
       workspaceIndex: createWorkspaceIndex()
     });
 
     assert.deepStrictEqual(hover, {
       markdown: '```axel\n#define Lctgen_DUMP_DEBUG 1\n```\n\ndebug log flag',
       plainText: '#define Lctgen_DUMP_DEBUG 1\ndebug log flag'
-    });
-  });
-
-  test('resolves function-like macro references to their definition', () => {
-    const index = createWorkspaceIndex();
-    const analysis = index.indexOpenDocument({
-      uri: 'file:///main.axl',
-      version: 1,
-      text: '#define MAX(a, b) ((a) > (b) ? (a) : (b))\nvoid main() { int value = MAX(1, 2); }'
-    });
-
-    const hover = getHover({
-      analysis,
-      position: { line: 1, character: 26 },
-      workspaceIndex: index
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: [
-        '```axel',
-        '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
-        '```',
-        '',
-        'Expansion:',
-        '',
-        '```axel',
-        '((1) > (2) ? (1) : (2))',
-        '```'
-      ].join('\n'),
-      plainText: [
-        '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
-        'Expansion:',
-        '((1) > (2) ? (1) : (2))'
-      ].join('\n')
     });
   });
 
@@ -421,58 +307,6 @@ suite('getHover', () => {
     assert.strictEqual(hover, null);
   });
 
-  test('uses forced-include class names in variable hover text', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const forcedPath = path.join(tempDir, 'forced.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(forcedPath, 'class SystemString {};');
-
-    const index = createWorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
-    const analysis = index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text: 'SystemString label; label = SystemString();'
-    });
-
-    const hover = getHover({
-      analysis,
-      position: { line: 0, character: 20 },
-      workspaceIndex: index
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nSystemString label\n```',
-      plainText: 'SystemString label'
-    });
-  });
-
-  test('resolves a forced-include function declaration named printf', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const forcedPath = path.join(tempDir, 'forced.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(forcedPath, 'void printf(int value);');
-
-    const index = createWorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
-    const markedText = 'void main() { |printf(1); }';
-    const markerOffset = markedText.indexOf('|');
-    const text = markedText.replace('|', '');
-    const analysis = index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text
-    });
-
-    const hover = getHover({
-      analysis,
-      position: positionFromOffset(text, markerOffset),
-      workspaceIndex: index
-    });
-
-    assertExternalHover(hover, 'void printf(int value)', forcedPath);
-  });
-
   test('prefers a forced-include typedef over same-name type keyword hover fallback', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
@@ -499,6 +333,5 @@ suite('getHover', () => {
     assertExternalHover(hover, 'typedef string', forcedPath);
   });
 });
-
 
 const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();

@@ -6,36 +6,6 @@ import type { AnalysisGuiPart } from '../../../types/analysis';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('WorkspaceIndex GUI lookup', () => {
-  test('classifies reusable GUI parts from resolved includes', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const partsPath = path.join(tempDir, 'parts.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(partsPath, 'class CommonPart : public GCWidget {};');
-
-    const index = createWorkspaceIndex();
-    const analysis = index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text: [
-        '#include "parts.h"',
-        'class MyDialog : public GCDialog {',
-        '  CommonPart part;',
-        '};'
-      ].join('\n')
-    });
-
-    assert.deepStrictEqual(partSummary(analysis.guiClasses[0].parts), [
-      { name: 'part', typeName: 'CommonPart', path: ['part'] }
-    ]);
-    assert.deepStrictEqual(
-      analysis.declarations
-        .filter((declaration) => declaration.name === 'part')
-        .map((declaration) => declaration.typeName),
-      ['CommonPart']
-    );
-    assert.strictEqual(index.isKnownGuiClass(mainUri, 'CommonPart'), true);
-  });
 
   test('finds forced-include GUI classes and uses them for part classification', () => {
     const tempDir = createTempDir();
@@ -112,9 +82,12 @@ suite('WorkspaceIndex GUI lookup', () => {
 
     const index = createWorkspaceIndex();
     const firstAnalysis = index.indexDiskDocument(mainPath);
+    assert.deepStrictEqual(firstAnalysis.declarations.filter(declaration => declaration.name === 'part').map(declaration => declaration.typeName), ['CommonPart']);
+    assert.strictEqual(index.isKnownGuiClass(pathToFileURL(mainPath).toString(), 'CommonPart'), true);
     fs.writeFileSync(headerPath, 'class CommonPart {};');
     index.invalidateFile(headerPath);
     const secondAnalysis = index.indexDiskDocument(mainPath);
+    assert.strictEqual(index.isKnownGuiClass(pathToFileURL(mainPath).toString(), 'CommonPart'), false);
 
     assert.deepStrictEqual(partSummary(firstAnalysis.guiClasses[0].parts), [
       { name: 'part', typeName: 'CommonPart', path: ['part'] }

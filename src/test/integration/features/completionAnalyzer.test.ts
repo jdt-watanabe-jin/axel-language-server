@@ -39,6 +39,7 @@ suite('getCompletions', () => {
       fs.writeFileSync(path.join(tempDir, 'time.h'), [
         'int time(int *timer);',
         'int headerGlobal;',
+        'class VGPathData { void T(); };',
         'void helper(int headerParameter) { int headerLocal; }'
       ].join('\n'));
       const { text, position } = marked('#include "time.h"\nvoid main() { ti| }');
@@ -49,7 +50,7 @@ suite('getCompletions', () => {
       const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
 
       assertCompletionNames(completions, ['time', 'helper', 'headerGlobal']);
-      assertNoCompletionNames(completions, ['timer', 'headerParameter', 'headerLocal']);
+      assertNoCompletionNames(completions, ['timer', 'headerParameter', 'headerLocal', 'T']);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
@@ -96,22 +97,6 @@ suite('getCompletions', () => {
       assert.strictEqual(completions.find((item) => item.name === 'T')?.detail, 'void VGPathData::T()');
     });
   }
-
-  test('hides class method prototypes from included headers in ordinary functions', () => {
-    const tempDir = createTempDir();
-    try {
-      fs.writeFileSync(path.join(tempDir, 'path.h'), 'class VGPathData { void T(); };');
-      const { text, position } = marked('#include "path.h"\nvoid main() { t| }');
-      const index = createWorkspaceIndex();
-      const analysis = index.indexOpenDocument({
-        uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1, text
-      });
-      const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
-      assertNoCompletionNames(completions, ['T']);
-    } finally {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    }
-  });
 
   for (const source of [
     'class X { X(int arg) { int local; ar| } };',
@@ -215,15 +200,6 @@ suite('getCompletions', () => {
     ]);
   });
 
-  test('does not suggest undeclared functions while typing an expression identifier', () => {
-    const { text, position } = marked('void main() { pr| }');
-    const analysis = analyze(text);
-
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
-
-    assert.ok(!completions.some(item => item.name === 'printf'));
-  });
-
   test('returns type names in object declaration type context', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
@@ -292,22 +268,6 @@ suite('getCompletions', () => {
     assert.deepStrictEqual(completions.map((completion) => completion.filterText), ['ui/button.h', 'ui/dialog.axl', 'ui/parts/']);
   });
 
-  test('returns AXEL execution file candidates after at sign', () => {
-    const tempDir = createTempDir();
-    fs.writeFileSync(path.join(tempDir, 'script.axl'), 'void main() {}');
-    fs.writeFileSync(path.join(tempDir, 'types.h'), 'class Ignored {};');
-    const mainPath = path.join(tempDir, 'main.axl');
-    const mainUri = pathToFileURL(mainPath).toString();
-    const { text, position } = marked('void main() { @| }');
-    const index = createWorkspaceIndex({ includeRoots: [tempDir] });
-    const analysis = index.indexOpenDocument({ uri: mainUri, version: 1, text });
-
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
-
-    assertCompletionNames(completions, ['script.axl']);
-    assertNoCompletionNames(completions, ['types.h', 'class', 'if']);
-  });
-
   test('returns local path candidates for angle includes when include roots are not configured', () => {
     const tempDir = createTempDir();
     fs.writeFileSync(path.join(tempDir, 'system.h'), 'class SystemHeader {};');
@@ -354,40 +314,6 @@ suite('getCompletions', () => {
 
     assertCompletionNames(completions, ['directValue', 'directMethod', 'inheritedValue', 'inheritedMethod']);
     assertNoCompletionNames(completions, ['unrelatedGlobal', 'otherValue', 'otherMethod', 'printf', 'return']);
-  });
-
-  test('keeps this arrow prefix completion scoped to class members', () => {
-    const { text, position } = marked([
-      'void directGlobal() {}',
-      'class Child {',
-      '  int directValue;',
-      '  void directMethod() { int directLocal; this->d| }',
-      '};'
-    ].join('\n'));
-    const analysis = analyze(text);
-
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
-
-    assertCompletionNames(completions, ['directValue', 'directMethod']);
-    assertNoCompletionNames(completions, ['directGlobal', 'directLocal', 'printf', 'return']);
-  });
-
-  test('returns class members for this arrow access inside an out-of-class method body', () => {
-    const { text, position } = marked([
-      'void unrelatedGlobal() {}',
-      'class Other { int otherValue; };',
-      'class Widget {',
-      '  int value;',
-      '  void update();',
-      '};',
-      'void Widget::update() { this->| }'
-    ].join('\n'));
-    const analysis = analyze(text);
-
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
-
-    assertCompletionNames(completions, ['value', 'update']);
-    assertNoCompletionNames(completions, ['unrelatedGlobal', 'otherValue', 'printf', 'return']);
   });
 
   test('keeps out-of-class this arrow prefix completion scoped to class members', () => {
@@ -455,20 +381,6 @@ suite('getCompletions', () => {
 
   test('returns GUI events after a complete GUI part receiver', () => {
     const { text, position } = marked([
-      'class MyDialog : public GCDialog {',
-      '  GCPushButton button;',
-      '};',
-      'void MyDialog::button::|'
-    ].join('\n'));
-    const analysis = analyze(text);
-
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
-
-    assertCompletionNames(completions, ['OnCreate', 'OnPush']);
-  });
-
-  test('does not expose unrelated global functions as GUI control methods', () => {
-    const { text, position } = marked([
       'void Save() {}',
       'class MyDialog : public GCDialog {',
       '  GCPushButton button;',
@@ -479,6 +391,7 @@ suite('getCompletions', () => {
 
     const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
 
+    assertCompletionNames(completions, ['OnCreate', 'OnPush']);
     assertNoCompletionNames(completions, ['Save']);
   });
 

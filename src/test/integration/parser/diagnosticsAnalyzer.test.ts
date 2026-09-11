@@ -3,26 +3,6 @@ import { createAxelParser } from '../../../analyzer/axelParser';
 import { collectSyntaxDiagnostics } from '../../../analyzer/diagnostics';
 
 suite('collectSyntaxDiagnostics', () => {
-  test('returns no diagnostics for valid AXEL', () => {
-    const parser = createAxelParser();
-    const tree = parser.parse('void main() {}');
-
-    assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode), []);
-  });
-
-  test('does not report missing identifiers for class anonymous enums', () => {
-    const parser = createAxelParser();
-    const tree = parser.parse(`
-class Json {
-  enum {
-    COMPACT,
-    INDENT,
-  };
-};
-`);
-
-    assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode), []);
-  });
 
   for (const scriptPath of ['/home/path/to/sub.axl', 'C:\\path\\to\\sub.axl']) {
     test(`accepts an absolute command path: ${scriptPath}`, () => {

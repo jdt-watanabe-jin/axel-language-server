@@ -1,3 +1,4 @@
+import { CodeActionKind, DiagnosticSeverity } from 'vscode-languageserver/node';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -49,7 +50,15 @@ suite('code action analyzer', () => {
     }), 'ja');
     assert.strictEqual(localized[0].title, '"types.h" のインクルードを追加');
     assert.strictEqual(localized[0].diagnostics?.[0].message, "型'Widget'は定義されていません。");
-    assert.deepStrictEqual(localized[0].edit, actions[0].edit);
+    assert.strictEqual(localized[0].kind, CodeActionKind.QuickFix);
+    assert.strictEqual(localized[0].diagnostics?.[0].severity, DiagnosticSeverity.Error);
+    assert.deepStrictEqual(localized[0].diagnostics?.[0].range, {
+      start: { line: 0, character: 0 }, end: { line: 0, character: 6 }
+    });
+    assert.deepStrictEqual(localized[0].edit, { changes: { [mainUri]: [{
+      range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+      newText: '#include "types.h"\n'
+    }] } });
   });
 
   test('returns no include quick fix for ambiguous candidates', () => {

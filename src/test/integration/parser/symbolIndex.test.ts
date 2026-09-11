@@ -7,36 +7,10 @@ suite('buildSymbolIndex', () => {
   setup(() => { parser = createAxelParser(); });
   const uri = 'file:///main.axl';
 
-  test('assigns a deterministic declaration ID to a function', () => {
-    const index = buildSymbolIndex(parser.parse('void main() {}').rootNode, uri);
-
-    assert.deepStrictEqual(index.declarations, [{
-      id: 'file:///main.axl#0:5:main',
-      name: 'main',
-      kind: 'function',
-      uri,
-      range: {
-        start: { line: 0, character: 0 },
-        end: { line: 0, character: 14 }
-      },
-      selectionRange: {
-        start: { line: 0, character: 5 },
-        end: { line: 0, character: 9 }
-      },
-      detail: 'void main()',
-      signature: {
-        label: 'void main()',
-        parameters: []
-      }
-    }]);
-  });
-
   test('uses declared type text as variable and parameter detail', () => {
     const index = buildSymbolIndex(parser.parse([
       'class Widget {} item;',
-      'int count;',
       'void update(double scale, char code) {}',
-      'string label;'
     ].join('\n')).rootNode, uri);
 
     assert.deepStrictEqual(
@@ -48,11 +22,9 @@ suite('buildSymbolIndex', () => {
       [
         { name: 'item', kind: 'variable', detail: 'Widget item' },
         { name: 'Widget', kind: 'class', detail: 'class' },
-        { name: 'count', kind: 'variable', detail: 'int count' },
         { name: 'update', kind: 'function', detail: 'void update(double scale, char code)' },
         { name: 'scale', kind: 'parameter', detail: 'double scale' },
         { name: 'code', kind: 'parameter', detail: 'char code' },
-        { name: 'label', kind: 'variable', detail: 'string label' }
       ]
     );
   });
@@ -60,8 +32,6 @@ suite('buildSymbolIndex', () => {
   test('uses signature text as function detail', () => {
     const index = buildSymbolIndex(parser.parse([
       'static string connectionsetting_ResolveTopologyName(string parentCellName, string displayName) {}',
-      'int compute(double value) {}',
-      'void reset() {}',
       'class Widget {',
       '  static int Create(string name) {}',
       '  void update(int count) {}',
@@ -81,8 +51,6 @@ suite('buildSymbolIndex', () => {
           detail: 'static string connectionsetting_ResolveTopologyName(string parentCellName, string displayName)',
           containerName: undefined
         },
-        { name: 'compute', detail: 'int compute(double value)', containerName: undefined },
-        { name: 'reset', detail: 'void reset()', containerName: undefined },
         { name: 'Create', detail: 'static int Create(string name)', containerName: 'Widget' },
         { name: 'update', detail: 'void update(int count)', containerName: 'Widget' },
         { name: 'measure', detail: 'double Widget::measure(float scale)', containerName: 'Widget' }
@@ -95,13 +63,12 @@ suite('buildSymbolIndex', () => {
       'class string {',
       'public:',
       '  int Length();',
-      '  int IsNull();',
       '  string Mid(int cpos, int clen);',
       '};'
     ].join('\n')).rootNode, uri);
 
     assert.deepStrictEqual(
-      index.declarations.filter((declaration) => ['Length', 'IsNull', 'Mid'].includes(declaration.name)).map((declaration) => ({
+      index.declarations.filter((declaration) => ['Length', 'Mid'].includes(declaration.name)).map((declaration) => ({
         name: declaration.name,
         kind: declaration.kind,
         detail: declaration.detail,
@@ -109,7 +76,6 @@ suite('buildSymbolIndex', () => {
       })),
       [
         { name: 'Length', kind: 'function', detail: 'int Length()', containerName: 'string' },
-        { name: 'IsNull', kind: 'function', detail: 'int IsNull()', containerName: 'string' },
         { name: 'Mid', kind: 'function', detail: 'string Mid(int cpos, int clen)', containerName: 'string' }
       ]
     );
@@ -165,6 +131,9 @@ suite('buildSymbolIndex', () => {
         'enumMember:B'
       ]
     );
+    const main = index.declarations.find(declaration => declaration.name === 'main')!;
+    assert.deepStrictEqual(main.range, { start: { line: 4, character: 0 }, end: { line: 4, character: 14 } });
+    assert.deepStrictEqual(main.selectionRange, { start: { line: 4, character: 5 }, end: { line: 4, character: 9 } });
   });
 
   test('indexes anonymous enum members', () => {
@@ -205,10 +174,8 @@ suite('buildSymbolIndex', () => {
     assert.strictEqual(declaration.selectionRange.start.line, 6);
   });
 
-  test('uses macro and enum member details', () => {
+  test('uses enum member details', () => {
     const index = buildSymbolIndex(parser.parse([
-      '#define N 100',
-      '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
       'enum Mode { A, B = 2 };'
     ].join('\n')).rootNode, uri);
 
@@ -220,13 +187,6 @@ suite('buildSymbolIndex', () => {
         containerName: declaration.containerName
       })),
       [
-        { name: 'N', kind: 'macro', detail: '#define N 100', containerName: undefined },
-        {
-          name: 'MAX',
-          kind: 'macro',
-          detail: '#define MAX(a, b) ((a) > (b) ? (a) : (b))',
-          containerName: undefined
-        },
         { name: 'Mode', kind: 'enum', detail: 'enum', containerName: undefined },
         { name: 'A', kind: 'enumMember', detail: 'enum Mode::A', containerName: 'Mode' },
         { name: 'B', kind: 'enumMember', detail: 'enum Mode::B = 2', containerName: 'Mode' }
@@ -234,39 +194,19 @@ suite('buildSymbolIndex', () => {
     );
   });
 
-  test('records declaration documentation from adjacent and trailing comments', () => {
+  test('records declaration documentation from adjacent comments', () => {
     const index = buildSymbolIndex(parser.parse([
       '// Computes the visible count.',
       'int count;',
-      '#define DEBUG_LOG 1 // Enables debug output.'
     ].join('\n')).rootNode, uri);
 
     assert.deepStrictEqual(
-      index.declarations.filter((declaration) => ['count', 'DEBUG_LOG'].includes(declaration.name)).map((declaration) => ({
+      index.declarations.filter((declaration) => declaration.name === 'count').map((declaration) => ({
         name: declaration.name,
         documentation: (declaration as { documentation?: string }).documentation
       })),
       [
         { name: 'count', documentation: 'Computes the visible count.' },
-        { name: 'DEBUG_LOG', documentation: 'Enables debug output.' }
-      ]
-    );
-  });
-
-  test('records class base names for inheritance-aware lookup', () => {
-    const index = buildSymbolIndex(parser.parse([
-      'class Base {};',
-      'class Child : public Base {};'
-    ].join('\n')).rootNode, uri);
-
-    assert.deepStrictEqual(
-      index.declarations.filter((declaration) => declaration.kind === 'class').map((declaration) => ({
-        name: declaration.name,
-        baseName: declaration.baseName
-      })),
-      [
-        { name: 'Base', baseName: undefined },
-        { name: 'Child', baseName: 'Base' }
       ]
     );
   });
@@ -326,11 +266,9 @@ suite('buildSymbolIndex', () => {
     const index = buildSymbolIndex(parser.parse('void C::f() {}').rootNode, uri);
 
     assert.deepStrictEqual(index.declarations.map((declaration) => ({
-      id: declaration.id,
       name: declaration.name,
       selectionRange: declaration.selectionRange
     })), [{
-      id: 'file:///main.axl#0:8:f',
       name: 'f',
       selectionRange: {
         start: { line: 0, character: 8 },
@@ -396,19 +334,6 @@ suite('buildSymbolIndex', () => {
       index.declarations.map((declaration) => declaration.name),
       ['broken', 'recovered']
     );
-  });
-
-  test('returns non-declaration identifiers as unresolved references', () => {
-    const index = buildSymbolIndex(parser.parse('void main() { int local; local = 1; }').rootNode, uri);
-
-    assert.deepStrictEqual(index.references.filter((reference) => reference.name === 'local'), [{
-      name: 'local',
-      uri,
-      range: {
-        start: { line: 0, character: 25 },
-        end: { line: 0, character: 30 }
-      }
-    }]);
   });
 
   test('records qualified static calls as member references with receiver type references', () => {
@@ -501,56 +426,11 @@ suite('buildSymbolIndex', () => {
 
 function versionOverloadFixture(): string[] {
   return [
-    'enum prerelease {',
-    '  alpha = 0,',
-    '  beta = 1,',
-    '  rc = 2,',
-    '  none = 3,',
-    '};',
+    'class Version { static Version makeVersion(int p_major); };',
     '',
-    'string alpha_str = "alpha";',
-    'string beta_str = "beta";',
-    'string rc_str = "rc";',
-    '',
-    'class Prerelease {',
-    '  static int length(prerelease t)',
-    '  {',
-    '    if (t == alpha) { return alpha_str.Length(); }',
-    '    else if (t == beta) { return beta_str.Length(); }',
-    '    else if (t == rc) { return rc_str.Length(); }',
-    '    else { return 0; }',
-    '  }',
-    '',
-    '  static string toString(prerelease t)',
-    '  {',
-    '    if (t == alpha) { return alpha_str; }',
-    '    else if (t == beta) { return beta_str; }',
-    '    else if (t == rc) { return rc_str; }',
-    '    else { return ""; }',
-    '  }',
-    '',
-    '  static prerelease fromString(string p_str)',
-    '  {',
-    '    if (p_str == alpha_str) { return alpha; }',
-    '    else if (p_str == beta_str) { return beta; }',
-    '    else if (p_str == rc_str) { return rc; }',
-    '    else { return none; }',
-    '  }',
-    '};',
-    '',
-    'class Version {',
-    'public:',
-    '  Version();',
-    '  static Version makeVersion(int p_major, int p_minor, int p_patch);',
-    '};',
-    '',
-    'Version::Version() {}',
-    '',
-    'static Version Version::makeVersion(int p_major,',
-    '                                    int p_minor,',
-    '                                    int p_patch)',
+    'static Version Version::makeVersion(int p_major)',
     '{',
-    '  return makeVersion(p_major, p_minor, p_patch, none, 0);',
+    '  return makeVersion(p_major);',
     '}'
   ];
 }

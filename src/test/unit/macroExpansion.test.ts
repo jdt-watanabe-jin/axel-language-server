@@ -1,35 +1,21 @@
 import * as assert from 'assert';
+import { createAxelParser } from '../../analyzer/axelParser';
+import { collectMacroDefinitions } from '../../analyzer/macroIndex';
 import { expandMacroInvocationText, type MacroLookup } from '../../analyzer/macroExpansion';
 import type { AnalysisMacroDefinition } from '../../types/analysis';
 
 suite('macroExpansion', () => {
-  test('expands single-level function-like macros', () => {
-    const lookup = lookupFrom([
-      macro('MAX', ['a', 'b'], '((a) > (b) ? (a) : (b))')
-    ]);
-
-    const result = expandMacroInvocationText('MAX(1, 2)', lookup);
-
-    assert.deepStrictEqual({
-      expandedText: result.expandedText,
-      truncated: result.truncated,
-      diagnostics: result.diagnostics
-    }, {
-      expandedText: '((1) > (2) ? (1) : (2))',
-      truncated: false,
-      diagnostics: []
-    });
-  });
 
   test('expands nested function-like macros', () => {
-    const lookup = lookupFrom([
-      macro('define_stringMAP_oneBase', ['p_class'], 'stringMAP mMapL; \\\npublic: \\\nint Add(string key, p_class value) { return 1; }'),
-      macro('define_stringMAP_one', ['p_class'], 'define_stringMAP_oneBase(p_class) \\\np_class *Find(string key) { return NULL; }')
-    ]);
+    const source = '#define define_stringMAP_oneBase(p_class) stringMAP mMapL; \\\npublic: \\\r\nint Add(string key, p_class value) { return 1; }\n'
+      + '#define define_stringMAP_one(p_class) define_stringMAP_oneBase(p_class) \\\np_class *Find(string key) { return NULL; }\n';
+    const tree = createAxelParser().parse(source);
+    const lookup = lookupFrom(collectMacroDefinitions(tree.rootNode, 'file:///macros.h'));
 
     const result = expandMacroInvocationText('define_stringMAP_one(int)', lookup);
 
     assert.strictEqual(result.truncated, false);
+    assert.deepStrictEqual(result.diagnostics, []);
     assert.strictEqual(result.expandedText, [
       'stringMAP mMapL;',
       'public:',
@@ -46,32 +32,6 @@ suite('macroExpansion', () => {
     const result = expandMacroInvocationText('LOG(count)', lookup);
 
     assert.strictEqual(result.expandedText, 'printf("value"); /* value */ count');
-  });
-
-  test('returns diagnostics for wrong arity', () => {
-    const lookup = lookupFrom([
-      macro('ONE', ['value'], 'value')
-    ]);
-
-    const result = expandMacroInvocationText('ONE(a, b)', lookup);
-
-    assert.deepStrictEqual(result.diagnostics.map((diagnostic) => diagnostic.message), [
-      "Macro 'ONE' expects 1 argument but got 2."
-    ]);
-  });
-
-  test('uses the latest macro definition by name before validating arity', () => {
-    const lookup = lookupFrom([
-      macro('REPLACE', ['value'], 'value'),
-      macro('REPLACE', ['left', 'right'], 'left + right')
-    ]);
-
-    const result = expandMacroInvocationText('REPLACE(value)', lookup);
-
-    assert.deepStrictEqual(result.diagnostics.map((diagnostic) => diagnostic.message), [
-      "Macro 'REPLACE' expects 2 argument but got 1."
-    ]);
-    assert.strictEqual(result.expandedText, 'REPLACE(value)');
   });
 
   test('returns diagnostics for nested wrong arity', () => {

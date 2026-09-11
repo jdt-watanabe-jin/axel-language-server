@@ -38,12 +38,16 @@ suite('workspaceIndexOptionsFromEnvironment', () => {
       forcedIncludeFiles: envForcedIncludeFiles
     }, {
       forcedIncludeRoots: [path.join('workspace', 'forced')],
-      forcedIncludeFiles: configuredForcedIncludeFiles
+      forcedIncludeFiles: configuredForcedIncludeFiles,
+      maxNumberOfProblems: 25,
+      defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1']
     });
 
     assert.deepStrictEqual(options, {
       includeRoots: [],
       forcedIncludeRoots: [path.normalize(path.join('workspace', 'forced'))],
+      maxNumberOfProblems: 25,
+      defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1'],
       forcedIncludeFiles: [
         path.normalize(path.join('env', 'system.h')),
         path.normalize(path.join('shared', 'common.h')),
@@ -66,22 +70,6 @@ suite('workspaceIndexOptionsFromEnvironment', () => {
       forcedIncludeRoots: [],
       forcedIncludeFiles: [path.normalize(envForcedIncludeFile)]
     });
-  });
-
-  test('keeps configured maxNumberOfProblems when it is positive', () => {
-    const options = mergeWorkspaceIndexOptions({}, {
-      maxNumberOfProblems: 25
-    });
-
-    assert.strictEqual(options.maxNumberOfProblems, 25);
-  });
-
-  test('keeps configured default defines', () => {
-    const options = mergeWorkspaceIndexOptions({}, {
-      defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1']
-    });
-
-    assert.deepStrictEqual(options.defines, ['NDEBUG', 'MY_CUSTOM_MACRO=1']);
   });
 });
 

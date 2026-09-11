@@ -1,70 +1,11 @@
 import * as assert from 'assert';
+import { SEMANTIC_TOKEN_LEGEND } from '../../lsp/semanticTokens';
 import { registerHandlers } from '../../lsp/registerHandlers';
 import { createTestDocument, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
-  test('indexes opened and changed documents through foreground analysis when available', () => {
+
+  test('analyzes opened and changed text in the foreground and sends inactive ranges', () => {
     const indexedTexts: string[] = [];
-    let openHandler: ((event: { document: TestDocument }) => void) | undefined;
-    let changeHandler: ((event: { document: TestDocument }) => void) | undefined;
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
-    const documents = {
-      get: () => undefined,
-      onDidOpen: (handler: (event: { document: TestDocument }) => void) => {
-        openHandler = handler;
-      },
-      onDidChangeContent: (handler: (event: { document: TestDocument }) => void) => {
-        changeHandler = handler;
-      },
-      onDidClose: () => undefined
-    };
-    const analyzer = {
-      analyzeDocument: () => (emptyAnalysis({ uri: 'file:///missing.axl', version: 0 })),
-      analyzeForegroundDocument: (input: { text: string }) => {
-        indexedTexts.push(input.text);
-        return emptyAnalysis({ uri: 'file:///main.axl', version: 1 });
-      },
-      indexOpenDocument: (_input: { text: string }) => {
-        return emptyAnalysis({ uri: 'file:///main.axl', version: 1 });
-      }
-    };
-
-    registerHandlers({
-      connection: connection as never,
-      documents: documents as never,
-      analyzer,
-      logger: { error: () => undefined }
-    });
-
-    openHandler?.({ document: createTestDocument('int opened;') });
-    changeHandler?.({ document: createTestDocument('int changed;') });
-
-    assert.deepStrictEqual(indexedTexts, ['int opened;', 'int changed;']);
-  });
-
-  test('sends inactive ranges after opened and changed documents are analyzed', () => {
     const notifications: unknown[] = [];
     let openHandler: ((event: { document: TestDocument }) => void) | undefined;
     let changeHandler: ((event: { document: TestDocument }) => void) | undefined;
@@ -113,7 +54,10 @@ suite('registerHandlers', () => {
       analyzeDocument: () => {
         throw new Error('full analysis should not run');
       },
-      analyzeForegroundDocument: (input: { uri: string; version: number }) => (emptyAnalysis({ uri: input.uri, version: input.version, inactiveRanges }))
+      analyzeForegroundDocument: (input: { uri: string; version: number; text: string }) => {
+        indexedTexts.push(input.text);
+        return emptyAnalysis({ uri: input.uri, version: input.version, inactiveRanges });
+      }
     };
 
     registerHandlers({
@@ -126,6 +70,7 @@ suite('registerHandlers', () => {
     openHandler?.({ document: createTestDocument('int opened;') });
     changeHandler?.({ document: createTestDocument('int changed;') });
 
+    assert.deepStrictEqual(indexedTexts, ['int opened;', 'int changed;']);
     assert.deepStrictEqual(notifications, [
       { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } },
       { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } }
@@ -283,71 +228,6 @@ suite('registerHandlers', () => {
     assert.strictEqual(fullAnalysisCalls, 0);
   });
 
-  test('uses foreground analysis for opened documents and semantic tokens', () => {
-    const calls: string[] = [];
-    let openHandler: ((event: { document: TestDocument }) => void) | undefined;
-    let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: (handler: typeof semanticTokensHandler) => {
-            semanticTokensHandler = handler;
-          }
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
-    const documents = {
-      get: () => createTestDocument('int value;'),
-      onDidOpen: (handler: (event: { document: TestDocument }) => void) => {
-        openHandler = handler;
-      },
-      onDidChangeContent: () => undefined,
-      onDidClose: () => undefined
-    };
-    const analyzer = {
-      analyzeDocument: () => {
-        calls.push('full');
-        throw new Error('full indexing should not run');
-      },
-      analyzeForegroundDocument: () => {
-        calls.push('foreground');
-        return emptyAnalysis({ uri: 'file:///main.axl', version: 1 });
-      }
-    };
-
-    registerHandlers({
-      connection: connection as never,
-      documents: documents as never,
-      analyzer,
-      logger: { error: () => undefined }
-    });
-
-    openHandler?.({ document: createTestDocument('int opened;') });
-    const result = semanticTokensHandler?.({
-      textDocument: { uri: 'file:///main.axl' }
-    });
-
-    assert.deepStrictEqual(result, { data: [] });
-    assert.deepStrictEqual(calls, ['foreground', 'foreground']);
-  });
-
   test('uses cached workspace lookup for semantic token resolution', () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const connection = {
@@ -421,10 +301,11 @@ suite('registerHandlers', () => {
       textDocument: { uri: 'file:///main.axl' }
     });
 
-    assert.deepStrictEqual(result?.data, [
-      0, 0, 6, 0, 0,
-      0, 7, 5, 10, 1
-    ]);
+    assert.ok(result);
+    const classTokenIndex = result.data.findIndex((_, index) => index % 5 === 3
+      && result.data[index] === SEMANTIC_TOKEN_LEGEND.tokenTypes.indexOf('class'));
+    assert.ok(classTokenIndex >= 0, 'workspace type must resolve to a class token');
+    assert.strictEqual(result.data[classTokenIndex - 1], 'Widget'.length);
   });
 
   test('refreshes semantic tokens and diagnostics after background indexing completes', () => {

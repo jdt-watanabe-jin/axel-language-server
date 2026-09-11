@@ -87,21 +87,6 @@ suite('getHover', () => {
     assert.strictEqual(hover?.plainText, 'class Version');
   });
 
-  test('resolves a local reference to its declaration', () => {
-    const analysis = analyze('void main() { int local; local = 1; }');
-
-    const hover = getHover({
-      analysis,
-      position: { line: 0, character: 26 },
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(hover, {
-      markdown: '```axel\nint local\n```',
-      plainText: 'int local'
-    });
-  });
-
   test('returns declaration documentation when hovering a reference', () => {
     const analysis = analyze([
       '// Value shown to users.',
@@ -250,7 +235,7 @@ suite('getHover', () => {
 
   test('resolves method calls through dot and arrow receivers', () => {
     const analysis = analyze([
-      'class Widget { void method() {} };',
+      'int method() {} class Widget { void method() {} };',
       'void main() { Widget var; Widget *ptr; var.method(); ptr->method(); }'
     ].join('\n'));
 
@@ -270,25 +255,6 @@ suite('getHover', () => {
       plainText: 'void Widget::method()'
     });
     assert.deepStrictEqual(arrowHover, {
-      markdown: '```axel\nvoid Widget::method()\n```',
-      plainText: 'void Widget::method()'
-    });
-  });
-
-  test('does not resolve a method call to a global function with the same name', () => {
-    const analysis = analyze([
-      'int method() {}',
-      'class Widget { void method() {} };',
-      'void main() { Widget var; var.method(); }'
-    ].join('\n'));
-
-    const hover = getHover({
-      analysis,
-      position: { line: 2, character: 31 },
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(hover, {
       markdown: '```axel\nvoid Widget::method()\n```',
       plainText: 'void Widget::method()'
     });
@@ -364,18 +330,6 @@ suite('getHover', () => {
     })?.plainText, `AXEL 実行ファイル: ${scriptPath}`);
   });
 
-  test('returns no hover for undeclared printf', () => {
-    const analysis = analyze('void main() { printf("value=%d", 1); }');
-
-    const hover = getHover({
-      analysis,
-      position: { line: 0, character: 14 },
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.strictEqual(hover, null);
-  });
-
   test('resolves enum member references to their declaration', () => {
     const analysis = analyze('enum Mode { A, B = 2 }; void main() { Mode mode; mode = B; }');
 
@@ -392,7 +346,7 @@ suite('getHover', () => {
   });
 
   test('resolves a local declaration named printf', () => {
-    const analysis = analyze('void main() { int printf; printf = 1; }');
+    const analysis = analyze('void main() { int printf; printf = 1; unknown = 2; }');
 
     const hover = getHover({
       analysis,
@@ -400,6 +354,7 @@ suite('getHover', () => {
       workspaceIndex: createWorkspaceIndex()
     });
 
+    assert.strictEqual(getHover({ analysis, position: { line: 0, character: 38 }, workspaceIndex: createWorkspaceIndex() }), null);
     assert.deepStrictEqual(hover, {
       markdown: '```axel\nint printf\n```',
       plainText: 'int printf'
@@ -448,18 +403,6 @@ suite('getHover', () => {
     });
   });
 
-  test('returns null for an unknown identifier', () => {
-    const analysis = analyze('void main() { unknown = 1; }');
-
-    const hover = getHover({
-      analysis,
-      position: { line: 0, character: 14 },
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.strictEqual(hover, null);
-  });
-
   test('does not throw for a syntax-error document', () => {
     const analysis = analyze('void broken( { int recovered;');
 
@@ -470,6 +413,5 @@ suite('getHover', () => {
     }));
   });
 });
-
 
 const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();

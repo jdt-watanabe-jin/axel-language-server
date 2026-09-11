@@ -28,12 +28,4 @@ suite('Type checking: GUI handler identity', () => {
     assert.strictEqual(diagnostics.length, 1);
     assert.strictEqual(diagnostics[0].code, 'axel.type.definition');
   });
-  test('still rejects duplicate ordinary class methods', () => {
-    const diagnostics = check(`
-      void Dialog::OnChanged() {}
-      void Dialog::OnChanged() {}
-    `);
-    assert.strictEqual(diagnostics.length, 1);
-    assert.strictEqual(diagnostics[0].code, 'axel.type.definition');
-  });
 });

@@ -1,3 +1,4 @@
+import { toLspSignatureHelp } from '../../../lsp/signatureHelp';
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,7 +18,8 @@ suite('getSignatureHelp', () => {
       workspaceIndex: createWorkspaceIndex()
     });
 
-    assert.deepStrictEqual(help, {
+    assert.ok(help);
+    assert.deepStrictEqual(toLspSignatureHelp(help), {
       signatures: [{
         label: 'void foo(int count, string name)',
         parameters: [
@@ -28,19 +30,6 @@ suite('getSignatureHelp', () => {
       activeSignature: 0,
       activeParameter: 0
     });
-  });
-
-  test('returns the second active parameter after a comma', () => {
-    const { analysis, text, position } = analyzeMarked('void foo(int count, string name) {} void main() { foo(1, |); }');
-
-    const help = getSignatureHelp({
-      analysis,
-      text,
-      position,
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.strictEqual(help?.activeParameter, 1);
   });
 
   test('returns the second active parameter immediately after a comma trigger', () => {
@@ -97,7 +86,8 @@ suite('getSignatureHelp', () => {
       workspaceIndex: createWorkspaceIndex()
     });
 
-    assert.deepStrictEqual(help, {
+    assert.ok(help);
+    assert.deepStrictEqual(toLspSignatureHelp(help), {
       signatures: [{
         label: 'void ping()',
         parameters: []
@@ -187,7 +177,8 @@ suite('getSignatureHelp', () => {
       workspaceIndex: index
     });
 
-    assert.deepStrictEqual(help, {
+    assert.ok(help);
+    assert.deepStrictEqual(toLspSignatureHelp(help), {
       signatures: [{
         label: 'int printf(string format, ...)',
         parameters: [
@@ -210,7 +201,8 @@ suite('getSignatureHelp', () => {
       workspaceIndex: createWorkspaceIndex()
     });
 
-    assert.deepStrictEqual(help, {
+    assert.ok(help);
+    assert.deepStrictEqual(toLspSignatureHelp(help), {
       signatures: [{
         label: '#define MAX(left, right)',
         parameters: [

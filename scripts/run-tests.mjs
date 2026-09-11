@@ -9,7 +9,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const groups = {
   unit: ['unit'], integration: ['integration'], e2e: ['e2e'],
   performance: ['performance'], external: ['external'],
-  fast: ['unit', 'integration'], all: ['unit', 'integration', 'e2e', 'performance'],
+  fast: ['unit', 'integration'], all: ['unit', 'integration', 'e2e'],
   complete: ['unit', 'integration', 'e2e', 'performance', 'external']
 };
 const [group = 'all', ...args] = process.argv.slice(2);

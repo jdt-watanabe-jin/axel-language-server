@@ -16,11 +16,8 @@ suite('Type checking: declared subscript operators', () => {
       uri:'file:///subscript.axl',version:1,text:`void main(){${body}}`
     }).diagnostics.filter(d=>d.code?.startsWith('axel.type.'));
   }
-  test('accepts VARRAY subscript access through an explicit element pointer cast', () => {
-    assert.deepStrictEqual(check('VARRAY v;v.Add(5);int n=*(int*)v[0];'), []);
-  });
   test('does not assume all VARRAY instances contain integers', () => {
-    assert.deepStrictEqual(check('VARRAY a;a.Add(5);VARRAY b;b.Add("x");string s=*(string*)b[0];'), []);
+    assert.deepStrictEqual(check('VARRAY a;a.Add(5);int n=*(int*)a[0];VARRAY b;b.Add("x");string s=*(string*)b[0];'), []);
   });
   test('keeps a by-value subscript result nonassignable', () => {
     const diagnostics=check('VARRAY v;v[0]=NULL;');

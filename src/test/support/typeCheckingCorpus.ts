@@ -53,10 +53,53 @@ export function loadTypeCheckingCases(root = typeCheckingFixtureRoot): RuntimeCa
   });
 }
 
+
+// Observed compiler evidence remains in the manifest even when another LS test
+// covers the same condition more strongly. Values name the retained coverage.
+const coveredElsewhere: Readonly<Record<string, string>> = {
+  'initial/const_assign_value': 'initial/const_assign',
+  'round2/return_void_expr': 'round2/return_void_value',
+  'round2/nat_mul_control': 'initial/unused_function_error',
+  'initial/natural_mul_natural': 'initial/unused_function_error',
+  'round2/nat_int_control': 'initial/int_mul_natural',
+  'round2/invalid_control': 'initial/invalid_control',
+  'round2/baseline': 'initial/baseline',
+  'initial/pointer_const_remove': 'initial/pointer_const_control',
+  'round2/const_pointer_remove': 'round2/const_pointer_binding',
+  'round2/user_conversion': 'round2/user_conversion_member',
+  'round2/user_assignment_arg': 'round2/user_assign_member_arg',
+  'round2/different_prototypes': 'round2/prototype_definition',
+  'round2/prototype_newlines': 'round2/prototype_definition',
+  'round2/nat_shadow': 'round2/natural_shadow_field + round2/natural_shadow_mul',
+  'initial/natural_not': 'round2/type_nat_not',
+  'round2/int_div_nat': 'round2/type_int_div_nat',
+  'round2/nat_mod_float': 'round2/type_nat_mod_float',
+  'initial/natural_ge': 'round2/type_nat_ge + natural comparison condition test',
+  'initial/natural_add_int': 'typeCheckingOverloads: n+1 result',
+  'initial/natural_mul_double': 'typeCheckingOverloads: n*2.0 result',
+  'round2/nat_add_double': 'typeCheckingOverloads: n+2.0 result'
+};
+
+export function selectTypeCheckingConformanceCases(cases: readonly RuntimeCase[]): RuntimeCase[] {
+  for (const id of Object.keys(coveredElsewhere)) {
+    assert.ok(cases.some(c => c.id === id), `Unknown corpus selection: ${id}`);
+  }
+  return cases.filter(c => c.expectedError !== null && !Object.hasOwn(coveredElsewhere, c.id));
+}
+
+const resultTypeCases = new Set([
+  'round2/type_nat_not', 'round2/type_int_div_nat',
+  'round2/type_nat_mod_float', 'round2/type_nat_ge'
+]);
+
 /** Match causes and compiler-reported source lines, never merely the existence of an error. */
 export function assertCaseDiagnostics(runtimeCase: RuntimeCase, diagnostics: readonly AnalysisDiagnostic[]): void {
   assert.notStrictEqual(runtimeCase.expectedError, null, 'Compiler crashes require separate tracking');
   const errors = diagnostics.filter(diagnostic => diagnostic.severity === 'error');
+  if (resultTypeCases.has(runtimeCase.id)) {
+    assert.ok(!errors.some(d => d.code === 'axel.type.binary_operator' || d.code === 'axel.type.unary_operator'),
+      `${runtimeCase.id}: the operation must succeed before its result is checked`);
+  }
   const describe = () => JSON.stringify(errors.map(diagnostic => ({
     code: (diagnostic as AnalysisDiagnostic & { code?: string }).code,
     key: diagnostic.messageDescriptor?.key, range: diagnostic.range, message: diagnostic.message

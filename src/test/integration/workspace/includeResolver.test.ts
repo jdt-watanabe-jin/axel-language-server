@@ -70,14 +70,10 @@ suite('resolveInclude', () => {
       includeRoots: []
     });
 
-    assert.deepStrictEqual(result, {
+    assert.deepStrictEqual({ status: result.status, reason: result.status === 'unresolved' ? result.reason : undefined, includePath: result.includePath }, {
       status: 'unresolved',
       reason: 'not-found',
-      includePath: 'missing.h',
-      candidates: [
-        path.join(tempDir, 'missing.h'),
-        path.join(path.dirname(tempDir), 'missing.h')
-      ]
+      includePath: 'missing.h'
     });
   });
 

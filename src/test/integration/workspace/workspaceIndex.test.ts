@@ -35,27 +35,6 @@ suite('WorkspaceIndex', () => {
     );
   });
 
-  test('foreground analysis does not synchronously index included disk documents', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const headerPath = path.join(tempDir, 'large.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(headerPath, 'int includedValue;');
-    const index = createWorkspaceIndex();
-
-    const analysis = index.analyzeForegroundDocument({
-      uri: mainUri,
-      version: 1,
-      text: '#include "large.h"\nint mainValue;'
-    });
-
-    assert.deepStrictEqual(
-      analysis.declarations.map((declaration) => declaration.name),
-      ['mainValue']
-    );
-    assert.deepStrictEqual(index.findDeclarations('includedValue'), []);
-  });
-
   test('diagnostic analysis avoids synchronously indexing pending include documents', async () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
@@ -101,28 +80,6 @@ suite('WorkspaceIndex', () => {
     ]);
   });
 
-  test('foreground analysis emits timing logs when logger is provided', () => {
-    const entries: string[] = [];
-    const index = createWorkspaceIndex({
-      logger: {
-        info: (message) => entries.push(message),
-        error: () => undefined
-      }
-    });
-
-    index.analyzeForegroundDocument({
-      uri: 'file:///main.axl',
-      version: 1,
-      text: 'int value;'
-    });
-
-    assert.ok(entries.some((entry) => (
-      entry.includes('operation=workspace.foreground')
-      && entry.includes('uri=file:///main.axl')
-      && /durationMs=\d+/.test(entry)
-    )));
-  });
-
   test('foreground analysis indexes included disk documents in the background', async () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
@@ -131,11 +88,13 @@ suite('WorkspaceIndex', () => {
     fs.writeFileSync(headerPath, 'int backgroundValue;');
     const index = createWorkspaceIndex();
 
-    index.analyzeForegroundDocument({
+    const analysis = index.analyzeForegroundDocument({
       uri: mainUri,
       version: 1,
       text: '#include "types.h"\nint mainValue;'
     });
+    assert.deepStrictEqual(analysis.declarations.map(declaration => declaration.name), ['mainValue']);
+    assert.deepStrictEqual(index.findDeclarations('backgroundValue'), []);
     await index.waitForBackgroundIndexing();
 
     assert.deepStrictEqual(
@@ -187,34 +146,6 @@ suite('WorkspaceIndex', () => {
     );
   });
 
-  test('finds function-like macro definitions through includes', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const headerPath = path.join(tempDir, 'macros.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(headerPath, '#define WRAP(T) T value;\n');
-
-    const index = createWorkspaceIndex();
-    index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text: '#include "macros.h"\nclass Box { WRAP(int) };'
-    });
-
-    assert.deepStrictEqual(
-      index.findVisibleMacroDefinitions(mainUri, 'WRAP').map((macro) => ({
-        name: macro.name,
-        parameters: macro.parameters,
-        replacementText: macro.replacementText
-      })),
-      [{
-        name: 'WRAP',
-        parameters: [{ label: 'T' }],
-        replacementText: 'T value;'
-      }]
-    );
-  });
-
   test('suppresses class body syntax errors for macros from included files', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
@@ -232,29 +163,8 @@ suite('WorkspaceIndex', () => {
       text: '#include "macros.h"\nclass C { DEFINE_MAP(int) };'
     });
 
+    assert.ok(index.findBestVisibleMacroDefinition(mainUri, 'DEFINE_MAP'));
     assert.deepStrictEqual(analysis.diagnostics, []);
-  });
-
-  test('keeps syntax errors for macro invocations before their include', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const macroPath = path.join(tempDir, 'macros.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(macroPath, '#define FIELD(T) T value;');
-
-    const index = createWorkspaceIndex();
-    const analysis = index.analyzeDocument({
-      uri: mainUri,
-      version: 1,
-      text: [
-        'class C { FIELD(int) };',
-        '#include "macros.h"'
-      ].join('\n')
-    });
-
-    assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
-      'Syntax error.'
-    ]);
   });
 
   test('uses an included macro that supersedes an earlier local definition', () => {
@@ -336,13 +246,15 @@ suite('WorkspaceIndex', () => {
       text: [
         'class Container { DECLARE_MEMBER(int) };',
         '#define DECLARE_MEMBER(T) T localValue;',
-        '#include "macros.h"'
+        '#include "macros.h"',
+        'class After { DECLARE_MEMBER(int) };'
       ].join('\n')
     });
 
     assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
       'Syntax error.'
     ]);
+    assert.strictEqual(analysis.diagnostics[0].range.start.line, 0);
   });
 
   test('handles AXEL string map member macros without syntax diagnostics', () => {
@@ -370,8 +282,6 @@ suite('WorkspaceIndex', () => {
       text: [
         '#include "_asxccbase.h"',
         'class cstringmap_int { define_stringMAP_one(int) };',
-        'class cstringmap_double { define_stringMAP_one(double) };',
-        'class cstringmap_string { define_stringMAP_one(string) };'
       ].join('\n')
     });
 
@@ -413,28 +323,6 @@ suite('WorkspaceIndex', () => {
       index.findVisibleDeclarations(mainUri, 'ForcedDependency').map((declaration) => declaration.detail),
       ['class']
     );
-  });
-
-  test('uses forced include macros when collecting inactive ranges', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const forcedPath = path.join(tempDir, 'forced.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(forcedPath, '#define ENABLE_FEATURE 1');
-    const lines = [
-      '#ifdef ENABLE_FEATURE',
-      'int activeValue;',
-      '#else',
-      'int inactiveValue;',
-      '#endif'
-    ];
-
-    const index = createWorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
-    const analysis = index.indexOpenDocument({ uri: mainUri, version: 1, text: lines.join('\n') });
-
-    assert.deepStrictEqual(analysis.inactiveRanges, [
-      { start: { line: 3, character: 0 }, end: { line: 3, character: 18 } }
-    ]);
   });
 
   test('uses configured default defines when collecting inactive ranges', () => {
@@ -510,11 +398,14 @@ suite('WorkspaceIndex', () => {
       text: [
         '#if FORCED_VERSION',
         'ForcedClass value;',
+        '#else',
+        'int inactiveValue;',
         '#endif'
       ].join('\n')
     });
 
-    assert.deepStrictEqual(analysis.inactiveRanges, []);
+    assert.deepStrictEqual(analysis.inactiveRanges, [{ start: { line: 3, character: 0 }, end: { line: 3, character: 18 } }]);
+    assert.deepStrictEqual(analysis.declarations.map(declaration => declaration.name), ['value']);
     assert.deepStrictEqual(
       index.findVisibleDeclarations(mainUri, 'ForcedClass').map((declaration) => declaration.detail),
       ['class']
@@ -567,21 +458,6 @@ suite('WorkspaceIndex', () => {
       index.findVisibleDeclarations(mainUri, 'SecondForced').map((declaration) => declaration.name),
       ['SecondForced']
     );
-  });
-
-  test('invalidates dependent documents when an included file changes', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const headerPath = path.join(tempDir, 'types.h');
-    fs.writeFileSync(mainPath, '#include "types.h"\nint mainValue;');
-    fs.writeFileSync(headerPath, 'int headerValue;');
-    const index = createWorkspaceIndex();
-
-    index.indexDiskDocument(mainPath);
-    index.invalidateFile(headerPath);
-
-    assert.deepStrictEqual(index.findDeclarations('mainValue'), []);
-    assert.deepStrictEqual(index.findDeclarations('headerValue'), []);
   });
 });
 

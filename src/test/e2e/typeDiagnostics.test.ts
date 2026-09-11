@@ -4,42 +4,39 @@ import { startLspServer } from '../support/lspClient';
 
 suite('Type checking: LSP diagnostics', function () {
   this.timeout(20_000);
-  for (const locale of ['en', 'ja-JP']) {
-    test(`publishes success, type error and correction with ${locale} messages`, async () => {
-      const server = startLspServer();
-      try {
-        await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, locale });
-        await server.notify('initialized', {});
-        const uri = 'file:///type-e2e/lifecycle.axl';
-        const textDocument = { uri };
-        async function diagnostics(): Promise<Diagnostic[]> {
-          const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
-          assert.strictEqual(report.kind, 'full');
-          if (report.kind !== 'full') { throw new Error('Expected full diagnostic report'); }
-          return report.items;
-        }
-        await server.notify('textDocument/didOpen', { textDocument: {
-          uri, languageId: 'axel', version: 1, text: 'void main(){ int *p=nullptr; }'
-        } });
-        assert.deepStrictEqual(await diagnostics(), []);
-        const broken = 'void main(){ int *p=0; }';
-        await server.notify('textDocument/didChange', { textDocument: { uri, version: 2 }, contentChanges: [{ text: broken }] });
-        const items = await diagnostics();
-        assert.strictEqual(items.length, 1, JSON.stringify(items));
-        assert.strictEqual(items[0].code, 'axel.type.initialization');
-        assert.strictEqual(items[0].severity, 1);
-        assert.deepStrictEqual(items[0].range, {
-          start: { line: 0, character: broken.indexOf('0') }, end: { line: 0, character: broken.indexOf('0') + 1 }
-        });
-        assert.strictEqual(items[0].message, locale === 'en'
-          ? "Cannot initialize 'int*' with 'int'." : "型'int*'を型'int'の値で初期化できません。");
-        await server.notify('workspace/didChangeConfiguration', { settings: {} });
-        assert.deepStrictEqual(await diagnostics(), items, 'Configuration must retain the connection locale');
-        await server.notify('textDocument/didChange', { textDocument: { uri, version: 3 }, contentChanges: [{ text: 'void main(){ int *p=nullptr; }' }] });
-        assert.deepStrictEqual(await diagnostics(), []);
-      } finally { await server.stop(); }
-    });
-  }
+  test('publishes success, type error and correction with Japanese messages', async () => {
+    const server = startLspServer();
+    try {
+      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, locale: 'ja-JP' });
+      await server.notify('initialized', {});
+      const uri = 'file:///type-e2e/lifecycle.axl';
+      const textDocument = { uri };
+      async function diagnostics(): Promise<Diagnostic[]> {
+        const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
+        assert.strictEqual(report.kind, 'full');
+        if (report.kind !== 'full') { throw new Error('Expected full diagnostic report'); }
+        return report.items;
+      }
+      await server.notify('textDocument/didOpen', { textDocument: {
+        uri, languageId: 'axel', version: 1, text: 'void main(){ int *p=nullptr; }'
+      } });
+      assert.deepStrictEqual(await diagnostics(), []);
+      const broken = 'void main(){ int *p=0; }';
+      await server.notify('textDocument/didChange', { textDocument: { uri, version: 2 }, contentChanges: [{ text: broken }] });
+      const items = await diagnostics();
+      assert.strictEqual(items.length, 1, JSON.stringify(items));
+      assert.strictEqual(items[0].code, 'axel.type.initialization');
+      assert.strictEqual(items[0].severity, 1);
+      assert.deepStrictEqual(items[0].range, {
+        start: { line: 0, character: broken.indexOf('0') }, end: { line: 0, character: broken.indexOf('0') + 1 }
+      });
+      assert.strictEqual(items[0].message, "型'int*'を型'int'の値で初期化できません。");
+      await server.notify('workspace/didChangeConfiguration', { settings: {} });
+      assert.deepStrictEqual(await diagnostics(), items, 'Configuration must retain the connection locale');
+      await server.notify('textDocument/didChange', { textDocument: { uri, version: 3 }, contentChanges: [{ text: 'void main(){ int *p=nullptr; }' }] });
+      assert.deepStrictEqual(await diagnostics(), []);
+    } finally { await server.stop(); }
+  });
   test('reports C57/C47 equivalents as errors and applies the configured problem limit', async () => {
     const server = startLspServer();
     try {

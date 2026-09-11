@@ -5,7 +5,6 @@ import { pathToFileURL } from 'url';
 import { CompletionItemKind, TextEdit } from 'vscode-languageserver/node';
 import { getCompletions } from '../../../analyzer/completion';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
-import { createInitializeResult } from '../../../lsp/capabilities';
 import { toLspCompletionItem } from '../../../lsp/completion';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
@@ -44,21 +43,16 @@ suite('AXEL command completion', () => {
     return getCompletions({ analysis, text, position, workspaceIndex: index }).map(toLspCompletionItem);
   }
 
-  test('advertises command and directory completion triggers', () => {
-    const triggers = createInitializeResult().capabilities.completionProvider!.triggerCharacters!;
-    for (const character of ['@', '/', '\\']) {
-      assert.ok(triggers.includes(character), `Missing trigger ${character}`);
+  test('completes command files in top-level and statement contexts', () => {
+    fs.writeFileSync(path.join(firstRoot, 'task.axl'), '');
+    fs.writeFileSync(path.join(firstRoot, 'types.h'), '');
+    fs.writeFileSync(path.join(firstRoot, 'notes.txt'), '');
+    for (const source of ['@|', 'void main() {\n\t@|\n}', 'void main() { @| }', 'void main() { int n; @| }']) {
+      const items = complete(source);
+      assert.deepStrictEqual(items.map(item => item.label), ['task.axl'], source);
+      assert.ok(items.every(item => item.kind !== CompletionItemKind.Keyword), source);
     }
   });
-
-  for (const source of ['@|', '  @|', 'void main() {\n\t@|\n}', 'void main() { @| }', 'void main() { int n; @| }']) {
-    test(`completes command files at ${JSON.stringify(source)}`, () => {
-      fs.writeFileSync(path.join(firstRoot, 'task.axl'), '');
-      fs.writeFileSync(path.join(firstRoot, 'types.h'), '');
-      fs.writeFileSync(path.join(firstRoot, 'notes.txt'), '');
-      assert.deepStrictEqual(complete(source).map(item => item.label), ['task.axl']);
-    });
-  }
 
   test('preserves search root priority and removes duplicate command names', () => {
     fs.writeFileSync(path.join(sourceDir, 'z-local.axl'), '');

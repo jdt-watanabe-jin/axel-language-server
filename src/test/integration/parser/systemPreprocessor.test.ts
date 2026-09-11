@@ -1,45 +1,32 @@
 import * as assert from 'assert';
+import { resolveSystemMacro } from '../../../analyzer/systemMacros';
 import { createAxelParser } from '../../../analyzer/axelParser';
 import { collectInactivePreprocessorRanges, evaluatePreprocessor } from '../../../analyzer/preprocessorEvaluation';
 
 suite('system preprocessor', () => {
-  test('always defines the console macro with the Tool value and ignores overrides', () => {
-    for (const [tool, value] of [['axel', 1], ['ismo', 0], ['asca', 0], ['spicechart', 0]] as const) {
-      for (const prefix of ['', '#define __AXELCONSOLE__ 9\n#undef __AXELCONSOLE__\n']) {
-        for (const condition of ['#ifdef __AXELCONSOLE__', `#if defined(__AXELCONSOLE__) && __AXELCONSOLE__ == ${value}`, '#ifndef __AXELCONSOLE__']) {
-          const root = createAxelParser().parse(`${prefix}${condition}\nint active;\n#else\nint inactive;\n#endif\n`).rootNode;
-          assert.strictEqual(root.hasError, false);
-          const offset = prefix === '' ? 0 : 2;
-          assert.deepStrictEqual(collectInactivePreprocessorRanges(root, [{ name: '__AXELCONSOLE__', value: '9' }], tool).map(range => range.start.line), [offset + (condition.startsWith('#ifndef') ? 1 : 3)]);
-        }
+  test('defines tool-specific console and shared version values', () => {
+    for (const [tool, consoleValue] of [['axel', 1], ['ismo', 0], ['asca', 0], ['spicechart', 0]] as const) {
+      for (const [name, value] of [['__AXELCONSOLE__', consoleValue], ['__AXELVERSION__', 510], ['__AXEL__', 1]] as const) {
+        const macro = resolveSystemMacro(name, 'file:///main.axl', { line: 0, character: 0 }, tool);
+        assert.strictEqual(macro?.defined, true, name + ':' + tool);
+        assert.strictEqual(macro?.value, value, name + ':' + tool);
       }
     }
   });
 
-  test('evaluates the system version as 510 and ignores overrides for every tool', () => {
-    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
-      for (const prefix of ['', '#define __AXELVERSION__ 0\n#undef __AXELVERSION__\n']) {
-        for (const condition of ['#ifdef __AXELVERSION__', '#if defined(__AXELVERSION__) && __AXELVERSION__ == 510', '#ifndef __AXELVERSION__']) {
-          const root = createAxelParser().parse(`${prefix}${condition}\nint active;\n#else\nint inactive;\n#endif\n`).rootNode;
-          assert.strictEqual(root.hasError, false);
-          const offset = prefix === '' ? 0 : 2;
-          assert.deepStrictEqual(collectInactivePreprocessorRanges(root, [{ name: '__AXELVERSION__', value: '0' }], tool).map(range => range.start.line), [offset + (condition.startsWith('#ifndef') ? 1 : 3)]);
-        }
-      }
-    }
+  test('ignores source and configuration overrides of reserved numeric macros', () => {
+    const names = ['__AXELCONSOLE__', '__AXELVERSION__', '__AXEL__'];
+    const source = names.flatMap(name => ['#define ' + name + ' 9', '#undef ' + name]).concat([
+      '#if __AXELCONSOLE__ == 1 && __AXELVERSION__ == 510 && __AXEL__ == 1',
+      'int active;', '#else', 'int inactive;', '#endif'
+    ]).join('\n');
+    const tree = createAxelParser().parse(source);
+    assert.deepStrictEqual(collectInactivePreprocessorRanges(tree.rootNode, names.map(name => ({ name, value: '9' })), 'axel').map(range => range.start.line), [9]);
   });
 
-  test('defines __AXEL__ as one for every tool and ignores overrides', () => {
-    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
-      for (const prefix of ['', '#define __AXEL__ 0\n#undef __AXEL__\n']) {
-        for (const condition of ['#ifdef __AXEL__', '#if defined(__AXEL__) && __AXEL__ == 1', '#ifndef __AXEL__']) {
-          const root = createAxelParser().parse(`${prefix}${condition}\nint active;\n#else\nint inactive;\n#endif\n`).rootNode;
-          assert.strictEqual(root.hasError, false);
-          const offset = prefix === '' ? 0 : 2;
-          assert.deepStrictEqual(collectInactivePreprocessorRanges(root, [{ name: '__AXEL__', value: '0' }], tool).map(range => range.start.line), [offset + (condition.startsWith('#ifndef') ? 1 : 3)]);
-        }
-      }
-    }
+  test('handles defined and undefined conditions for a reserved macro', () => {
+    const tree = createAxelParser().parse('#ifdef __AXEL__\nint active;\n#else\nint inactive;\n#endif\n#ifndef __AXEL__\nint impossible;\n#endif');
+    assert.deepStrictEqual(collectInactivePreprocessorRanges(tree.rootNode).map(range => range.start.line), [3, 6]);
   });
 
   test('always defines runtime macros without deciding their values', () => {

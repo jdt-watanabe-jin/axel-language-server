@@ -88,7 +88,8 @@ suite('collectSemanticTokens', () => {
       '  if (IsChecked())',
       '    box.Two.SetChecked(0);',
       '    SetBoxRadio(0);',
-      '}'
+      '}',
+      'void mydialog::OnCreate() { text = "Sample Of GroupBox"; }'
     ];
     const analysis = new DocumentAnalyzer().analyzeDocument({
       uri: 'file:///main.axl',
@@ -111,33 +112,14 @@ suite('collectSemanticTokens', () => {
       ]
     });
 
+    assertToken(tokens, 9, lines[9].indexOf('mydialog'), 'class', []);
+    assertToken(tokens, 9, lines[9].indexOf('OnCreate'), 'function', ['declaration']);
     assertToken(tokens, 3, lines[3].indexOf('mydialog'), 'class', []);
     assertToken(tokens, 3, lines[3].indexOf('box'), 'variable', []);
     assertToken(tokens, 3, lines[3].indexOf('One'), 'variable', []);
     assertToken(tokens, 3, lines[3].indexOf('OnChanged'), 'function', ['declaration']);
     assertToken(tokens, 5, lines[5].indexOf('IsChecked'), 'method', []);
     assertToken(tokens, 6, lines[6].indexOf('SetChecked'), 'method', []);
-  });
-
-  test('tokens external GUI owner methods receiver class names', () => {
-    const lines = [
-      'class mydialog : public GCDialog {',
-      '};',
-      'void mydialog::OnCreate()',
-      '{',
-      '  text = "Sample Of GroupBox";',
-      '}'
-    ];
-    const analysis = new DocumentAnalyzer().analyzeDocument({
-      uri: 'file:///main.axl',
-      version: 1,
-      text: lines.join('\n')
-    });
-
-    const tokens = collectSemanticTokens(analysis);
-
-    assertToken(tokens, 2, lines[2].indexOf('mydialog'), 'class', []);
-    assertToken(tokens, 2, lines[2].indexOf('OnCreate'), 'function', ['declaration']);
   });
 
   test('tokens return types before qualified methods as classes', () => {
@@ -157,8 +139,7 @@ suite('collectSemanticTokens', () => {
 
     const tokens = collectSemanticTokens(analysis);
 
-    assertToken(tokens, 2, lines[2].indexOf('Version'), 'class', []);
-    assertNoToken(tokens, 2, lines[2].indexOf('Version'), 'function');
+    assertOnlyToken(tokens, 2, lines[2].indexOf('Version'), 'class', []);
   });
 
   test('tokens inline GUI event declarations as methods', () => {
@@ -177,12 +158,8 @@ suite('collectSemanticTokens', () => {
 
     const tokens = collectSemanticTokens(analysis);
 
-    assertToken(tokens, 1, lines[1].indexOf('OnCreate'), 'method', ['declaration']);
-    assertToken(tokens, 2, lines[2].indexOf('OnCreate'), 'method', ['declaration']);
-    assertNoToken(tokens, 1, lines[1].indexOf('OnCreate'), 'property');
-    assertNoToken(tokens, 2, lines[2].indexOf('OnCreate'), 'property');
-    assertNoToken(tokens, 1, lines[1].indexOf('OnCreate'), 'variable');
-    assertNoToken(tokens, 2, lines[2].indexOf('OnCreate'), 'variable');
+    assertOnlyToken(tokens, 1, lines[1].indexOf('OnCreate'), 'method', ['declaration']);
+    assertOnlyToken(tokens, 2, lines[2].indexOf('OnCreate'), 'method', ['declaration']);
   });
 
   test('tokens operator declarations separately from methods', () => {
@@ -200,10 +177,8 @@ suite('collectSemanticTokens', () => {
 
     const tokens = collectSemanticTokens(analysis);
 
-    assertToken(tokens, 1, lines[1].indexOf('Next'), 'function', ['declaration']);
-    assertToken(tokens, 2, lines[2].indexOf('operator++'), 'operator', ['declaration']);
-    assertNoToken(tokens, 2, lines[2].indexOf('operator++'), 'function');
-    assertNoToken(tokens, 2, lines[2].indexOf('operator++'), 'method');
+    assertOnlyToken(tokens, 1, lines[1].indexOf('Next'), 'function', ['declaration']);
+    assertOnlyToken(tokens, 2, lines[2].indexOf('operator++'), 'operator', ['declaration']);
   });
 
   test('tokens AXEL execution file names as functions', () => {
@@ -326,24 +301,6 @@ suite('collectSemanticTokens', () => {
     assertNoToken(tokens, 7, lines[7].indexOf('inactiveElse'), 'variable');
   });
 
-  test('treats undefined identifiers in if expressions as false for inactive ranges', () => {
-    const lines = [
-      '#if MISSING',
-      'int inactiveValue;',
-      '#else',
-      'int activeValue;',
-      '#endif'
-    ];
-    const analysis = new DocumentAnalyzer().analyzeDocument({
-      uri: 'file:///main.axl',
-      version: 1,
-      text: lines.join('\n')
-    });
-
-    assert.deepStrictEqual(analysis.inactiveRanges, [
-      { start: { line: 1, character: 0 }, end: { line: 1, character: 18 } }
-    ]);
-  });
 });
 
 function assertToken(
@@ -390,4 +347,14 @@ function declaration(
     selectionRange: { start: { line: 0, character: 0 }, end: { line: 0, character: name.length } },
     ...extras
   };
+}
+
+function assertOnlyToken(
+  tokens: ReturnType<typeof collectSemanticTokens>,
+  line: number, character: number,
+  tokenType: ReturnType<typeof collectSemanticTokens>[number]['tokenType'],
+  modifiers: readonly string[]
+): void {
+  assert.deepStrictEqual(tokens.filter(token => token.range.start.line === line && token.range.start.character === character)
+    .map(token => ({ tokenType: token.tokenType, modifiers: token.modifiers })), [{ tokenType, modifiers }]);
 }

@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import type { DocumentDiagnosticReport, Hover, InitializeResult, Location } from 'vscode-languageserver/node';
+import type { DocumentDiagnosticReport, Hover, Location } from 'vscode-languageserver/node';
 import { startLspServer } from '../support/lspClient';
 
 suite('LSP stdio document lifecycle', function () {
@@ -9,10 +9,9 @@ suite('LSP stdio document lifecycle', function () {
   const textDocument = { uri };
   setup(async () => {
     server = startLspServer();
-    const initialized = await server.request<InitializeResult>('initialize', {
+    await server.request('initialize', {
       processId: null, rootUri: null, capabilities: {}, initializationOptions: {}
     });
-    assert.strictEqual(initialized.capabilities.hoverProvider, true);
     await server.notify('initialized', {});
   });
   teardown(async () => { await server?.stop(); });

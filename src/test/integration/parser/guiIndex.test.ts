@@ -49,22 +49,18 @@ suite('buildGuiIndex', () => {
         typeName: 'GCVBoxLayout',
         path: [],
         anonymous: true,
-        methods: [],
         parts: [
           {
             name: 'group',
             typeName: 'GCGroupBox',
             path: ['group'],
             anonymous: false,
-            methods: [],
             parts: [
               {
                 name: 'input',
                 typeName: 'GCText',
                 path: ['group', 'input'],
                 anonymous: false,
-                methods: [],
-                parts: []
               },
               {
                 name: 'button',
@@ -76,7 +72,6 @@ suite('buildGuiIndex', () => {
                   receiverPath: ['group', 'button', 'OnPush'],
                   event: true
                 }],
-                parts: []
               }
             ]
           }
@@ -147,12 +142,10 @@ suite('buildGuiIndex', () => {
   });
 
   test('does not throw for malformed GUI classes', () => {
-    const index = buildGuiIndex(
+    assert.doesNotThrow(() => buildGuiIndex(
       parser.parse('class Broken : public GCDialog { GCVBoxLayout { GCText recovered; ').rootNode,
       uri
-    );
-
-    assert.deepStrictEqual(index, []);
+    ));
   });
 });
 
@@ -162,11 +155,11 @@ function summarizeParts(parts: ReturnType<typeof buildGuiIndex>[number]['parts']
     typeName: part.typeName,
     path: part.path,
     anonymous: part.anonymous,
-    methods: part.methods.map((method) => ({
+    ...(part.methods.length ? { methods: part.methods.map((method) => ({
       name: method.name,
       receiverPath: method.receiverPath,
       event: method.event
-    })),
-    parts: summarizeParts(part.parts)
+    })) } : {}),
+    ...(part.parts.length ? { parts: summarizeParts(part.parts) } : {})
   }));
 }

@@ -49,12 +49,11 @@ suite('Member receiver scope', () => {
       const position = positionFromOffset(text, text.lastIndexOf(name) + 1);
       return {analysis, position, workspaceIndex:index};
     }
-    test(`hovers the actual receiver method ${name}`, () => {
-      const hover = getHover(context());
-      assert.ok(hover?.markdown.includes(signature), JSON.stringify(hover));
-    });
-    test(`navigates to the actual receiver method ${name}`, () => {
+    test(`hovers and navigates to the actual receiver method ${name}`, () => {
       const input = context();
+      assert.deepStrictEqual(input.analysis.diagnostics, []);
+      const hover = getHover(input);
+      assert.ok(hover?.markdown.includes(signature), JSON.stringify(hover));
       const target = input.analysis.declarations.find(d => d.name === name)!;
       assert.deepStrictEqual(getDefinitions(input), [{uri:target.uri,range:target.selectionRange}]);
     });

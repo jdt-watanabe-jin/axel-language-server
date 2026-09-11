@@ -8,23 +8,6 @@ import { analyzeMarked, positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('navigation', () => {
-  test('definition on a local reference jumps to local declaration', () => {
-    const { analysis, position } = analyzeMarked('void main() { int local; |local = 1; }');
-
-    const definitions = getDefinitions({
-      analysis,
-      position,
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(definitions, [{
-      uri: 'file:///main.axl',
-      range: {
-        start: { line: 0, character: 18 },
-        end: { line: 0, character: 23 }
-      }
-    }]);
-  });
 
   test('definition across include jumps to included file declaration', () => {
     const tempDir = createTempDir();
@@ -155,6 +138,20 @@ suite('navigation', () => {
   test('references include declaration only when requested', () => {
     const { analysis, position } = analyzeMarked('void main() { int local; |local = local + 1; }');
 
+    const definitions = getDefinitions({
+      analysis,
+      position,
+      workspaceIndex: createWorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(definitions, [{
+      uri: 'file:///main.axl',
+      range: {
+        start: { line: 0, character: 18 },
+        end: { line: 0, character: 23 }
+      }
+    }]);
+
     const withDeclaration = getReferences({
       analysis,
       position,
@@ -274,6 +271,7 @@ suite('navigation', () => {
       'void main() { FILE::|IsDirectory("x"); }'
     ].join('\n'));
 
+    assert.deepStrictEqual(getDefinitions({ analysis, position: { line: 1, character: 15 }, workspaceIndex: createWorkspaceIndex() }).map(location => location.range.start), [{ line: 0, character: 6 }]);
     const definitions = getDefinitions({
       analysis,
       position,
@@ -302,23 +300,6 @@ suite('navigation', () => {
 
     assert.deepStrictEqual(definitions.map((location) => location.range.start), [
       { line: 2, character: 24 }
-    ]);
-  });
-
-  test('definition on a static qualified receiver jumps to the class declaration', () => {
-    const { analysis, position } = analyzeMarked([
-      'class myDlg { static void DoModless() {} };',
-      'void main() { |myDlg::DoModless(); }'
-    ].join('\n'));
-
-    const definitions = getDefinitions({
-      analysis,
-      position,
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(definitions.map((location) => location.range.start), [
-      { line: 0, character: 6 }
     ]);
   });
 
@@ -565,6 +546,11 @@ suite('navigation', () => {
       '};'
     ].join('\n'));
 
+    for (const referencePosition of [position, { line: 0, character: 22 }]) {
+      assert.deepStrictEqual(getReferences({ analysis, position: referencePosition, includeDeclaration: true, workspaceIndex: createWorkspaceIndex() }).map(location => location.range.start), [
+        { line: 0, character: 22 }, { line: 3, character: 18 }
+      ]);
+    }
     const definitions = getDefinitions({
       analysis,
       position,
@@ -573,50 +559,6 @@ suite('navigation', () => {
 
     assert.deepStrictEqual(definitions.map((location) => location.range.start), [
       { line: 0, character: 22 }
-    ]);
-  });
-
-  test('references for an inherited GUI event include inline event declarations', () => {
-    const { analysis, position } = analyzeMarked([
-      'class GCWidget { void |OnCreate() {} };',
-      'class GCButtonGroup : public GCWidget {};',
-      'class mydialog : public GCDialog {',
-      '  GCButtonGroup { OnCreate() {} };',
-      '};'
-    ].join('\n'));
-
-    const references = getReferences({
-      analysis,
-      position,
-      includeDeclaration: true,
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(references.map((location) => location.range.start), [
-      { line: 0, character: 22 },
-      { line: 3, character: 18 }
-    ]);
-  });
-
-  test('references from an inherited inline GUI event use the inherited member declaration', () => {
-    const { analysis, position } = analyzeMarked([
-      'class GCWidget { void OnCreate() {} };',
-      'class GCButtonGroup : public GCWidget {};',
-      'class mydialog : public GCDialog {',
-      '  GCButtonGroup { |OnCreate() {} };',
-      '};'
-    ].join('\n'));
-
-    const references = getReferences({
-      analysis,
-      position,
-      includeDeclaration: true,
-      workspaceIndex: createWorkspaceIndex()
-    });
-
-    assert.deepStrictEqual(references.map((location) => location.range.start), [
-      { line: 0, character: 22 },
-      { line: 3, character: 18 }
     ]);
   });
 

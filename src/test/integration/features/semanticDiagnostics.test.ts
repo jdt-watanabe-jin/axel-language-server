@@ -4,7 +4,6 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { createAxelParser } from '../../../analyzer/axelParser';
 import { buildGuiIndex, collectExternalGuiMethods } from '../../../analyzer/guiIndex';
-import { collectIncludes } from '../../../analyzer/includeResolver';
 import { buildScopeIndex } from '../../../analyzer/scopeIndex';
 import { collectSemanticDiagnostics } from '../../../analyzer/semanticDiagnostics';
 import { buildSymbolIndex } from '../../../analyzer/symbolIndex';
@@ -14,28 +13,6 @@ suite('collectSemanticDiagnostics', () => {
   let parser: ReturnType<typeof createAxelParser>;
   setup(() => { parser = createAxelParser(); });
   const uri = 'file:///main.axl';
-
-  test('reports duplicate declarations in the same scope', () => {
-    const rootNode = parser.parse('void main() { int value; int value; }').rootNode;
-    const symbols = buildSymbolIndex(rootNode, uri);
-    const diagnostics = collectSemanticDiagnostics({
-      analysis: {
-        uri,
-        diagnostics: [],
-        declarations: symbols.declarations,
-        references: symbols.references,
-        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
-        includes: [],
-        guiClasses: [],
-        guiMethods: []
-      }
-    });
-
-    assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
-      "Duplicate declaration 'value'."
-    ]);
-    assert.deepStrictEqual(diagnostics[0].range, symbols.declarations[2].selectionRange);
-  });
 
   test('does not report declarations with the same name in nested scopes', () => {
     const rootNode = parser.parse('void main() { int value; { int value; } }').rootNode;
@@ -116,11 +93,12 @@ suite('collectSemanticDiagnostics', () => {
       }
     });
 
+    assert.deepStrictEqual(diagnostics[0].range, { start: { line: 0, character: 30 }, end: { line: 0, character: 36 } });
     assert.deepStrictEqual(diagnostics.map(item => item.message), ["Duplicate declaration 'printf'."]);
   });
 
-  test('reports function calls with too many arguments', () => {
-    const rootNode = parser.parse('void helper(int value) {} void main() { helper(1, 2); }').rootNode;
+  test('reports calls with too few and too many arguments', () => {
+    const rootNode = parser.parse('void helper(int value) {} void main() { helper(1, 2); helper(); }').rootNode;
     const symbols = buildSymbolIndex(rootNode, uri);
     const diagnostics = collectSemanticDiagnostics({
       analysis: {
@@ -136,33 +114,14 @@ suite('collectSemanticDiagnostics', () => {
     });
 
     assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
-      "Function 'helper' expects 1 argument, but got 2."
+      "Function 'helper' expects 1 argument, but got 2.",
+      "Function 'helper' expects 1 argument, but got 0."
     ]);
+    assert.deepStrictEqual(diagnostics[1].range, { start: { line: 0, character: 54 }, end: { line: 0, character: 60 } });
     assert.deepStrictEqual(diagnostics[0].range, {
       start: { line: 0, character: 40 },
       end: { line: 0, character: 46 }
     });
-  });
-
-  test('reports function calls with too few arguments', () => {
-    const rootNode = parser.parse('void helper(int left, int right) {} void main() { helper(1); }').rootNode;
-    const symbols = buildSymbolIndex(rootNode, uri);
-    const diagnostics = collectSemanticDiagnostics({
-      analysis: {
-        uri,
-        diagnostics: [],
-        declarations: symbols.declarations,
-        references: symbols.references,
-        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
-        includes: [],
-        guiClasses: [],
-        guiMethods: []
-      }
-    });
-
-    assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
-      "Function 'helper' expects 2 arguments, but got 1."
-    ]);
   });
 
   test('does not report extra arguments for variadic functions', () => {
@@ -184,27 +143,8 @@ suite('collectSemanticDiagnostics', () => {
     assert.deepStrictEqual(diagnostics, []);
   });
 
-  test('does not report omitted default arguments', () => {
-    const rootNode = parser.parse('void configure(int width, int height = 100) {} void main() { configure(640); }').rootNode;
-    const symbols = buildSymbolIndex(rootNode, uri);
-    const diagnostics = collectSemanticDiagnostics({
-      analysis: {
-        uri,
-        diagnostics: [],
-        declarations: symbols.declarations,
-        references: symbols.references,
-        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
-        includes: [],
-        guiClasses: [],
-        guiMethods: []
-      }
-    });
-
-    assert.deepStrictEqual(diagnostics, []);
-  });
-
   test('reports calls that omit required arguments before default arguments', () => {
-    const rootNode = parser.parse('void configure(int width, int height = 100) {} void main() { configure(); }').rootNode;
+    const rootNode = parser.parse('void configure(int width, int height = 100) {} void main() { configure(640); configure(); }').rootNode;
     const symbols = buildSymbolIndex(rootNode, uri);
     const diagnostics = collectSemanticDiagnostics({
       analysis: {
@@ -219,39 +159,17 @@ suite('collectSemanticDiagnostics', () => {
       }
     });
 
+    assert.deepStrictEqual(diagnostics[0].range, { start: { line: 0, character: 77 }, end: { line: 0, character: 86 } });
     assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
       "Function 'configure' expects 1 or 2 arguments, but got 0."
     ]);
-  });
-
-  test('accepts calls matching any overload argument count', () => {
-    const rootNode = parser.parse([
-      'void pick(int value) {}',
-      'void pick(int left, int right) {}',
-      'void main() { pick(1); pick(1, 2); }'
-    ].join('\n')).rootNode;
-    const symbols = buildSymbolIndex(rootNode, uri);
-    const diagnostics = collectSemanticDiagnostics({
-      analysis: {
-        uri,
-        diagnostics: [],
-        declarations: symbols.declarations,
-        references: symbols.references,
-        scopes: buildScopeIndex(rootNode, uri, symbols.declarations),
-        includes: [],
-        guiClasses: [],
-        guiMethods: []
-      }
-    });
-
-    assert.deepStrictEqual(diagnostics, []);
   });
 
   test('reports calls that match no overload argument count', () => {
     const rootNode = parser.parse([
       'void pick(int value) {}',
       'void pick(int left, int right) {}',
-      'void main() { pick(1, 2, 3); }'
+      'void main() { pick(1); pick(1, 2); pick(1, 2, 3); }'
     ].join('\n')).rootNode;
     const symbols = buildSymbolIndex(rootNode, uri);
     const diagnostics = collectSemanticDiagnostics({
@@ -267,6 +185,7 @@ suite('collectSemanticDiagnostics', () => {
       }
     });
 
+    assert.deepStrictEqual(diagnostics[0].range, { start: { line: 2, character: 35 }, end: { line: 2, character: 39 } });
     assert.deepStrictEqual(diagnostics.map((diagnostic) => diagnostic.message), [
       "Function 'pick' expects 1 or 2 arguments, but got 3."
     ]);
@@ -709,9 +628,7 @@ suite('WorkspaceIndex semantic diagnostics', () => {
     assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
       "Include file not found: 'missing.h'."
     ]);
-    assert.deepStrictEqual(analysis.diagnostics[0].range, collectIncludes(
-      createAxelParser().parse('#include "missing.h"\nint value;').rootNode
-    )[0].range);
+    assert.deepStrictEqual(analysis.diagnostics[0].range, { start: { line: 0, character: 9 }, end: { line: 0, character: 20 } });
   });
 
   test('reports unresolved AXEL execution files at the command file range', () => {
@@ -735,22 +652,6 @@ suite('WorkspaceIndex semantic diagnostics', () => {
     });
   });
 
-  test('limits diagnostics deterministically by maxNumberOfProblems', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const uri = pathToFileURL(mainPath).toString();
-    const index = createWorkspaceIndex({ maxNumberOfProblems: 1 });
-
-    const analysis = index.indexOpenDocument({
-      uri,
-      version: 1,
-      text: '#include "missing.h"\nvoid main() { int value; int value; }'
-    });
-
-    assert.deepStrictEqual(analysis.diagnostics.map((diagnostic) => diagnostic.message), [
-      "Include file not found: 'missing.h'."
-    ]);
-  });
 });
 
 const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();

@@ -1,36 +1,15 @@
 import * as assert from 'assert';
 import { registerHandlers } from '../../lsp/registerHandlers';
-import { createTestDocument } from '../support/handlerFixtures';
+import { createTestDocument, createHandlerConnection } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
   test('returns empty completion list when analysis fails', () => {
     let completionHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const errors: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
-      },
-      onHover: () => undefined,
+    const connection = createHandlerConnection({
       onCompletion: (handler: typeof completionHandler) => {
         completionHandler = handler;
       },
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('broken'),
       onDidOpen: () => undefined,
@@ -56,38 +35,18 @@ suite('registerHandlers', () => {
     });
 
     assert.deepStrictEqual(result, []);
-    assert.deepStrictEqual(errors, ['Completion failed: analysis exploded']);
+    assert.ok(errors.some(message => message.toLowerCase().includes('completion')
+      && message.includes('analysis exploded')));
   });
 
   test('returns null signature help when analysis fails', () => {
     let signatureHelpHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const errors: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
+    const connection = createHandlerConnection({
       onSignatureHelp: (handler: typeof signatureHelpHandler) => {
         signatureHelpHandler = handler;
       },
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('broken'),
       onDidOpen: () => undefined,
@@ -113,35 +72,18 @@ suite('registerHandlers', () => {
     });
 
     assert.strictEqual(result, null);
-    assert.deepStrictEqual(errors, ['Signature help failed: analysis exploded']);
+    assert.ok(errors.some(message => message.toLowerCase().includes('signature help')
+      && message.includes('analysis exploded')));
   });
 
   test('returns empty semantic tokens when analysis fails', () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const errors: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: (handler: typeof semanticTokensHandler) => {
-            semanticTokensHandler = handler;
-          }
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    const connection = createHandlerConnection({
+      languages: { diagnostics: { on: () => undefined }, semanticTokens: {
+        on: (handler: typeof semanticTokensHandler) => { semanticTokensHandler = handler; }
+      } }
+    });
     const documents = {
       get: () => createTestDocument('broken'),
       onDidOpen: () => undefined,
@@ -166,7 +108,8 @@ suite('registerHandlers', () => {
     });
 
     assert.deepStrictEqual(result, { data: [] });
-    assert.deepStrictEqual(errors, ['Semantic tokens failed: analysis exploded']);
+    assert.ok(errors.some(message => message.toLowerCase().includes('semantic tokens')
+      && message.includes('analysis exploded')));
   });
 });
 

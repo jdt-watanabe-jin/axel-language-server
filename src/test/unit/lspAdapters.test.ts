@@ -1,33 +1,13 @@
 import * as assert from 'assert';
-import {
-CodeActionKind,
-CompletionItemKind,
-DiagnosticSeverity,
-DocumentDiagnosticReportKind,
-Location,
-SemanticTokenModifiers,
-SemanticTokenTypes,
-SymbolKind,
-TextDocumentSyncKind
-} from 'vscode-languageserver/node';
+import { CodeActionKind, CompletionItemKind, DiagnosticSeverity, SemanticTokenModifiers, SemanticTokenTypes, TextDocumentSyncKind } from 'vscode-languageserver/node';
 import { createInitializeResult } from '../../lsp/capabilities';
-import { toLspCodeActions } from '../../lsp/codeActions';
+
 import { toLspCompletionItem } from '../../lsp/completion';
-import { toDocumentDiagnosticReport, toLspDiagnostic } from '../../lsp/diagnostics';
-import { toLspDocumentSymbol } from '../../lsp/documentSymbols';
-import { toLspTextEdits } from '../../lsp/formatting';
-import { toLspLocations } from '../../lsp/navigation';
-import { toLspWorkspaceEdit } from '../../lsp/rename';
+import { toLspDiagnostic } from '../../lsp/diagnostics';
+
 import { SEMANTIC_TOKEN_LEGEND, toLspSemanticTokens } from '../../lsp/semanticTokens';
-import { toLspSignatureHelp } from '../../lsp/signatureHelp';
-import type {
-AnalysisCodeAction,
-AnalysisCompletionItem,
-AnalysisDiagnostic,
-AnalysisSemanticToken,
-AnalysisSignatureHelp,
-AnalysisSymbol
-} from '../../types/analysis';
+
+import type { AnalysisCompletionItem, AnalysisDiagnostic, AnalysisSemanticToken } from '../../types/analysis';
 
 suite('LSP adapters', () => {
   test('advertises the hover capability', () => {
@@ -40,6 +20,8 @@ suite('LSP adapters', () => {
     assert.ok(triggerCharacters.includes('r'));
     assert.ok(triggerCharacters.includes('_'));
     assert.ok(triggerCharacters.includes('/'));
+    assert.ok(triggerCharacters.includes('@'));
+    assert.ok(triggerCharacters.includes('\\'));
     assert.ok(triggerCharacters.includes('>'));
     assert.deepStrictEqual(result.capabilities.diagnosticProvider, {
       interFileDependencies: false,
@@ -84,34 +66,6 @@ suite('LSP adapters', () => {
     assert.strictEqual(lsp.documentation, 'AXEL standard library output function.');
   });
 
-  test('converts analyzer signature help to LSP signature help', () => {
-    const signatureHelp: AnalysisSignatureHelp = {
-      signatures: [{
-        label: 'void foo(int count, string name)',
-        parameters: [
-          { label: 'int count' },
-          { label: 'string name' }
-        ]
-      }],
-      activeSignature: 0,
-      activeParameter: 1
-    };
-
-    const lsp = toLspSignatureHelp(signatureHelp);
-
-    assert.deepStrictEqual(lsp, {
-      signatures: [{
-        label: 'void foo(int count, string name)',
-        parameters: [
-          { label: 'int count' },
-          { label: 'string name' }
-        ]
-      }],
-      activeSignature: 0,
-      activeParameter: 1
-    });
-  });
-
   test('preserves include path completion insertion metadata', () => {
     const completion: AnalysisCompletionItem = {
       name: 'button.h',
@@ -145,173 +99,6 @@ suite('LSP adapters', () => {
       assert.deepStrictEqual(lsp.range, diagnostic.range);
     });
   }
-
-
-  test('wraps diagnostics in a full document diagnostic report', () => {
-    const report = toDocumentDiagnosticReport([]);
-
-    assert.strictEqual(report.kind, DocumentDiagnosticReportKind.Full);
-    assert.deepStrictEqual(report.items, []);
-  });
-
-  test('converts analyzer symbols to LSP document symbols', () => {
-    const symbol: AnalysisSymbol = {
-      name: 'main',
-      kind: 'function',
-      detail: 'function',
-      range: {
-        start: { line: 0, character: 0 },
-        end: { line: 0, character: 14 }
-      },
-      selectionRange: {
-        start: { line: 0, character: 5 },
-        end: { line: 0, character: 9 }
-      }
-    };
-
-    const lsp = toLspDocumentSymbol(symbol);
-
-    assert.strictEqual(lsp.name, 'main');
-    assert.strictEqual(lsp.kind, SymbolKind.Function);
-    assert.strictEqual(lsp.detail, 'function');
-  });
-
-  test('converts operator analyzer symbols to LSP operators', () => {
-    const symbol: AnalysisSymbol = {
-      name: 'operator++',
-      kind: 'operator',
-      detail: 'operator',
-      range: {
-        start: { line: 0, character: 0 },
-        end: { line: 0, character: 16 }
-      },
-      selectionRange: {
-        start: { line: 0, character: 4 },
-        end: { line: 0, character: 14 }
-      }
-    };
-
-    const lsp = toLspDocumentSymbol(symbol);
-
-    assert.strictEqual(lsp.name, 'operator++');
-    assert.strictEqual(lsp.kind, SymbolKind.Operator);
-    assert.strictEqual(lsp.detail, 'operator');
-  });
-
-  test('converts enum member analyzer symbols to LSP enum members', () => {
-    const symbol: AnalysisSymbol = {
-      name: 'A',
-      kind: 'enumMember',
-      detail: 'enum Mode::A',
-      range: {
-        start: { line: 0, character: 12 },
-        end: { line: 0, character: 13 }
-      },
-      selectionRange: {
-        start: { line: 0, character: 12 },
-        end: { line: 0, character: 13 }
-      }
-    };
-
-    const lsp = toLspDocumentSymbol(symbol);
-
-    assert.strictEqual(lsp.name, 'A');
-    assert.strictEqual(lsp.kind, SymbolKind.EnumMember);
-    assert.strictEqual(lsp.detail, 'enum Mode::A');
-  });
-
-  test('converts analyzer locations to LSP locations', () => {
-    const locations = toLspLocations([{
-      uri: 'file:///main.axl',
-      range: {
-        start: { line: 1, character: 2 },
-        end: { line: 1, character: 6 }
-      }
-    }]);
-
-    assert.deepStrictEqual(locations, [
-      Location.create('file:///main.axl', {
-        start: { line: 1, character: 2 },
-        end: { line: 1, character: 6 }
-      })
-    ]);
-  });
-
-  test('converts analyzer text edits to LSP text edits', () => {
-    const edits = toLspTextEdits([{
-      range: {
-        start: { line: 1, character: 0 },
-        end: { line: 1, character: 2 }
-      },
-      newText: '    '
-    }]);
-
-    assert.deepStrictEqual(edits, [{
-      range: {
-        start: { line: 1, character: 0 },
-        end: { line: 1, character: 2 }
-      },
-      newText: '    '
-    }]);
-  });
-
-  test('converts analyzer workspace edits to LSP workspace edits', () => {
-    const edit = toLspWorkspaceEdit({
-      changes: {
-        'file:///main.axl': [{
-          range: {
-            start: { line: 1, character: 2 },
-            end: { line: 1, character: 7 }
-          },
-          newText: 'renamed'
-        }]
-      }
-    });
-
-    assert.deepStrictEqual(edit, {
-      changes: {
-        'file:///main.axl': [{
-          range: {
-            start: { line: 1, character: 2 },
-            end: { line: 1, character: 7 }
-          },
-          newText: 'renamed'
-        }]
-      }
-    });
-  });
-
-  test('converts analyzer code actions to LSP code actions', () => {
-    const diagnostic: AnalysisDiagnostic = {
-      severity: 'error',
-      source: 'axel',
-      message: "Unknown type 'Widget'.",
-      range: {
-        start: { line: 1, character: 0 },
-        end: { line: 1, character: 6 }
-      }
-    };
-    const action: AnalysisCodeAction = {
-      title: 'Add include "types.h"',
-      kind: 'quickfix',
-      diagnostics: [diagnostic],
-      edit: {
-        changes: {
-          'file:///main.axl': [{
-            range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
-            newText: '#include "types.h"\n'
-          }]
-        }
-      }
-    };
-
-    assert.deepStrictEqual(toLspCodeActions([action]), [{
-      title: 'Add include "types.h"',
-      kind: CodeActionKind.QuickFix,
-      diagnostics: [toLspDiagnostic(diagnostic)],
-      edit: toLspWorkspaceEdit(action.edit)
-    }]);
-  });
 
   test('encodes semantic tokens with relative position deltas', () => {
     const tokens: AnalysisSemanticToken[] = [

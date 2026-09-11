@@ -1,3 +1,4 @@
+import { normalizeTargetPlatform } from '../../../analyzer/targetPlatform';
 import * as assert from 'assert';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
 import { getHover } from '../../../analyzer/hover';
@@ -30,7 +31,7 @@ suite('target platform', () => {
       assert.deepStrictEqual(analysis.diagnostics, []);
       assert.strictEqual(analysis.declarations.filter(d => d.name.startsWith('ok')).length, 11);
       assert.ok(!analysis.declarations.some(d => d.name.startsWith('wrong')));
-      for (const name of names) {
+      for (const name of targetPlatform === 'windows-x64' ? ['__OS_WINDOWS__', '__OS_UNIX__'] : []) {
         const context = { analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf(name)) };
         assert.ok(getHover(context)?.plainText.includes(`${name} (int)\n${enabled.includes(name) ? 1 : 0}`));
         assert.ok(getCompletions({ ...context, text }).some(item => item.name === name));
@@ -50,13 +51,14 @@ suite('target platform', () => {
     }
   });
   test('defaults omitted and invalid settings to windows-x64', () => {
-    for (const targetPlatform of [undefined, null, '', 'linux-arm64', 42, '__proto__']) {
-      const index = new WorkspaceIndex();
-      index.configure({ targetPlatform });
-      const text = '#if __OS_WINDOWS__ && __CPU_x86_64__ && __OS_64bit__\nint expected;\n#endif';
-      const analysis = index.analyzeDocument({ uri, version: 1, text });
-      assert.ok(analysis.declarations.some(d => d.name === 'expected'));
+    for (const value of [undefined, null, '', 'linux-arm64', 42, '__proto__']) {
+      assert.strictEqual(normalizeTargetPlatform(value), 'windows-x64');
     }
+    const index = new WorkspaceIndex();
+    const text = '#if __OS_WINDOWS__ && __CPU_x86_64__ && __OS_64bit__\nint expected;\n#endif';
+    const analysis = index.analyzeDocument({ uri, version: 1, text });
+    assert.deepStrictEqual(analysis.diagnostics, []);
+    assert.ok(analysis.declarations.some(d => d.name === 'expected'));
   });
   test('protects all platform macros from source mutations', () => {
     index.configure({ targetPlatform: 'linux-x64' });

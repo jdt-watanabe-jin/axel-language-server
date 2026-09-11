@@ -4,13 +4,9 @@ import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { loadTypeCheckingCases, typeCheckingFixtureRoot, type RuntimeCase } from '../support/typeCheckingCorpus';
+import { loadTypeCheckingCases, typeCheckingFixtureRoot, type RuntimeCase } from '../test/support/typeCheckingCorpus';
 
-// Explicit opt-in: ordinary CI never starts AXEL or requires proprietary files.
-// AXEL_TEST_RUNTIME=1 AXEL_TEST_RUNTIME_EXE=<axel.exe> npm run test:external -- --grep "Type checking: external runtime"
-// Optional: AXEL_TEST_RUNTIME_FILTER=<case-id substring>, AXEL_TEST_RUNTIME_OUTPUT=<directory>,
-// AXEL_TEST_RUNTIME_INCLUDE_CRASH=1 (run the separately tracked compiler crash).
-const enabled = process.env.AXEL_TEST_RUNTIME === '1';
+// Explicit command: npm run collect:runtime (requires AXEL_TEST_RUNTIME_EXE).
 const cases = loadTypeCheckingCases();
 const filter = process.env.AXEL_TEST_RUNTIME_FILTER;
 const selected = cases.filter(item => !filter || item.id.includes(filter));
@@ -31,32 +27,26 @@ interface Observation {
   elapsedMs: number;
 }
 
-suite('Type checking: external runtime', () => {
-  let executable: string;
-  let output: string;
-  let runtimeHome: string;
+async function main(): Promise<void> {
   const observations: Observation[] = [];
 
-  suiteSetup(function () {
-    if (!enabled) { this.skip(); }
-    assert.strictEqual(process.platform, 'win32', 'The verified AXEL runtime profile requires Windows.');
-    assert.ok(process.env.AXEL_TEST_RUNTIME_EXE, 'Set AXEL_TEST_RUNTIME_EXE to the verified axel.exe.');
-    executable = path.resolve(process.env.AXEL_TEST_RUNTIME_EXE!);
-    const manifest = JSON.parse(fs.readFileSync(path.join(typeCheckingFixtureRoot, 'manifest.json'), 'utf8'));
-    const executableSha256 = createHash('sha256').update(fs.readFileSync(executable)).digest('hex');
-    assert.strictEqual(executableSha256, manifest.executableSha256, 'Runtime differs from the verified compiler profile.');
-    assert.ok(selected.length > 0, 'Runtime filter matched no corpus cases.');
-    runtimeHome = process.env.AXEL_TEST_RUNTIME_HOME ?? path.dirname(path.dirname(executable));
-    output = process.env.AXEL_TEST_RUNTIME_OUTPUT
-      ? path.resolve(process.env.AXEL_TEST_RUNTIME_OUTPUT)
-      : fs.mkdtempSync(path.join(os.tmpdir(), 'axel-type-runtime-'));
-    fs.mkdirSync(output, { recursive: true });
-    fs.writeFileSync(path.join(output, 'environment.json'), JSON.stringify({
-      executable, executableSha256, runtimeHome, profile: manifest.profile,
-      mode: '-nogui', startedAt: new Date().toISOString(), filter, selected: selected.map(item => item.id)
-    }, null, 2));
-    console.log(`AXEL runtime evidence: ${output}`);
-  });
+  assert.strictEqual(process.platform, 'win32', 'The verified AXEL runtime profile requires Windows.');
+  assert.ok(process.env.AXEL_TEST_RUNTIME_EXE, 'Set AXEL_TEST_RUNTIME_EXE to the verified axel.exe.');
+  const executable = path.resolve(process.env.AXEL_TEST_RUNTIME_EXE!);
+  const manifest = JSON.parse(fs.readFileSync(path.join(typeCheckingFixtureRoot, 'manifest.json'), 'utf8'));
+  const executableSha256 = createHash('sha256').update(fs.readFileSync(executable)).digest('hex');
+  assert.strictEqual(executableSha256, manifest.executableSha256, 'Runtime differs from the verified compiler profile.');
+  assert.ok(selected.length > 0, 'Runtime filter matched no corpus cases.');
+  const runtimeHome = process.env.AXEL_TEST_RUNTIME_HOME ?? path.dirname(path.dirname(executable));
+  const output = process.env.AXEL_TEST_RUNTIME_OUTPUT
+    ? path.resolve(process.env.AXEL_TEST_RUNTIME_OUTPUT)
+    : fs.mkdtempSync(path.join(os.tmpdir(), 'axel-type-runtime-'));
+  fs.mkdirSync(output, { recursive: true });
+  fs.writeFileSync(path.join(output, 'environment.json'), JSON.stringify({
+    executable, executableSha256, runtimeHome, profile: manifest.profile,
+    mode: '-nogui', startedAt: new Date().toISOString(), filter, selected: selected.map(item => item.id)
+  }, null, 2));
+  console.log(`AXEL runtime evidence: ${output}`);
 
   function persist(observation: Observation): void {
     observations.push(observation);
@@ -115,9 +105,8 @@ suite('Type checking: external runtime', () => {
     return observation;
   }
 
-  test('matches ordinary compiler cases using four isolated workers', async function () {
+  async function collectOrdinary(): Promise<void> {
     const ordinary = selected.filter(item => item.expectedError !== null);
-    this.timeout(Math.ceil(ordinary.length / 4) * 25_000 + 10_000);
     let cursor = 0;
     await Promise.all(Array.from({length:Math.min(4, ordinary.length)}, async () => {
       while (cursor < ordinary.length) {
@@ -126,25 +115,36 @@ suite('Type checking: external runtime', () => {
         console.log(`${observations.length}/${ordinary.length} ${runtimeCase.id}: ${observed.state}`);
       }
     }));
+  }
+
+  function validateObservations(): void {
     const mismatches = observations.filter(observed => observed.expectedError !== null && (
       observed.state !== (observed.expectedError ? 'compiler_error' : 'accepted')
       || observed.expectedError && !observed.expectedCodes.some(code => observed.compilerCodes.includes(code))
     ));
     assert.deepStrictEqual(mismatches.map(item => ({id:item.id, state:item.state, expected:item.expectedError,
       expectedCodes:item.expectedCodes, actualCodes:item.compilerCodes})), [], `See runtime evidence in ${output}`);
-  });
+  }
 
-  test('records the known compiler crash separately', async function () {
-    this.timeout(25_000);
+  async function collectCrash(): Promise<void> {
     const runtimeCase = selected.find(item => item.expectedError === null);
-    if (!runtimeCase) { this.skip(); return; }
+    if (!runtimeCase) { return; }
     if (process.env.AXEL_TEST_RUNTIME_INCLUDE_CRASH !== '1') {
       persist({ id: runtimeCase.id, expectedError: null, expectedCodes: [], compilerCodes: [],
         state: 'not_run', exitCode: null, stdout: '', stderr: '', elapsedMs: 0 });
-      this.skip(); return;
+      return;
     }
     const observed = await run(runtimeCase);
     // A compiler crash is evidence, never an ordinary accepted/error assertion.
     console.log(`Separately tracked compiler crash ${runtimeCase.id}: ${observed.state}`);
-  });
+  }
+
+  await collectOrdinary();
+  await collectCrash();
+  validateObservations();
+}
+
+void main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
 });

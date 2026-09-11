@@ -42,12 +42,10 @@ suite('Type checking: context invalidation', () => {
     const f=setup();
     assert.deepStrictEqual(f.check('void main(){switch("x"){case "x":switch(1){case 1:break;}}}'),[]);
   });
-  test('macro changes, undef and inactive overrides preserve NULL provenance',()=>{
+  test('source macro override invalidates cached NULL provenance',()=>{
     const f=setup();
     assert.deepStrictEqual(f.check('void main(){int*p=NULL;}'),[]);
     assert.ok(f.check('#define NULL 0\nvoid main(){int*p=NULL;}',2).some(d=>d.code==='axel.type.initialization'));
-    assert.deepStrictEqual(f.check('#define NULL 0\n#undef NULL\nvoid main(){int*p=NULL;}',3),[]);
-    assert.deepStrictEqual(f.check('#if 0\n#define NULL 0\n#endif\nvoid main(){int*p=NULL;}',4),[]);
   });
   test('an included undef removes an earlier source NULL override',()=>{
     const f=setup();

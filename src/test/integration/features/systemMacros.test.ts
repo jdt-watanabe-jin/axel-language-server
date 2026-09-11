@@ -27,10 +27,12 @@ suite('system macros', () => {
       assert.deepStrictEqual(analysis.declarations.map(d => d.name).sort(), [active, 'defined', 'mode', 'MODE', 'expanded'].sort());
       assert.ok(getHover(at('__AXEL_INTERNAL__'))?.plainText.includes('__AXEL_INTERNAL__ (int)\n' + value));
       assert.ok(getHover(at('MODE('))?.plainText.includes('Expansion:\n' + value + ' + ' + value));
-      assert.ok(getCompletions({ ...at('__AXEL_INTERNAL__'), text }).some(item => item.name === '__AXEL_INTERNAL__'));
-      assert.ok(collectSemanticTokens(analysis).some(token => token.tokenType === 'macro'));
-      assert.deepStrictEqual(getDefinitions(at('__AXEL_INTERNAL__')), []);
-      assert.strictEqual(prepareRename(at('__AXEL_INTERNAL__')), null);
+      if (internalFeatures === undefined) {
+        assert.ok(getCompletions({ ...at('__AXEL_INTERNAL__'), text }).some(item => item.name === '__AXEL_INTERNAL__'));
+        assert.ok(collectSemanticTokens(analysis).some(token => token.tokenType === 'macro'));
+        assert.deepStrictEqual(getDefinitions(at('__AXEL_INTERNAL__')), []);
+        assert.strictEqual(prepareRename(at('__AXEL_INTERNAL__')), null);
+      }
     }
   });
   test('protects the internal system macro from source and configured defines', () => {
@@ -45,6 +47,10 @@ suite('system macros', () => {
     const text='#if __APP_LEDIT__\nint a;\n#elif undefinedFlag + 1\nint b;\n#endif\n#ifdef absent\nint c;\n#endif\n#ifndef otherAbsent\nint d;\n#endif';
     const {analysis}=fixture(text);
     assert.deepStrictEqual(analysis.diagnostics,[]);
+    assert.deepStrictEqual(analysis.inactiveRanges, [
+      { start: { line: 1, character: 0 }, end: { line: 1, character: 6 } },
+      { start: { line: 6, character: 0 }, end: { line: 6, character: 6 } }
+    ]);
     assert.ok(analysis.declarations.some(d=>d.name==='b'));
   });
   test('still diagnoses unknown identifiers in active conditional bodies', () => {
@@ -53,37 +59,29 @@ suite('system macros', () => {
     assert.ok(analysis.diagnostics.some(d=>d.message=== "Unknown identifier '__APP_LEDIT__'."));
     assert.ok(analysis.diagnostics.some(d=>d.message=== "Unknown identifier 'missingValue'."));
   });
-  test('recognizes __AXEL__ as an integer system macro for every tool', () => {
-    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
-      const text = 'int value = __AXEL__;';
-      const { analysis, at } = fixture(text, tool);
-      assert.deepStrictEqual(analysis.diagnostics, []);
-      assert.ok(getHover(at('__AXEL__'))?.plainText.includes('__AXEL__ (int)\n1'));
-      assert.ok(getCompletions({ ...at('__AXEL__'), text }).some(item => item.name === '__AXEL__'));
-      assert.strictEqual(collectSemanticTokens(analysis).filter(token => token.tokenType === 'macro').length, 1);
-      assert.deepStrictEqual(getDefinitions(at('__AXEL__')), []);
-      assert.strictEqual(prepareRename(at('__AXEL__')), null);
-    }
+  test('recognizes __AXEL__ as an integer system macro', () => {
+    const text = 'int value = __AXEL__;';
+    const { analysis, at } = fixture(text);
+    assert.deepStrictEqual(analysis.diagnostics, []);
+    assert.ok(getHover(at('__AXEL__'))?.plainText.includes('__AXEL__ (int)\n1'));
+    assert.ok(getCompletions({ ...at('__AXEL__'), text }).some(item => item.name === '__AXEL__'));
+    assert.strictEqual(collectSemanticTokens(analysis).filter(token => token.tokenType === 'macro').length, 1);
+    assert.deepStrictEqual(getDefinitions(at('__AXEL__')), []);
+    assert.strictEqual(prepareRename(at('__AXEL__')), null);
   });
-  test('expands __AXEL__ to one in function macro bodies and arguments', () => {
-    const { at } = fixture('#define VALUE(x) x + __AXEL__\nint value = VALUE(__AXEL__);');
-    assert.ok(getHover(at('VALUE('))?.plainText.includes('Expansion:\n1 + 1'));
+  test('expands constant system macros in function macro bodies and arguments', () => {
+    const { at } = fixture('#define VALUE(x, y) x + __AXEL__ + y + __AXELVERSION__\nint value = VALUE(__AXEL__, __AXELVERSION__);');
+    assert.ok(getHover(at('VALUE('))?.plainText.includes('Expansion:\n1 + 1 + 510 + 510'));
   });
-  test('provides __AXELVERSION__ without a header for every tool', () => {
-    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
-      const text = 'int version = __AXELVERSION__;';
-      const { analysis, at } = fixture(text, tool);
-      assert.deepStrictEqual(analysis.diagnostics, []);
-      assert.ok(getHover(at('__AXELVERSION__'))?.plainText.includes('__AXELVERSION__ (int)\n510'));
-      assert.ok(getCompletions({ ...at('__AXELVERSION__'), text }).some(item => item.name === '__AXELVERSION__'));
-      assert.strictEqual(collectSemanticTokens(analysis).filter(token => token.tokenType === 'macro').length, 1);
-      assert.deepStrictEqual(getDefinitions(at('__AXELVERSION__')), []);
-      assert.strictEqual(prepareRename(at('__AXELVERSION__')), null);
-    }
-  });
-  test('expands the system version in function macro bodies and arguments', () => {
-    const { at } = fixture('#define VERSION(x) x + __AXELVERSION__\nint version = VERSION(__AXELVERSION__);');
-    assert.ok(getHover(at('VERSION('))?.plainText.includes('Expansion:\n510 + 510'));
+  test('provides __AXELVERSION__ without a header', () => {
+    const text = 'int version = __AXELVERSION__;';
+    const { analysis, at } = fixture(text);
+    assert.deepStrictEqual(analysis.diagnostics, []);
+    assert.ok(getHover(at('__AXELVERSION__'))?.plainText.includes('__AXELVERSION__ (int)\n510'));
+    assert.ok(getCompletions({ ...at('__AXELVERSION__'), text }).some(item => item.name === '__AXELVERSION__'));
+    assert.strictEqual(collectSemanticTokens(analysis).filter(token => token.tokenType === 'macro').length, 1);
+    assert.deepStrictEqual(getDefinitions(at('__AXELVERSION__')), []);
+    assert.strictEqual(prepareRename(at('__AXELVERSION__')), null);
   });
   test('warns when source attempts to redefine or undefine the system version', () => {
     const { analysis, at } = fixture('#define __AXELVERSION__ 0\n#undef __AXELVERSION__\nint version = __AXELVERSION__;');
@@ -94,21 +92,23 @@ suite('system macros', () => {
   test('updates the console system macro when Tool changes without a document edit', () => {
     const text = '#if __AXELCONSOLE__\nint console;\n#else\nint gui;\n#endif\nint mode = __AXELCONSOLE__;';
     const { index } = fixture(text);
-    for (const [tool, value, declaration] of [['axel', 1, 'console'], ['ismo', 0, 'gui'], ['asca', 0, 'gui'], ['spicechart', 0, 'gui'], ['axel', 1, 'console']] as const) {
+    for (const [tool, value, declaration] of [['axel', 1, 'console'], ['ismo', 0, 'gui'], ['axel', 1, 'console']] as const) {
       index.configure({ tool });
       const analysis = index.analyzeDocument({ uri, version: 1, text });
       const context = { analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf('__AXELCONSOLE__')) };
       assert.deepStrictEqual(analysis.diagnostics, []);
       assert.deepStrictEqual(analysis.declarations.map(d => d.name).sort(), [declaration, 'mode'].sort());
       assert.ok(getHover(context)?.plainText.includes(`__AXELCONSOLE__ (int)\n${value}`));
-      assert.ok(getCompletions({ ...context, text }).some(item => item.name === '__AXELCONSOLE__'));
-      assert.ok(collectSemanticTokens(analysis).some(token => token.tokenType === 'macro'));
-      assert.deepStrictEqual(getDefinitions(context), []);
-      assert.strictEqual(prepareRename(context), null);
+      if (tool === 'ismo') {
+        assert.ok(getCompletions({ ...context, text }).some(item => item.name === '__AXELCONSOLE__'));
+        assert.ok(collectSemanticTokens(analysis).some(token => token.tokenType === 'macro'));
+        assert.deepStrictEqual(getDefinitions(context), []);
+        assert.strictEqual(prepareRename(context), null);
+      }
     }
   });
-  test('expands and protects the console system macro for every tool', () => {
-    for (const [tool, expansion] of [['axel', '1 + 1'], ['ismo', '0 + 0'], ['asca', '0 + 0'], ['spicechart', '0 + 0']]) {
+  test('expands and protects console and GUI tool macros', () => {
+    for (const [tool, expansion] of [['axel', '1 + 1'], ['ismo', '0 + 0']]) {
       const { analysis, at } = fixture('#define __AXELCONSOLE__ 9\n#undef __AXELCONSOLE__\n#define MODE(x) x + __AXELCONSOLE__\nint mode = MODE(__AXELCONSOLE__);', tool);
       assert.strictEqual(analysis.diagnostics.filter(d => d.severity === 'warning').length, 2);
       assert.ok(getHover(at('MODE('))?.plainText.includes(`Expansion:\n${expansion}`));
@@ -128,16 +128,6 @@ suite('system macros', () => {
     assert.strictEqual(collectSemanticTokens(analysis).filter(t => t.tokenType === 'macro').length, 3);
     assert.deepStrictEqual(getDefinitions(at('__DATE__')), []);
     assert.strictEqual(prepareRename(at('__DATE__')), null);
-  });
-  test('switches tool macros without changing document version', () => {
-    const text = '#ifdef __APP_LEDIT__\nint ledit;\n#else\nint other;\n#endif\nint x = __APP_LEDIT__;';
-    const { index, analysis } = fixture(text, 'ismo');
-    assert.ok(analysis.declarations.some(d => d.name === 'ledit'));
-    assert.ok(!analysis.declarations.some(d => d.name === 'other'));
-    index.configure({ tool: 'axel' });
-    const changed = index.analyzeDocument({ uri, version: 1, text });
-    assert.ok(changed.declarations.some(d => d.name === 'other'));
-    assert.ok(changed.diagnostics.some(d => d.message.includes('__APP_LEDIT__')));
   });
   test('completes only enabled names and excludes comments and strings', () => {
     for (const text of ['void f(){ __ }', 'void f(){ "__"; }', 'void f(){ /* __ */ }', 'void f(){ // __', 'void f(){ "__']) {

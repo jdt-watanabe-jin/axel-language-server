@@ -30,6 +30,7 @@
 		"test:integration": "node scripts/run-tests.mjs integration",
 		"test:e2e": "node scripts/run-tests.mjs e2e",
 		"test:performance": "node scripts/run-tests.mjs performance",
+		"collect:runtime": "npm run build && node out/tools/collectTypeCheckingEvidence.js",
 		"test:external": "node scripts/run-tests.mjs external",
 		"test:fast": "node scripts/run-tests.mjs fast",
 		"test:complete": "node scripts/run-tests.mjs complete",
