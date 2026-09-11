@@ -1,3 +1,4 @@
+import { normalizeTargetPlatform } from './targetPlatform';
 import * as path from 'path';
 import { normalizeTool } from './systemMacros';
 import type { WorkspaceIndexOptions } from './workspaceIndex';
@@ -28,6 +29,7 @@ export function mergeWorkspaceIndexOptions(
   const defines = overrides.defines ?? base.defines;
   return {
     includeRoots: normalizePaths(overrides.includeRoots ?? base.includeRoots ?? []),
+    ...(overrides.targetPlatform === undefined ? {} : { targetPlatform: normalizeTargetPlatform(overrides.targetPlatform) }),
     ...(overrides.tool === undefined ? {} : { tool: normalizeTool(overrides.tool) }),
     forcedIncludeRoots: normalizePaths(overrides.forcedIncludeRoots ?? base.forcedIncludeRoots ?? []),
     forcedIncludeFiles: normalizeUniquePaths([

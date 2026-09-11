@@ -28,7 +28,7 @@ export interface MacroExpansionResult {
 }
 
 interface ExpansionState {
-  systemContext?: { uri: string; position: AnalysisPosition; tool?: string };
+  systemContext?: { uri: string; position: AnalysisPosition; tool?: string; targetPlatform?: string };
   runtimeMacros?: Set<string>;
   maxDepth: number;
   depth: number;
@@ -37,7 +37,7 @@ interface ExpansionState {
 
 export interface MacroExpansionOptions {
   maxDepth?: number;
-  systemContext?: { uri: string; position: AnalysisPosition; tool?: string };
+  systemContext?: { uri: string; position: AnalysisPosition; tool?: string; targetPlatform?: string };
 }
 
 export function expandMacroInvocation(
@@ -238,7 +238,7 @@ function substituteParameters(
       const context = state?.systemContext;
       if (value === undefined && context !== undefined) {
         const position = sourcePositions ? positionWithinText(context.position, replacementText, index) : context.position;
-        const macro = resolveSystemMacro(identifier[0], context.uri, position, context.tool);
+        const macro = resolveSystemMacro(identifier[0], context.uri, position, context.tool, context.targetPlatform);
         if (macro?.defined) {
           if (macro.runtimeFormat !== undefined) { state?.runtimeMacros?.add(macro.name); }
           if (macro.value !== undefined) { value = typeof macro.value === 'number' ? String(macro.value) : JSON.stringify(macro.value); }

@@ -264,7 +264,7 @@ function macroExpression(ctx: TypeContext, node: TypeNode, scope: Scope): Expres
 
 function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionResult {
   if (node.kind === 'identifier') {
-    const macro = resolveSystemMacro(node.text, scope.uri, node.range.start, ctx.analysis.tool);
+    const macro = resolveSystemMacro(node.text, scope.uri, node.range.start, ctx.analysis.tool, ctx.analysis.targetPlatform);
     if (macro) {
       return macro.defined
         ? temporary(macro.typeName === 'int' ? basic('int') : builtin(ctx, 'string'), macro.value)

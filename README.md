@@ -50,10 +50,35 @@ Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid
 
 Tool `ismo` defines only `__APP_LEDIT__=1`, `asca` defines only `__APP_SEDIT__=1`, and `spicechart` defines only `__APP_SCHART__=1`. Tool `axel` defines none of these application macros. A non-selected macro is undefined, not defined as zero.
 
-The eleven names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
+The twenty-two names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
 
 Hover, completion, diagnostics, and conditional evaluation share these definitions. System macros have no source definition or rename target, and no references list or function signature. Unknown runtime conditions retain possible branches instead of marking one inactive. Uncertain declarations are not treated as definitely visible; diagnostics depending only on their uncertainty are suppressed. Correlations between separate unknown branches are not evaluated.
 
+### Target platform
+
+Pass `targetPlatform` alongside `tool` in initialization options and configuration notifications. It selects the analysis target independently of the server host and Tool; it does not change the execution environment. Omitted or invalid values select `windows-x64`, and invalid values are logged. Changes invalidate document and include analysis and refresh diagnostics, inactive ranges, and semantic tokens without a restart.
+
+| Value | OS | CPU | Pointer bytes |
+| --- | --- | --- | --- |
+| `windows-x86` | Windows | x86 | 4 |
+| `windows-x64` | Windows | x86_64 | 8 |
+| `linux-x86` | Linux | x86 | 4 |
+| `linux-x64` | Linux | x86_64 | 8 |
+| `solaris-x86` | Solaris | x86 | 4 |
+| `solaris-x64` | Solaris | x86_64 | 8 |
+| `solaris-sparc32` | Solaris | SPARC | 4 |
+| `solaris-sparc64` | Solaris | SPARC | 8 |
+| `hpux-hppa32` | HP-UX | HPPA | 4 |
+| `hpux-hppa64` | HP-UX | HPPA | 8 |
+
+The platform macros are always defined integers, including those whose value is zero:
+
+- `__OS_WINDOWS__`, `__OS_LINUX__`, `__OS_SOLARIS__`, `__OS_HPUX__`: selected OS is 1, others are 0.
+- `__OS_UNIX__`: 0 on Windows, 1 otherwise.
+- `__CPU_x86__`, `__CPU_x86_64__`, `__CPU_HPPA__`, `__CPU_SPARC__`: selected CPU is 1, others are 0.
+- `__OS_32bit__`, `__OS_64bit__`: selected pointer size is 1, the other is 0.
+
+No helper header is required. These are reserved system macros; use `#if` to test their value, since `#ifdef` is always true. The mapping is maintained in `src/analyzer/targetPlatform.ts`; keep extension setting choices consistent when adding platforms.
 ## Localization
 
 The server uses the client's `initialize.locale`: `ja` and `ja-*` (case insensitive) select Japanese; omitted or other locales use English. Missing translations fall back to their English templates. Locale belongs to the connection and is retained across configuration changes. Reconnect after changing the client's display language.

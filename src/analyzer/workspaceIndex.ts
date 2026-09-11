@@ -1,3 +1,4 @@
+import { normalizeTargetPlatform } from './targetPlatform';
 import { descendants, field } from './typeChecking/syntax';
 import { collectTypeDiagnostics } from './typeChecking/diagnostics';
 import { loadBuiltinCatalog, type BuiltinCatalog } from './typeChecking/builtinCatalog';
@@ -29,6 +30,7 @@ import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logg
 
 export interface WorkspaceIndexOptions extends ForcedIncludeOptions {
   tool?: string;
+  targetPlatform?: string;
   includeRoots?: string[];
   defines?: string[];
   analyzer?: DocumentAnalyzer;
@@ -52,6 +54,7 @@ export class WorkspaceIndex {
   private builtinCatalogCache: BuiltinCatalog | undefined;
   private defines: string[];
   private tool: string;
+  private targetPlatform: string;
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
@@ -74,6 +77,7 @@ export class WorkspaceIndex {
     this.forcedIncludeFiles = normalizePaths(options.forcedIncludeFiles ?? []);
     this.defines = options.defines ?? [];
     this.tool = normalizeTool(options.tool);
+    this.targetPlatform = normalizeTargetPlatform(options.targetPlatform);
     this.logSystemMacroConfiguration(options);
     this.maxNumberOfProblems = options.maxNumberOfProblems;
   }
@@ -92,6 +96,7 @@ export class WorkspaceIndex {
     this.forcedIncludeFiles = normalizePaths(merged.forcedIncludeFiles ?? []);
     this.defines = merged.defines ?? [];
     this.tool = normalizeTool(merged.tool);
+    this.targetPlatform = normalizeTargetPlatform(merged.targetPlatform);
     this.maxNumberOfProblems = merged.maxNumberOfProblems;
     this.forcedIncludeFileCache = undefined;
     this.clearCachedAnalysis();
@@ -108,7 +113,7 @@ export class WorkspaceIndex {
         return cached.analysis;
       }
 
-      const analysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool });
+      const analysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, targetPlatform: this.targetPlatform });
       this.documents.set(input.uri, {
         analysis,
         version: input.version,
@@ -158,7 +163,7 @@ export class WorkspaceIndex {
       return cached.analysis;
     }
 
-    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool });
+    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, targetPlatform: this.targetPlatform });
     this.documents.set(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
@@ -406,7 +411,7 @@ export class WorkspaceIndex {
     }
 
     const text = fs.readFileSync(normalizedPath, 'utf8');
-    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool });
+    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, targetPlatform: this.targetPlatform });
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
@@ -528,7 +533,7 @@ export class WorkspaceIndex {
 
     const analysis = this.analyzer.analyzeDocument({
       ...input,
-      tool: this.tool,
+      tool: this.tool, targetPlatform: this.targetPlatform,
       knownGuiClasses,
       preprocessorSymbols,
       uncertainNames,
@@ -654,7 +659,7 @@ export class WorkspaceIndex {
       }
 
       const text = fs.readFileSync(normalizedPath, 'utf8');
-      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool });
+      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, targetPlatform: this.targetPlatform });
       this.documents.set(uri, {
         analysis: initialAnalysis,
         filePath: normalizedPath,
@@ -993,9 +998,12 @@ export class WorkspaceIndex {
 
   private logSystemMacroConfiguration(options: unknown): void {
     if (options === null || typeof options !== 'object') { return; }
-    const candidate = options as { tool?: unknown; defines?: unknown };
+    const candidate = options as { tool?: unknown; targetPlatform?: unknown; defines?: unknown };
     if (candidate.tool !== undefined && normalizeTool(candidate.tool) !== candidate.tool) {
       this.logger.info('[configuration] Invalid Tool; using axel.');
+    }
+    if (candidate.targetPlatform !== undefined && normalizeTargetPlatform(candidate.targetPlatform) !== candidate.targetPlatform) {
+      this.logger.info('[configuration] Invalid targetPlatform; using windows-x64.');
     }
     if (Array.isArray(candidate.defines)) {
       for (const define of candidate.defines) {

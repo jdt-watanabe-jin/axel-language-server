@@ -3,6 +3,7 @@ import { recoverMacroCommands } from './macroCommands';
 import { buildTypeSnapshot } from './typeChecking/syntax';
 import type * as Parser from 'tree-sitter';
 import { message } from '../i18n/messages';
+import { normalizeTargetPlatform } from './targetPlatform';
 import { collectSystemMacroSyntax, isSystemMacroName, normalizeTool, resolveSystemMacro } from './systemMacros';
 import type {
   AnalysisDiagnostic,
@@ -66,7 +67,7 @@ export class DocumentAnalyzer {
         ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
         ...guiClasses.map((guiClass) => guiClass.name)
       ]);
-      const { inactiveRanges, uncertainRanges, uncertainNames } = evaluatePreprocessor(tree.rootNode, input.preprocessorSymbols, input.tool);
+      const { inactiveRanges, uncertainRanges, uncertainNames } = evaluatePreprocessor(tree.rootNode, input.preprocessorSymbols, input.tool, input.targetPlatform);
       const macroDefinitions = collectMacroDefinitions(tree.rootNode, input.uri);
       const activeMacroDefinitions = macroDefinitions.filter((macro) => !isSystemMacroName(macro.name)
         && !startsInInactiveRange(macro.selectionRange, [...inactiveRanges, ...uncertainRanges]));
@@ -105,6 +106,7 @@ export class DocumentAnalyzer {
       const analysis: AnalyzedDocument = {
         typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri, recoveredStatements.map(statement=>statement.node)),
         tool: normalizeTool(input.tool),
+        targetPlatform: normalizeTargetPlatform(input.targetPlatform),
         uncertainRanges,
         uncertainDeclarations: possibleDeclarations,
         uncertainMacroDefinitions: macroDefinitions.filter(macro => !isSystemMacroName(macro.name)
@@ -132,7 +134,7 @@ export class DocumentAnalyzer {
         semanticTokens: [
           ...preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
           ...systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)
-            && resolveSystemMacro(ref.name, input.uri, ref.range.start, input.tool)?.defined).map(ref => ({
+            && resolveSystemMacro(ref.name, input.uri, ref.range.start, input.tool, input.targetPlatform)?.defined).map(ref => ({
             range: ref.range, tokenType: 'macro' as const, modifiers: []
           }))
         ],
@@ -186,7 +188,7 @@ function analysisContextKeyFromInput(input: AnalyzeDocumentInput): string {
       return `${macro.name}/${parameters}@${visibilityStart}=${macro.replacementText}`;
     })
     .join('\u0000');
-  return `${normalizeTool(input.tool)}\u0001${guiClassKey}\u0001${preprocessorKey}\u0001${macroKey}\u0001${(input.uncertainNames ?? []).join('\0')}`;
+  return `${normalizeTool(input.tool)}\u0001${normalizeTargetPlatform(input.targetPlatform)}\u0001${guiClassKey}\u0001${preprocessorKey}\u0001${macroKey}\u0001${(input.uncertainNames ?? []).join('\0')}`;
 }
 
 function knownGuiClassMapFromInput(input: AnalyzeDocumentInput): ReadonlyMap<string, AnalysisGuiClassKind> {

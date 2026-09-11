@@ -36,20 +36,22 @@ export interface PreprocessorEvaluation {
 export function collectInactivePreprocessorRanges(
   rootNode: Parser.SyntaxNode,
   predefinedSymbols: readonly AnalysisPreprocessorSymbol[] = [],
-  tool?: string
+  tool?: string,
+  targetPlatform?: string
 ): AnalysisRange[] {
-  return evaluatePreprocessor(rootNode, predefinedSymbols, tool).inactiveRanges;
+  return evaluatePreprocessor(rootNode, predefinedSymbols, tool, targetPlatform).inactiveRanges;
 }
 
 export function evaluatePreprocessor(
   rootNode: Parser.SyntaxNode,
   predefinedSymbols: readonly AnalysisPreprocessorSymbol[] = [],
-  tool?: string
+  tool?: string,
+  targetPlatform?: string
 ): PreprocessorEvaluation {
   const result: PreprocessorEvaluation = { inactiveRanges: [], uncertainRanges: [], uncertainNames: [] };
   const macros = macroDefinitionsFromSymbols(predefinedSymbols);
   for (const name of systemMacroNames(tool)) {
-    const macro = resolveSystemMacro(name, '', { line: 0, character: 0 }, tool);
+    const macro = resolveSystemMacro(name, '', { line: 0, character: 0 }, tool, targetPlatform);
     macros.set(name, name !== '__LINE__' && typeof macro?.value === 'number' ? { value: String(macro.value) } : { unknownValue: true });
   }
   visitChildren(rootNode.namedChildren, macros, result, true, predefinedSymbols.filter(symbol => symbol.sourceRange !== undefined));
