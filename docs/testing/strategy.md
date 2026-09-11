@@ -71,7 +71,6 @@ fixture変更時は全利用者を検索し、関連するテストを実行す�
 | CI相当（lint＋全標準テスト） | `npm run test:ci` |
 | 実環境groupbox | `npm run test:external` |
 | ベンチマーク・実環境も含む確認 | `npm run test:complete` |
-| AXEL実機の型検査エビデンス採取 | `npm run collect:runtime` |
 
 各テストコマンドは先にtscを実行する。`scripts/run-tests.mjs` はsrc側に現存する `*.test.ts` から対象を選び、Mochaを起動する。移動・削除前のoutが残っていても実行しない。reporterやgrepなどの引数はMochaへ渡す。
 
@@ -87,5 +86,3 @@ groupbox Externalは `AXEL_TEST_SAMPLE` と `AXEL_TEST_FORCED_INCLUDE` で実デ
 See the [developer guide](../developer/type-checking.md) for architecture and verification, and the [user guide](../user/type-checking.md) for analysis-header registration and diagnostic limits.
 
 `npm run test:integration -- --grep "Type checking"` exercises the actual parser and workspace diagnostics against 135 selected ordinary recorded cases, plus operator, declaration, and invalidation regressions. Compiler-crash evidence is retained separately and is not executed as an ordinary LS conformance case. Standard tests do not start AXEL.
-
-All 157 recorded sources and their manifest hashes remain preserved; 21 redundant ordinary cases are evidence-only. Runtime evidence collection is a separate tool: set `AXEL_TEST_RUNTIME_EXE`, then run `npm run collect:runtime`. It is not part of `test:external` or `test:complete`. The developer guide documents additional environment variables, evidence output, and the separate opt-in for the known crash.

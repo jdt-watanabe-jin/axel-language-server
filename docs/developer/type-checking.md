@@ -38,25 +38,3 @@ npm run test:integration -- --grep "Type checking"
 ```
 
 Ordinary checks do not start AXEL. Successful corpus checks establish agreement with those recorded expectations only; unsupported generalizations and different runtime versions need new evidence and regression cases.
-
-## Optional runtime verification
-
-The [evidence collector](../../src/tools/collectTypeCheckingEvidence.ts) is opt-in and requires Windows and the verified executable. It checks the executable SHA256 against the corpus manifest before running. From PowerShell:
-
-```powershell
-$env:AXEL_TEST_RUNTIME_EXE = 'D:/SX-Meister/bin/axel.exe'
-npm run collect:runtime
-```
-
-Optional environment variables:
-
-| Variable | Meaning |
-| --- | --- |
-| `AXEL_TEST_RUNTIME_HOME` | Runtime home assigned to child `SXM_HOME`; defaults to the executable directory's parent. |
-| `AXEL_TEST_RUNTIME_FILTER` | Substring of corpus case IDs to select. |
-| `AXEL_TEST_RUNTIME_OUTPUT` | Evidence directory; defaults to a newly created temporary directory. |
-| `AXEL_TEST_RUNTIME_INCLUDE_CRASH=1` | Explicitly run the known crash case; otherwise record it as not run. |
-
-The runner invokes `axel.exe -nogui` with an isolated directory for each case. A driver calls `LoadFunction` to compile the source without executing its `main`. Evidence includes the executable identity, stdout/stderr, compiler codes, load result, exit status, timing, and per-case observations. Compiler errors take precedence over a successful load marker or exit code. Timeouts and abnormal exits remain separate from ordinary acceptance; the known crash never increases the ordinary conformance count.
-
-Evidence collection is separate from all test commands, including `test:complete`, and from the product-header compatibility tests selected by `AXEL_TEST_SAMPLE` and `AXEL_TEST_FORCED_INCLUDE`. See the [testing strategy](../testing/strategy.md) for the complete test layers.
