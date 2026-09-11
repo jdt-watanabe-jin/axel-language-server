@@ -44,6 +44,28 @@ suite('system macros', () => {
     const { at } = fixture('#define VALUE(x) x + __AXEL__\nint value = VALUE(__AXEL__);');
     assert.ok(getHover(at('VALUE('))?.plainText.includes('Expansion:\n1 + 1'));
   });
+  test('provides __AXELVERSION__ without a header for every tool', () => {
+    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
+      const text = 'int version = __AXELVERSION__;';
+      const { analysis, at } = fixture(text, tool);
+      assert.deepStrictEqual(analysis.diagnostics, []);
+      assert.ok(getHover(at('__AXELVERSION__'))?.plainText.includes('__AXELVERSION__ (int)\n510'));
+      assert.ok(getCompletions({ ...at('__AXELVERSION__'), text }).some(item => item.name === '__AXELVERSION__'));
+      assert.strictEqual(collectSemanticTokens(analysis).filter(token => token.tokenType === 'macro').length, 1);
+      assert.deepStrictEqual(getDefinitions(at('__AXELVERSION__')), []);
+      assert.strictEqual(prepareRename(at('__AXELVERSION__')), null);
+    }
+  });
+  test('expands the system version in function macro bodies and arguments', () => {
+    const { at } = fixture('#define VERSION(x) x + __AXELVERSION__\nint version = VERSION(__AXELVERSION__);');
+    assert.ok(getHover(at('VERSION('))?.plainText.includes('Expansion:\n510 + 510'));
+  });
+  test('warns when source attempts to redefine or undefine the system version', () => {
+    const { analysis, at } = fixture('#define __AXELVERSION__ 0\n#undef __AXELVERSION__\nint version = __AXELVERSION__;');
+    assert.strictEqual(analysis.diagnostics.filter(d => d.severity === 'warning').length, 2);
+    assert.ok(getHover(at('__AXELVERSION__'))?.plainText.includes('__AXELVERSION__ (int)\n510'));
+    assert.deepStrictEqual(getDefinitions(at('__AXELVERSION__')), []);
+  });
   test('shows absolute file and one-based source line', () => {
     const { at } = fixture('string file = __FILE__;\nint line = __LINE__;');
     assert.ok(getHover(at('__FILE__'))?.plainText.includes('D:\\project\\main.axl'));

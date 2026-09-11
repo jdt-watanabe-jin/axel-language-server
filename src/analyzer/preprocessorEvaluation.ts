@@ -1,7 +1,7 @@
 import type * as Parser from 'tree-sitter';
 import type { AnalysisPreprocessorSymbol, AnalysisRange } from '../types/analysis';
 import { getDeclaratorName, nodeToAnalysisRange } from './syntaxTree';
-import { containsSourcePosition, isSystemMacroName, systemMacroNames } from './systemMacros';
+import { containsSourcePosition, isSystemMacroName, resolveSystemMacro, systemMacroNames } from './systemMacros';
 import { isDeclarationNodeType, isTypeSpecifierNodeType } from './nodeKinds';
 
 interface MacroDefinition {
@@ -49,7 +49,8 @@ export function evaluatePreprocessor(
   const result: PreprocessorEvaluation = { inactiveRanges: [], uncertainRanges: [], uncertainNames: [] };
   const macros = macroDefinitionsFromSymbols(predefinedSymbols);
   for (const name of systemMacroNames(tool)) {
-    macros.set(name, name === '__AXEL__' || name.startsWith('__APP_') ? { value: '1' } : { unknownValue: true });
+    const macro = resolveSystemMacro(name, '', { line: 0, character: 0 }, tool);
+    macros.set(name, name !== '__LINE__' && typeof macro?.value === 'number' ? { value: String(macro.value) } : { unknownValue: true });
   }
   visitChildren(rootNode.namedChildren, macros, result, true, predefinedSymbols.filter(symbol => symbol.sourceRange !== undefined));
   result.uncertainNames = [...new Set(result.uncertainNames)];

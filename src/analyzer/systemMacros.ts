@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import type { AnalysisPosition, AnalysisRange, AnalyzedDocument } from '../types/analysis';
 import { translate } from '../i18n/messages';
 
-export const SYSTEM_MACRO_NAMES = ['__AXEL__', '__FILE__', '__LINE__', '__DATE__', '__TIME__', '__TIMESTAMP__', '__APP_LEDIT__', '__APP_SEDIT__', '__APP_SCHART__'] as const;
+export const SYSTEM_MACRO_NAMES = ['__AXEL__', '__AXELVERSION__', '__FILE__', '__LINE__', '__DATE__', '__TIME__', '__TIMESTAMP__', '__APP_LEDIT__', '__APP_SEDIT__', '__APP_SCHART__'] as const;
 const applicationTools: Record<string, string> = { __APP_LEDIT__: 'ismo', __APP_SEDIT__: 'asca', __APP_SCHART__: 'spicechart' };
 const runtimeFormats: Record<string, string> = { __DATE__: 'yy/mm/dd', __TIME__: 'hh:mm:ss', __TIMESTAMP__: 'yy/mm/dd hh:mm:ss' };
 
@@ -35,6 +35,7 @@ export function resolveSystemMacro(name: string, uri: string, position: Analysis
     return { name, typeName: 'int', defined, ...(defined ? { value: 1 } : {}) };
   }
   if (name === '__AXEL__') { return { name, typeName: 'int', defined: true, value: 1 }; }
+  if (name === '__AXELVERSION__') { return { name, typeName: 'int', defined: true, value: 510 }; }
   if (name === '__LINE__') { return { name, typeName: 'int', defined: true, value: position.line + 1 }; }
   if (name === '__FILE__') {
     let value: string | undefined;

@@ -40,7 +40,7 @@ Pass `tool` in `initialize.initializationOptions` and in `workspace/didChangeCon
 
 Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid values select `axel`; invalid values are logged. Changing the configuration invalidates analysis and refreshes diagnostics, inactive ranges, and semantic tokens without restarting the server.
 
-`__AXEL__` is always defined as the integer `1`, regardless of Tool.
+`__AXEL__` is always defined as the integer `1`, regardless of Tool. `__AXELVERSION__` is always defined as the integer `510`, preserving the former IntelliSense header value; no header include is required.
 
 `__FILE__` is the absolute source path and `__LINE__` is the one-based source line. In a function-like macro body, the expansion uses the invocation location; tokens written in arguments keep their original locations. Strings and comments are not substituted.
 
@@ -48,7 +48,7 @@ Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid
 
 Tool `ismo` defines only `__APP_LEDIT__=1`, `asca` defines only `__APP_SEDIT__=1`, and `spicechart` defines only `__APP_SCHART__=1`. Tool `axel` defines none of these application macros. A non-selected macro is undefined, not defined as zero.
 
-The nine names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
+The ten names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
 
 Hover, completion, diagnostics, and conditional evaluation share these definitions. System macros have no source definition or rename target, and no references list or function signature. Unknown runtime conditions retain possible branches instead of marking one inactive. Uncertain declarations are not treated as definitely visible; diagnostics depending only on their uncertainty are suppressed. Correlations between separate unknown branches are not evaluated.
 
