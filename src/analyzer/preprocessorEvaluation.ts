@@ -49,7 +49,7 @@ export function evaluatePreprocessor(
   const result: PreprocessorEvaluation = { inactiveRanges: [], uncertainRanges: [], uncertainNames: [] };
   const macros = macroDefinitionsFromSymbols(predefinedSymbols);
   for (const name of systemMacroNames(tool)) {
-    macros.set(name, name.startsWith('__APP_') ? { value: '1' } : { unknownValue: true });
+    macros.set(name, name === '__AXEL__' || name.startsWith('__APP_') ? { value: '1' } : { unknownValue: true });
   }
   visitChildren(rootNode.namedChildren, macros, result, true, predefinedSymbols.filter(symbol => symbol.sourceRange !== undefined));
   result.uncertainNames = [...new Set(result.uncertainNames)];

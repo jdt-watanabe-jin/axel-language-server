@@ -3,6 +3,19 @@ import { createAxelParser } from '../../../analyzer/axelParser';
 import { collectInactivePreprocessorRanges, evaluatePreprocessor } from '../../../analyzer/preprocessorEvaluation';
 
 suite('system preprocessor', () => {
+  test('defines __AXEL__ as one for every tool and ignores overrides', () => {
+    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
+      for (const prefix of ['', '#define __AXEL__ 0\n#undef __AXEL__\n']) {
+        for (const condition of ['#ifdef __AXEL__', '#if defined(__AXEL__) && __AXEL__ == 1', '#ifndef __AXEL__']) {
+          const root = createAxelParser().parse(`${prefix}${condition}\nint active;\n#else\nint inactive;\n#endif\n`).rootNode;
+          assert.strictEqual(root.hasError, false);
+          const offset = prefix === '' ? 0 : 2;
+          assert.deepStrictEqual(collectInactivePreprocessorRanges(root, [{ name: '__AXEL__', value: '0' }], tool).map(range => range.start.line), [offset + (condition.startsWith('#ifndef') ? 1 : 3)]);
+        }
+      }
+    }
+  });
+
   test('always defines runtime macros without deciding their values', () => {
     const root = createAxelParser().parse('#ifdef __TIME__\nint active;\n#else\nint inactive;\n#endif\n').rootNode;
     assert.deepStrictEqual(collectInactivePreprocessorRanges(root).map(range => range.start.line), [3]);

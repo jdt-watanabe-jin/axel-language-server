@@ -28,6 +28,22 @@ suite('system macros', () => {
     assert.ok(analysis.diagnostics.some(d=>d.message=== "Unknown identifier '__APP_LEDIT__'."));
     assert.ok(analysis.diagnostics.some(d=>d.message=== "Unknown identifier 'missingValue'."));
   });
+  test('recognizes __AXEL__ as an integer system macro for every tool', () => {
+    for (const tool of ['axel', 'ismo', 'asca', 'spicechart']) {
+      const text = 'int value = __AXEL__;';
+      const { analysis, at } = fixture(text, tool);
+      assert.deepStrictEqual(analysis.diagnostics, []);
+      assert.ok(getHover(at('__AXEL__'))?.plainText.includes('__AXEL__ (int)\n1'));
+      assert.ok(getCompletions({ ...at('__AXEL__'), text }).some(item => item.name === '__AXEL__'));
+      assert.strictEqual(collectSemanticTokens(analysis).filter(token => token.tokenType === 'macro').length, 1);
+      assert.deepStrictEqual(getDefinitions(at('__AXEL__')), []);
+      assert.strictEqual(prepareRename(at('__AXEL__')), null);
+    }
+  });
+  test('expands __AXEL__ to one in function macro bodies and arguments', () => {
+    const { at } = fixture('#define VALUE(x) x + __AXEL__\nint value = VALUE(__AXEL__);');
+    assert.ok(getHover(at('VALUE('))?.plainText.includes('Expansion:\n1 + 1'));
+  });
   test('shows absolute file and one-based source line', () => {
     const { at } = fixture('string file = __FILE__;\nint line = __LINE__;');
     assert.ok(getHover(at('__FILE__'))?.plainText.includes('D:\\project\\main.axl'));
