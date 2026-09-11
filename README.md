@@ -120,3 +120,9 @@ npm run lint
 ### Hover and completion settings
 
 Pass `hover` and `autocomplete` at the top level of initialization options or `workspace/didChangeConfiguration.settings`. Each accepts `"default"` (enabled, the default) or `"disabled"`. A disabled hover returns `null`; disabled completion returns an empty list, including manually requested completion. Other language features remain enabled. Changes apply to subsequent requests without restarting, and omitted or invalid values select `"default"`. These settings do not control snippets or word suggestions supplied by the editor.
+
+### Diagnostic display settings
+
+Pass `errorSquiggles` alongside `hover` and `autocomplete` in initialization options and configuration notifications. It accepts `enabled`, `disabled`, and `enabledIfIncludesResolve` (the default for omitted or invalid values). `disabled` returns an empty full diagnostic report, clearing errors and warnings in both editor squiggles and the Problems panel. It does not disable parsing or other language features. `enabled` returns normal diagnostics regardless of missing includes.
+
+`enabledIfIncludesResolve` checks each document independently, including transitive and forced includes, using parsed syntax and the existing include resolver. Inactive includes are excluded. If an include cannot resolve, only include-resolution errors are returned; errors in a nested include are anchored at the requesting document’s include, and forced-include errors at its start. Unsupported include expressions also count as unresolved. Diagnostics are held while included documents await background indexing. Missing-header candidates are tracked so file creation/deletion and include-path changes trigger re-evaluation without a source edit. Configuration changes request a diagnostic refresh without restarting the server.

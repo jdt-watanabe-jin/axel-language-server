@@ -38,6 +38,7 @@ import { toLspReferenceLocations } from './references';
 import { toLspWorkspaceEdit } from './rename';
 import { toLspSemanticTokens } from './semanticTokens';
 import { toLspSignatureHelp } from './signatureHelp';
+import type { IncludeResolutionStatus } from '../analyzer/includeDiagnostics';
 
 export interface ServerLogger {
   info?(message: string): void;
@@ -51,6 +52,7 @@ export interface AnalyzerLike extends
   WorkspaceCodeActionIndex {
   analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument;
   analyzeDiagnosticDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
+  getIncludeResolutionStatus?(analysis: AnalyzedDocument): IncludeResolutionStatus;
   analyzeForegroundDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   indexOpenDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   semanticTokenWorkspaceIndex?(sourceUri: string): WorkspaceDeclarationLookup;
@@ -107,6 +109,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   registerBackgroundRefreshHandlers(context);
 
   context.connection.languages.diagnostics.on((params) => {
+    if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }
     const document = context.documents.get(params.textDocument.uri);
     return measureLspRequest(context, 'lsp.diagnostics', documentRequestDetails(params, document), () => {
       if (document === undefined) {
@@ -119,6 +122,10 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           version: document.version,
           text: document.getText()
         });
+        if (featureSettings.errorSquiggles !== 'enabled') {
+          const includes = context.analyzer.getIncludeResolutionStatus?.(analysis);
+          if (includes && !includes.resolved) { return toDocumentDiagnosticReport(includes.diagnostics, locale); }
+        }
         return toDocumentDiagnosticReport(analysis.diagnostics, locale);
       } catch (error: unknown) {
         context.logger.error(`Diagnostics failed: ${getErrorMessage(error)}`);
@@ -486,6 +493,7 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext):
 
   context.documents.onDidClose((event) => {
     context.analyzer.deleteDocument?.(event.document.uri);
+    context.connection.languages.diagnostics.refresh?.();
   });
 }
 

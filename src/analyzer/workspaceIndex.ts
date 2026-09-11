@@ -26,6 +26,7 @@ import { resolveInclude, resolveScriptExecution } from './includeResolver';
 import type { WorkspaceDeclarationLookup } from './resolution';
 import { collectSemanticDiagnostics } from './semanticDiagnostics';
 import { mergeWorkspaceIndexOptions } from './workspaceConfig';
+import { collectIncludeResolutionStatus, type IncludeResolutionStatus } from './includeDiagnostics';
 import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logger';
 
 export interface WorkspaceIndexOptions extends ForcedIncludeOptions {
@@ -58,6 +59,7 @@ export class WorkspaceIndex {
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
+  private readonly diagnosticIncludeDependencies = new Map<string, Set<string>>();
   private readonly includeGraph = new Map<string, Set<string>>();
   private readonly definiteIncludeGraph = new Map<string, Set<string>>();
   private readonly reverseIncludeGraph = new Map<string, Set<string>>();
@@ -133,6 +135,15 @@ export class WorkspaceIndex {
     }
 
     return this.indexOpenDocument(input);
+  }
+
+  public getIncludeResolutionStatus(analysis: AnalyzedDocument): IncludeResolutionStatus {
+    const status = collectIncludeResolutionStatus(analysis, this.includeRoots,
+      Array.from(new Set([...this.forcedIncludeFiles, ...this.getForcedIncludeFiles()])),
+      uri => this.documents.get(uri)?.analysis);
+    status.diagnostics = limitDiagnostics(status.diagnostics, this.maxNumberOfProblems);
+    this.diagnosticIncludeDependencies.set(analysis.uri, status.dependencyUris);
+    return status;
   }
 
   public semanticTokenWorkspaceIndex(_sourceUri: string): WorkspaceDeclarationLookup {
@@ -367,6 +378,8 @@ export class WorkspaceIndex {
   }
 
   public deleteDocument(uri: string): void {
+    this.invalidateUri(uri);
+    this.diagnosticIncludeDependencies.delete(uri);
     this.documents.delete(uri);
     this.replaceIncludeEdges(uri, new Set());
     this.analyzer.clear(uri);
@@ -386,6 +399,13 @@ export class WorkspaceIndex {
     }
     this.forcedIncludesIndexed = false;
     const dependents = this.collectDependents(uri);
+    // Missing include candidates have no resolved graph edge. Track them so
+    // creating a header also invalidates documents waiting for that header.
+    for (const [sourceUri, dependencies] of this.diagnosticIncludeDependencies) {
+      if (dependencies.has(uri)) {
+        for (const dependentUri of this.collectDependents(sourceUri)) { dependents.add(dependentUri); }
+      }
+    }
     for (const dependentUri of dependents) {
       this.documents.delete(dependentUri);
       this.analyzer.clear(dependentUri);
@@ -1043,6 +1063,7 @@ export class WorkspaceIndex {
     }
 
     this.documents.clear();
+    this.diagnosticIncludeDependencies.clear();
     this.includeGraph.clear();
     this.definiteIncludeGraph.clear();
     this.reverseIncludeGraph.clear();

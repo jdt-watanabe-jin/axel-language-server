@@ -15,6 +15,7 @@ export const japaneseMessages: Readonly<Record<string, string>> = {
   "Function '{0}' expects {1}, but got {2}.": "関数'{0}'には{1}が必要ですが、{2}個が指定されています。",
   "Unknown GUI receiver path segment '{0}'.": "GUIの参照パスの要素'{0}'は定義されていません。",
   'DoModal should not be called inside a GCDialog OnCreate handler.': 'GCDialogのOnCreateハンドラー内ではDoModalを呼び出さないでください。',
+  "Include could not be resolved: '{0}'.": "インクルードを解決できません: '{0}'。",
   "Include file not found: '{0}'.": "インクルードファイルが見つかりません: '{0}'。",
   "AXEL execution file not found: '{0}'.": "AXEL実行ファイルが見つかりません: '{0}'。",
   'Text is not a macro invocation.': 'テキストはマクロ呼び出しではありません。',
