@@ -92,6 +92,10 @@ export function checkBinaryExpression(ctx: TypeContext, node: TypeNode, operator
     return {...temporary(numericResult(), constant), constantExpression:isConstant(left) && isConstant(right)
       && !(['/', '%'].includes(operator) && right.constant === 0)};
   }
+  if (['&&', '||'].includes(operator)
+    && [a, b].every(type => isNumeric(type) || type.kind === 'pointer' || type.kind === 'null')) {
+    return temporary(basic('int'));
+  }
   if (role(a) === 'natural' && ['<<', '>>'].includes(operator)) {
     if (b.kind === 'basic' && b.name === 'int') { return temporary(basic('int')); }
     problem(ctx, node, 'binary_operator', a, b);

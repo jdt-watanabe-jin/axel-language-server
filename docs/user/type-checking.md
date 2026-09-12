@@ -8,6 +8,8 @@ The compatibility baseline is standalone AXEL 510, SX-Meister 20.0.0 (`__SXM_VER
 
 Checks cover initialization, assignment, function calls and returns, operators, conditions, casts, pointers, arrays, constant-expression requirements, and selected invalid declarations. For example, `int *p = NULL;` is accepted, but `int *p = 0;` is rejected. AXEL permits reassignment of a `const int`; applying the C++ rule would produce a false error. A source `#define NULL 0` makes subsequent uses ordinary integer zero, and `#undef NULL` restores the builtin token.
 
+Virtual member prototypes such as `class A { int x; virtual void func(); };` are accepted in executable source. Non-virtual member prototypes and ordinary free function prototypes remain errors. This allowance does not require registration as an analysis declaration file.
+
 User-defined functions and methods can share a name when their parameter counts differ, including methods defined outside a class. Definitions with the same name and parameter count in the same owner scope are rejected even if their parameter types differ. GUI event handlers on different instance paths are distinct definitions.
 
 A fully defined user class with no instance data, including inherited data, cannot be instantiated as a variable or array (C56). Merely declaring the class, a pointer, or a value parameter does not trigger this check. Registered analysis declarations may represent hidden runtime data and are exempt.

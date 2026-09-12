@@ -129,8 +129,10 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
       }
     }
     if (node.kind === 'object_definition' || node.kind === 'field_declaration') {
+      const virtualMember = node.kind === 'field_declaration'
+        && node.children.some(child => child.kind === 'storage_class_specifier' && child.text === 'virtual');
       for (const fn of node.fields.declarator ?? []) {
-        if (fn.kind === 'function_declarator') {
+        if (fn.kind === 'function_declarator' && !virtualMember) {
           report(fn,'prototype','Function prototypes are not supported by this AXEL runtime.');
         }
       }
