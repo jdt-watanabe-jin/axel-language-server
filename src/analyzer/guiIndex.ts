@@ -123,6 +123,17 @@ function baseNameFromClassSpecifier(node: Parser.SyntaxNode): string | undefined
   return baseClause?.namedChildren.find((child) => isTypeNameNode(child))?.text;
 }
 
+/** Conditional directives wrap declarations without introducing a GUI scope. */
+function* guiScopeChildren(node: Parser.SyntaxNode): Iterable<Parser.SyntaxNode> {
+  for (const child of node.namedChildren) {
+    if (['preproc_if', 'preproc_ifdef', 'preproc_else', 'preproc_elif', 'preproc_elifdef'].includes(child.type)) {
+      yield* guiScopeChildren(child);
+    } else {
+      yield child;
+    }
+  }
+}
+
 function collectGuiParts(
   node: Parser.SyntaxNode,
   parentPath: string[],
@@ -130,7 +141,7 @@ function collectGuiParts(
 ): AnalysisGuiPart[] {
   const parts: AnalysisGuiPart[] = [];
 
-  for (const child of node.namedChildren) {
+  for (const child of guiScopeChildren(node)) {
     if (child.type !== 'gins_definition' && child.type !== 'field_declaration') {
       continue;
     }
@@ -201,7 +212,7 @@ function declaratorNameFromNode(node: Parser.SyntaxNode): Parser.SyntaxNode | nu
 function collectInlineGuiMethods(node: Parser.SyntaxNode, receiverPath: string[]): AnalysisGuiMethod[] {
   const methods: AnalysisGuiMethod[] = [];
 
-  for (const child of node.namedChildren) {
+  for (const child of guiScopeChildren(node)) {
     if (child.type !== 'gins_attributes_definition' && child.type !== 'function_definition') {
       continue;
     }
