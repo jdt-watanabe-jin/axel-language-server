@@ -1,8 +1,10 @@
+import { isTypedVariadicParameter } from '../syntaxTree';
 import type * as Parser from 'tree-sitter';
 import type { AnalysisRange } from '../../types/analysis';
 
 /** Immutable, document-generation-local syntax. No native tree escapes the parser. */
 export interface TypeNode {
+  variadic?: boolean;
   kind: string;
   text: string;
   start: number;
@@ -27,7 +29,7 @@ export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacem
       if (child.isNamed) { children.push(item); }
       if (name) { (fields[name] ??= []).push(item); }
     }
-    return {kind: node.type, text: node.text, start: node.startIndex, end: node.endIndex,
+    return {...(isTypedVariadicParameter(node) ? {variadic:true} : {}), kind: node.type, text: node.text, start: node.startIndex, end: node.endIndex,
       range: {start:{line:node.startPosition.row, character:node.startPosition.column},
         end:{line:node.endPosition.row, character:node.endPosition.column}}, children, fields};
   }

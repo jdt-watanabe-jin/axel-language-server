@@ -1,3 +1,4 @@
+import { isTypedVariadicParameter } from './syntaxTree';
 import type * as Parser from 'tree-sitter';
 import type {
   AnalysisDeclaration,
@@ -656,15 +657,18 @@ function findFunctionParameterList(node: Parser.SyntaxNode): Parser.SyntaxNode |
 
 function parametersFromParameterList(parameterList: Parser.SyntaxNode): AnalysisParameter[] {
   const parameters: AnalysisParameter[] = [];
+  let typedEllipsis = false;
   for (let index = 0; index < parameterList.childCount; index += 1) {
     const child = parameterList.child(index);
     if (child?.type === 'parameter_declaration') {
+      typedEllipsis = isTypedVariadicParameter(child);
       parameters.push({
-        label: normalizeSignatureText(child.text),
+        label: normalizeSignatureText(child.text) + (typedEllipsis ? ' ...' : ''),
         ...(hasDefaultArgument(child) ? { optional: true } : {})
       });
     } else if (child?.text === '...') {
-      parameters.push({ label: '...' });
+      if (!typedEllipsis) { parameters.push({ label: '...' }); }
+      typedEllipsis = false;
     }
   }
 

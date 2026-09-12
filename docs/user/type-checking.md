@@ -10,6 +10,8 @@ Checks cover initialization, assignment, function calls and returns, operators, 
 
 Virtual member prototypes such as `class A { int x; virtual void func(); };` are accepted in executable source. Non-virtual member prototypes and ordinary free function prototypes remain errors. This allowance does not require registration as an analysis declaration file.
 
+Typed variadic parameters such as `string ...` accept zero or more arguments. They do not increase the required fixed argument count: `Add(parent, text, string ...)` requires only `parent` and `text`.
+
 User-defined functions and methods can share a name when their parameter counts differ, including methods defined outside a class. Definitions with the same name and parameter count in the same owner scope are rejected even if their parameter types differ. GUI event handlers on different instance paths are distinct definitions.
 
 A fully defined user class with no instance data, including inherited data, cannot be instantiated as a variable or array (C56). Merely declaring the class, a pointer, or a value parameter does not trigger this check. Registered analysis declarations may represent hidden runtime data and are exempt.

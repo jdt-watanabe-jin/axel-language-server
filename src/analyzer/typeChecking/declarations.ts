@@ -93,7 +93,7 @@ function shapeType(ctx: TypeContext, node: TypeNode, base: Type, scope: Scope, d
     type = { kind: 'array', name: base.name + '[]', element: base };
   } else if (node.kind.includes('function_declarator')) {
     const paramsNode = field(node, 'parameters');
-    const paramNodes = paramsNode?.children.filter(c => c.kind === 'parameter_declaration') ?? [];
+    const paramNodes = paramsNode?.children.filter(c => c.kind === 'parameter_declaration' && !c.variadic) ?? [];
     let parameters = paramNodes.map(p => resolveType(ctx, p, scope));
     if (parameters.length === 1 && parameters[0].name === 'void' && !field(paramNodes[0], 'declarator')) { parameters = []; }
     const conversion = findDeclarator(field(node, 'declarator'), 'conversion_declarator');
@@ -211,7 +211,7 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
           if (owner) { const overloads = owner.methods.get(name) ?? []; overloads.push(fn); owner.methods.set(name, overloads); }
           if (functionScope) {
             const functionDeclarator = findDeclarator(declarator, 'function_declarator');
-            const params = field(functionDeclarator!, 'parameters')?.children.filter(c => c.kind === 'parameter_declaration') ?? [];
+            const params = field(functionDeclarator!, 'parameters')?.children.filter(c => c.kind === 'parameter_declaration' && !c.variadic) ?? [];
             params.forEach((parameter, index) => {
               const paramName = nameOf(field(parameter, 'declarator'));
               if (!paramName) { return; }

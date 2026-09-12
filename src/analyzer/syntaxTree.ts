@@ -124,3 +124,11 @@ function positionBeforeOrEqual(left: AnalysisPosition, right: AnalysisPosition):
 function positionBefore(left: AnalysisPosition, right: AnalysisPosition): boolean {
   return left.line < right.line || (left.line === right.line && left.character < right.character);
 }
+
+/** In `string ...`, the grammar emits the parameter and ellipsis as adjacent siblings. */
+export function isTypedVariadicParameter(node: Parser.SyntaxNode): boolean {
+  if (node.type !== 'parameter_declaration') { return false; }
+  let next = node.nextSibling;
+  while (next?.type === 'comment') { next = next.nextSibling; }
+  return next?.type === '...';
+}
