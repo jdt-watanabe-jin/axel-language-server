@@ -83,17 +83,7 @@ export function expandMacroInvocationText(
     };
   }
 
-  let argumentOffset = text.indexOf('(') + 1;
-  // Preserve the original argument boundaries even if an expansion generates commas.
-  const args = invocation.arguments.map(argument => {
-    if (options.systemContext === undefined) { return argument; }
-    const start = text.indexOf(argument, argumentOffset);
-    argumentOffset = start + argument.length;
-    return expandSourceTokens(argument, visibleMacros, { ...state,
-      systemContext: { ...options.systemContext, position: positionWithinText(options.systemContext.position, text, start) }
-    });
-  });
-  return { ...expandKnownMacro(text, macro, args, visibleMacros, state),
+  return { ...expandKnownMacro(text, macro, invocation.arguments, visibleMacros, state),
     runtimeMacros: [...(state.runtimeMacros ?? [])] };
 }
 
@@ -134,7 +124,28 @@ function expandKnownMacro(
   }
 
   const parameterNames = parameters.map((parameter) => parameter.label);
-  const substituted = substituteParameters(macro.replacementText, parameterNames, args, state);
+  let argumentOffset = originalText.indexOf('(') + 1;
+  const argumentStarts = args.map(argument => {
+    const start = originalText.indexOf(argument, argumentOffset);
+    argumentOffset = start + argument.length;
+    return start;
+  });
+  let argumentTruncated = false;
+  const argumentDiagnostics: MacroExpansionDiagnostic[] = [];
+  const substituted = substituteParameters(macro.replacementText, parameterNames, args, state, false, undefined,
+    (argument, index) => {
+      const context = state.systemContext;
+      const expanded = expandSourceTokens(argument, visibleMacros, {...state,
+        systemContext: context ? {...context, position: positionWithinText(context.position, originalText, argumentStarts[index])} : undefined
+      });
+      const objects = expandObjectMacroText(expanded.expandedText, visibleMacros);
+      argumentTruncated ||= expanded.truncated || objects.truncated;
+      argumentDiagnostics.push(...expanded.diagnostics, ...objects.diagnostics);
+      return objects.expandedText;
+    });
+  if (argumentTruncated || argumentDiagnostics.length > 0) {
+    return {expandedText: originalText, steps: [], truncated: argumentTruncated, diagnostics: argumentDiagnostics};
+  }
   const nested = expandNestedInvocations(substituted, visibleMacros, {
     ...state,
     depth: state.depth + 1,
@@ -195,9 +206,11 @@ function substituteParameters(
   args: readonly string[],
   state?: ExpansionState,
   sourcePositions = false,
-  sourceExpansions: ReadonlyMap<number, { end: number; text: string }> = new Map()
+  sourceExpansions: ReadonlyMap<number, { end: number; text: string }> = new Map(),
+  expandArgument?: (argument: string, index: number) => string
 ): string {
-  const values = new Map(parameters.map((parameter, index) => [parameter, args[index] ?? '']));
+  const rawValues = new Map(parameters.map((parameter, index) => [parameter, args[index] ?? '']));
+  const values = new Map<string, string>();
   let result = '';
   let index = 0;
 
@@ -232,9 +245,24 @@ function substituteParameters(
       continue;
     }
 
+    if (character === '#' && next !== '#' && replacementText[index - 1] !== '#') {
+      const operandStart = skipMacroTrivia(replacementText, index + 1);
+      const operand = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(replacementText.slice(operandStart));
+      if (operand && rawValues.has(operand[0])) {
+        result += stringifyMacroArgument(rawValues.get(operand[0])!);
+        index = operandStart + operand[0].length;
+        continue;
+      }
+    }
+
     const identifier = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(replacementText.slice(index));
     if (identifier !== null) {
       let value = values.get(identifier[0]);
+      if (value === undefined && rawValues.has(identifier[0])) {
+        const raw = rawValues.get(identifier[0])!;
+        value = expandArgument?.(raw, parameters.indexOf(identifier[0])) ?? raw;
+        values.set(identifier[0], value);
+      }
       const context = state?.systemContext;
       if (value === undefined && context !== undefined) {
         const position = sourcePositions ? positionWithinText(context.position, replacementText, index) : context.position;
@@ -256,29 +284,65 @@ function substituteParameters(
   return result.replace(/[ \t]*\\\r?\n/g, '\n').trim();
 }
 
+function skipMacroTrivia(text: string, start: number): number {
+  let index = start;
+  while (index < text.length) {
+    if (text.startsWith('\\\r\n', index)) { index += 3; }
+    else if (text.startsWith('\\\n', index)) { index += 2; }
+    else if (/\s/.test(text[index])) { index++; }
+    else if (text.startsWith('/*', index)) { index = skipBlockComment(text, index); }
+    else if (text.startsWith('//', index)) { index = skipLineComment(text, index); }
+    else { break; }
+  }
+  return index;
+}
+
+/** Stringification uses written tokens, with comments/whitespace collapsed outside literals. */
+function stringifyMacroArgument(argument: string): string {
+  const text = argument.replace(/\\\r?\n/g, '');
+  let result = '';
+  for (let index = 0; index < text.length;) {
+    const afterTrivia = skipMacroTrivia(text, index);
+    if (afterTrivia !== index) {
+      if (result && afterTrivia < text.length) { result += ' '; }
+      index = afterTrivia;
+    } else if (text[index] === '"' || text[index] === "'") {
+      const end = skipQuotedText(text, index, text[index]);
+      result += text.slice(index, end);
+      index = end;
+    } else { result += text[index++]; }
+  }
+  return JSON.stringify(result);
+}
+
 function positionWithinText(start: AnalysisPosition, text: string, offset: number): AnalysisPosition {
   const lines = text.slice(0, offset).split('\n');
   return { line: start.line + lines.length - 1,
     character: lines.length === 1 ? start.character + offset : lines[lines.length - 1].length };
 }
 
-function expandSourceTokens(text: string, lookup: MacroLookup, state: ExpansionState): string {
+function expandSourceTokens(text: string, lookup: MacroLookup, state: ExpansionState): MacroExpansionResult {
+  let truncated = false;
+  const diagnostics: MacroExpansionDiagnostic[] = [];
   const expansions = new Map<number, { end: number; text: string }>();
-  const context = state.systemContext!;
+  const context = state.systemContext;
     for (const candidate of findNestedInvocationTexts(text)) {
       const parsed = parseMacroInvocationText(candidate.text);
-      if (parsed === undefined || lookup.findMacro(parsed.name) === undefined) { continue; }
+      const macro = parsed && lookup.findMacro(parsed.name);
+      if (!parsed || !macro) { continue; }
       const start = candidate.start;
-      const result = expandMacroInvocationText(candidate.text, lookup, {
-        maxDepth: state.maxDepth,
-        systemContext: { ...context, position: positionWithinText(context.position, text, start) }
+      const result = expandKnownMacro(candidate.text, macro, parsed.arguments, lookup, {
+        ...state, depth: state.depth + 1,
+        systemContext: context ? { ...context, position: positionWithinText(context.position, text, start) } : undefined
       });
+      truncated ||= result.truncated;
+      diagnostics.push(...result.diagnostics);
       if (result.diagnostics.length > 0 || result.truncated) { continue; }
       for (const name of result.runtimeMacros ?? []) { state.runtimeMacros?.add(name); }
       expansions.set(start, { end: candidate.end, text: result.expandedText });
     }
   // Apply replacements against original offsets; never re-scan generated text as source.
-  return substituteParameters(text, [], [], state, true, expansions);
+  return {expandedText: substituteParameters(text, [], [], state, true, expansions), steps: [], truncated, diagnostics};
 }
 
 function findNestedInvocationTexts(text: string): { text: string; start: number; end: number }[] {

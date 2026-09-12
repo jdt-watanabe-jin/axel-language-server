@@ -8,6 +8,20 @@ import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { collectSemanticTokens } from '../../../analyzer/semanticTokens';
 
 suite('DocumentAnalyzer', () => {
+  test('reparses assertion macros with stringified expressions without syntax errors', () => {
+    const text = [
+      '#define TEST_CASE(name) printf("Test case: %s", name);',
+      '#define ASSERT_EQ(a,b) if ((a)!=(b)) { printf("%s != %s", #a, #b); return; }',
+      'void main() {',
+      'TEST_CASE("constructors")',
+      '{ int value = 0; ASSERT_EQ(value, 0); }',
+      '}'
+    ].join('\n');
+    const result = new DocumentAnalyzer().analyzeDocument({uri: 'file:///assert.axl', version: 1, text});
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.ok(result.typeSnapshot);
+  });
+
   test('releases native syntax views after workspace diagnostics', () => {
     const released: string[] = [];
     class ReleasingAnalyzer extends DocumentAnalyzer {
