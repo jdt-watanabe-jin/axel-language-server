@@ -35,6 +35,72 @@ suite('WorkspaceIndex', () => {
     );
   });
 
+  test('waits for included macros before reporting conditionally active missing includes', async () => {
+    const tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'config.h'), '#define DISABLE_OPTIONAL 1');
+    const index = createWorkspaceIndex();
+    const input = {uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1,
+      text: '#include "config.h"\n#ifndef DISABLE_OPTIONAL\n#include "optional.h"\n#endif'};
+    assert.deepStrictEqual(index.analyzeDiagnosticDocument(input).diagnostics, []);
+    await index.waitForBackgroundIndexing();
+    assert.deepStrictEqual(index.analyzeDiagnosticDocument(input).diagnostics, []);
+  });
+
+  test('preserves conditional include provenance through branch-spanning syntax recovery', async () => {
+    const tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'config.h'), '#define DISABLE_OPTIONAL 1');
+    const index = createWorkspaceIndex();
+    const input = {uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1,
+      text: '#define VALUE 1\n#include "config.h"\n#ifndef DISABLE_OPTIONAL\n#include "optional.h"\nclass C {\n#else\nclass C {\n#endif\n};\nint x=VALUE;'};
+    const initial = index.analyzeDiagnosticDocument(input);
+    assert.ok(initial.includes.some(include => include.includePath === 'optional.h'));
+    assert.ok(!initial.diagnostics.some(d => d.message.includes('optional.h')));
+    await index.waitForBackgroundIndexing();
+    assert.ok(!index.analyzeDiagnosticDocument(input).diagnostics.some(d => d.message.includes('optional.h')));
+  });
+
+  test('reports conditionally active missing includes once header macros are known', async () => {
+    const tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'config.h'), '#define ENABLE_OPTIONAL 1');
+    const index = createWorkspaceIndex();
+    const input = {uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1,
+      text: '#include "config.h"\n#if ENABLE_OPTIONAL\n#include "optional.h"\n#endif'};
+    assert.deepStrictEqual(index.analyzeDiagnosticDocument(input).diagnostics, []);
+    await index.waitForBackgroundIndexing();
+    assert.deepStrictEqual(index.analyzeDiagnosticDocument(input).diagnostics.map(d => d.message),
+      ["Include file not found: 'optional.h'."]);
+  });
+
+  test('keeps missing includes ahead of body errors when final diagnostics are limited', async () => {
+    const tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'types.h'), 'class IncludedType {};');
+    const index = createWorkspaceIndex({maxNumberOfProblems: 1});
+    const input = {uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1,
+      text: '#include "types.h"\n#include "_asca_sys.h"\nvoid f(){ int *p = 0; }'};
+    const initial = index.analyzeDiagnosticDocument(input);
+    assert.deepStrictEqual(initial.diagnostics.map(d => d.message), ["Include file not found: '_asca_sys.h'."]);
+    await index.waitForBackgroundIndexing();
+    const complete = index.analyzeDiagnosticDocument(input);
+    assert.deepStrictEqual(complete.diagnostics.map(d => d.message), initial.diagnostics.map(d => d.message));
+  });
+
+  test('reports missing includes while other headers are still pending', async () => {
+    const tempDir = createTempDir();
+    fs.writeFileSync(path.join(tempDir, 'types.h'), 'class IncludedType {};');
+    const index = createWorkspaceIndex();
+    const input = {
+      uri: pathToFileURL(path.join(tempDir, 'main.axl')).toString(), version: 1,
+      text: '#include "types.h"\n#include "_asca_sys.h"\n#if 0\n#include "inactive.h"\n#endif'
+    };
+    const initial = index.analyzeDiagnosticDocument(input);
+    assert.deepStrictEqual(index.findDeclarations('IncludedType'), [], 'Do not block on included header parsing');
+    assert.deepStrictEqual(initial.diagnostics.map(d => d.message), ["Include file not found: '_asca_sys.h'."]);
+    assert.strictEqual(initial.diagnostics[0].range.start.line, 1);
+    await index.waitForBackgroundIndexing();
+    const complete = index.analyzeDiagnosticDocument(input);
+    assert.deepStrictEqual(complete.diagnostics.map(d => d.message), initial.diagnostics.map(d => d.message));
+  });
+
   test('diagnostic analysis avoids synchronously indexing pending include documents', async () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');

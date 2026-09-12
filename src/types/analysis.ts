@@ -259,6 +259,8 @@ export interface AnalysisPreprocessorSymbol {
 export type AnalysisIncludeKind = 'quote' | 'angle' | 'bare' | 'expression';
 
 export interface AnalysisInclude {
+  /** Conditional or not yet known to originate from an unconditional written include. */
+  conditional?: boolean;
   includePath: string;
   kind: AnalysisIncludeKind;
   range: AnalysisRange;

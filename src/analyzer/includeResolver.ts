@@ -103,7 +103,15 @@ export function resolveScriptExecution(input: Omit<ResolveIncludeInput, 'include
   };
 }
 
-export function collectIncludes(rootNode: Parser.SyntaxNode): AnalysisInclude[] {
+export function collectIncludes(rootNode: Parser.SyntaxNode, originalRoot = rootNode): AnalysisInclude[] {
+  if (originalRoot !== rootNode) {
+    const original = new Map(collectIncludes(originalRoot).map(include =>
+      [`${include.range.start.line}:${include.range.start.character}`, include]));
+    return collectIncludes(rootNode).map(include => {
+      const written = original.get(`${include.range.start.line}:${include.range.start.character}`);
+      return written?.conditional || !written ? {...include, conditional: true} : include;
+    });
+  }
   return findNamedNodes(rootNode, (node) => node.type === 'preproc_include')
     .map((node) => includeFromNode(node))
     .filter((include): include is AnalysisInclude => include !== null);
@@ -122,7 +130,15 @@ function includeFromNode(node: Parser.SyntaxNode): AnalysisInclude | null {
   }
 
   const parsed = parseIncludeText(pathNode.text);
+  let conditional = false;
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (['preproc_if', 'preproc_ifdef', 'preproc_else', 'preproc_elif', 'preproc_elifdef', 'ERROR'].includes(parent.type)) {
+      conditional = true;
+      break;
+    }
+  }
   return {
+    ...(conditional ? {conditional: true} : {}),
     includePath: parsed.includePath,
     kind: parsed.kind,
     range: nodeToAnalysisRange(pathNode)

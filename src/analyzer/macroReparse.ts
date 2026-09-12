@@ -80,6 +80,13 @@ export function macroReparse(root: Parser.SyntaxNode, original: AnalyzedDocument
     return expandedPositions.position(mapSourceOffset(toExpandedSegments,index,end));
   };
   const result = map(analyze(text,toExpanded)) as AnalyzedDocument;
+  // Conditional recovery may have erased directives before this second parse.
+  const writtenIncludes = new Map(original.includes.map(include =>
+    [`${include.range.start.line}:${include.range.start.character}`, include]));
+  result.includes = result.includes.map(include => {
+    const written = writtenIncludes.get(`${include.range.start.line}:${include.range.start.character}`);
+    return written?.conditional || !written ? {...include, conditional: true} : include;
+  });
   // Macro hover/navigation use the written invocation, not tokens introduced by its body.
   result.macroInvocations = original.macroInvocations;
   result.systemMacroReferences = original.systemMacroReferences;

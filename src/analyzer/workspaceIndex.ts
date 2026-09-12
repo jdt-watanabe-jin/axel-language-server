@@ -137,7 +137,12 @@ export class WorkspaceIndex {
   public analyzeDiagnosticDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
     const foregroundAnalysis = this.analyzeForegroundDocument(input);
     if (this.backgroundIndexingScheduled || this.pendingBackgroundDocuments.size > 0) {
-      return foregroundAnalysis;
+      if (this.documents.get(input.uri)?.workspaceDiagnosticsComplete) { return foregroundAnalysis; }
+      // Missing direct includes are already known without waiting for header parsing.
+      return {...foregroundAnalysis, diagnostics: limitDiagnostics([
+        ...this.unresolvedIncludeDiagnostics(foregroundAnalysis, true),
+        ...foregroundAnalysis.diagnostics
+      ], this.maxNumberOfProblems)};
     }
 
     return this.indexOpenDocument(input);
@@ -475,6 +480,7 @@ export class WorkspaceIndex {
     return {
       ...analysis,
       diagnostics: limitDiagnostics([
+        ...this.unresolvedIncludeDiagnostics(analysis),
         ...analysis.diagnostics,
         ...collectTypeDiagnostics({analysis,
           resolveMacro: (name,node) => {
@@ -486,7 +492,6 @@ export class WorkspaceIndex {
             return visible ? [visible] : [];
           }), catalog: this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles)})
           .filter(diagnostic => !affectedBySyntaxRecovery(analysis.syntaxRecovery, diagnostic.range)),
-        ...this.unresolvedIncludeDiagnostics(analysis),
         ...this.unresolvedScriptExecutionDiagnostics(analysis),
         ...collectSemanticDiagnostics({
           analysis,
@@ -496,13 +501,14 @@ export class WorkspaceIndex {
     };
   }
 
-  private unresolvedIncludeDiagnostics(analysis: AnalyzedDocument): AnalysisDiagnostic[] {
+  private unresolvedIncludeDiagnostics(analysis: AnalyzedDocument, unconditionalOnly = false): AnalysisDiagnostic[] {
     const includingFilePath = filePathFromUri(analysis.uri);
     if (includingFilePath === undefined) {
       return [];
     }
 
     return analysis.includes
+      .filter(include => !unconditionalOnly || !include.conditional)
       .map((include) => ({
         include,
         resolution: resolveInclude({

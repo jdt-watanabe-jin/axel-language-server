@@ -109,7 +109,7 @@ export class DocumentAnalyzer {
           internalFeatures:normalizeInternalFeatures(input.internalFeatures),targetPlatform:normalizeTargetPlatform(input.targetPlatform),
           diagnostics:[], symbols:[], declarations, references:[],
           scopes:[{id:'global',range:nodeToAnalysisRange(root),declarationIds:declarations.map(d=>d.id)}],
-          includes:collectIncludes(root).filter(i=>!startsInInactiveRange(i.range,inactiveRanges)),
+          includes:collectIncludes(root, originalRoot).filter(i=>!startsInInactiveRange(i.range,inactiveRanges)),
           scriptExecutions:collectScriptExecutions(root).filter(e=>!startsInInactiveRange(e.selectionRange,inactiveRanges)),
           macroDefinitions:activeMacroDefinitions, macroInvocations:[],
           guiClasses:filterGuiClassesForInactiveRanges(guiClasses,[...inactiveRanges,...uncertainRanges]),
@@ -147,7 +147,7 @@ export class DocumentAnalyzer {
         && !startsInInactiveRange(declaration.selectionRange, inactiveRanges)
         && !(declaration.kind === 'macro' && isSystemMacroName(declaration.name)));
       const scopes = buildScopeIndex(root, input.uri, symbolIndex.declarations);
-      const includes = collectIncludes(root);
+      const includes = collectIncludes(root, originalRoot);
       const scriptExecutions = collectScriptExecutions(root);
       const macroInvocations = collectMacroInvocations(root, input.uri);
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(root);
