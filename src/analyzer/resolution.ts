@@ -27,6 +27,38 @@ export interface AcceptedArgumentCounts {
   max: number;
 }
 
+// Declaration arrays identify immutable analysis generations. Weak keys release old generations.
+interface DeclarationIndex {
+  declarations: AnalysisDeclaration[];
+  byName: Map<string, AnalysisDeclaration[]>;
+  byContainer: Map<string, AnalysisDeclaration[]>;
+  hierarchies: Map<string, AnalysisDeclaration[]>;
+}
+const emptyDeclarations: AnalysisDeclaration[] = [];
+const visibleIndexes = new WeakMap<AnalysisDeclaration[], WeakMap<AnalysisDeclaration[], DeclarationIndex>>();
+const scopeIdIndexes = new WeakMap<AnalysisScope[], Map<string, AnalysisScope>>();
+const localIndexes = new WeakMap<AnalysisDeclaration[], Map<string, AnalysisDeclaration>>();
+const scopeNameIndexes = new WeakMap<AnalysisDeclaration[], WeakMap<string[], Map<string, AnalysisDeclaration[]>>>();
+
+function visibleIndex(input: DeclarationResolutionInput, listed = input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri) ?? emptyDeclarations): DeclarationIndex {
+  let generations = visibleIndexes.get(input.analysis.declarations);
+  if (!generations) { generations = new WeakMap(); visibleIndexes.set(input.analysis.declarations, generations); }
+  const cached = generations.get(listed);
+  if (cached) { return cached; }
+  const declarations = Array.from(new Map([...input.analysis.declarations, ...listed].map(d => [d.id, d])).values()).sort(compareDeclarations);
+  const index: DeclarationIndex = {declarations, byName:new Map(), byContainer:new Map(), hierarchies:new Map()};
+  for (const declaration of declarations) {
+    const names = index.byName.get(declaration.name) ?? [];
+    names.push(declaration); index.byName.set(declaration.name, names);
+    if (declaration.containerName !== undefined) {
+      const members = index.byContainer.get(declaration.containerName) ?? [];
+      members.push(declaration); index.byContainer.set(declaration.containerName, members);
+    }
+  }
+  generations.set(listed, index);
+  return index;
+}
+
 export function findLocalDeclaration(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
   name: string,
@@ -41,21 +73,40 @@ function findLocalDeclarations(
   name: string,
   position: AnalysisPosition
 ): AnalysisDeclaration[] {
-  const declarations = new Map(analysis.declarations.map((declaration) => [declaration.id, declaration]));
+  let declarations = localIndexes.get(analysis.declarations);
+  if (!declarations) {
+    declarations = new Map(analysis.declarations.map(declaration => [declaration.id, declaration]));
+    localIndexes.set(analysis.declarations, declarations);
+  }
+  let scopeIds = scopeIdIndexes.get(analysis.scopes);
+  if (!scopeIds) {
+    scopeIds = new Map(analysis.scopes.map(scope => [scope.id, scope]));
+    scopeIdIndexes.set(analysis.scopes, scopeIds);
+  }
   let scope = findInnermostScope(analysis.scopes, position);
 
+  let scoped = scopeNameIndexes.get(analysis.declarations);
+  if (!scoped) { scoped = new WeakMap(); scopeNameIndexes.set(analysis.declarations, scoped); }
   while (scope !== undefined) {
-    const candidates = scope.declarationIds
-      .map((id) => declarations.get(id))
-      .filter((item): item is AnalysisDeclaration => (
-        item?.name === name && isVisibleAt(item, position, analysis.uri)
-      ))
+    let names = scoped.get(scope.declarationIds);
+    if (!names) {
+      names = new Map();
+      for (const id of scope.declarationIds) {
+        const declaration = declarations.get(id);
+        if (!declaration) { continue; }
+        const entries = names.get(declaration.name) ?? [];
+        entries.push(declaration); names.set(declaration.name, entries);
+      }
+      scoped.set(scope.declarationIds, names);
+    }
+    const candidates = (names.get(name) ?? [])
+      .filter(item => isVisibleAt(item, position, analysis.uri))
       .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start));
     if (candidates.length > 0) {
       return candidates;
     }
 
-    scope = analysis.scopes.find((item) => item.id === scope?.parentId);
+    scope = scope.parentId === undefined ? undefined : scopeIds.get(scope.parentId);
   }
 
   return [];
@@ -74,12 +125,7 @@ export function findVisibleDeclaration(
 }
 
 export function listVisibleDeclarations(input: DeclarationResolutionInput): AnalysisDeclaration[] {
-  const declarations = [
-    ...input.analysis.declarations,
-    ...(input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri) ?? [])
-  ];
-  return Array.from(new Map(declarations.map((declaration) => [declaration.id, declaration])).values())
-    .sort(compareDeclarations);
+  return visibleIndex(input).declarations.slice();
 }
 
 export function visibleDeclarationsByName(
@@ -88,12 +134,7 @@ export function visibleDeclarationsByName(
 ): AnalysisDeclaration[] {
   const listed = input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri);
   if (listed !== undefined) {
-    return Array.from(new Map([
-      ...input.analysis.declarations,
-      ...listed
-    ].map((declaration) => [declaration.id, declaration])).values())
-      .filter((declaration) => declaration.name === name)
-      .sort(compareDeclarations);
+    return visibleIndex(input, listed).byName.get(name)?.slice() ?? [];
   }
 
   return [
@@ -106,32 +147,23 @@ export function declarationsInTypeHierarchy(
   input: DeclarationResolutionInput,
   typeName: string
 ): AnalysisDeclaration[] {
+  const index = visibleIndex(input);
+  const cached = index.hierarchies.get(typeName);
+  if (cached) { return cached.slice(); }
   const declarations: AnalysisDeclaration[] = [];
   const visited = new Set<string>();
-
   function visit(currentTypeName: string): void {
-    if (visited.has(currentTypeName)) {
-      return;
-    }
-
+    if (visited.has(currentTypeName)) { return; }
     visited.add(currentTypeName);
-    const visible = listVisibleDeclarations(input);
-    declarations.push(...visible.filter((declaration) => (
-      declaration.containerName === currentTypeName
-    )));
-    declarations.push(...recoveredStaticMemberDeclarations(visible, currentTypeName));
-
-    const baseName = visible
-      .find((declaration) => isTypeDeclaration(declaration) && declaration.name === currentTypeName)
-      ?.baseName;
-    if (baseName !== undefined) {
-      visit(baseName);
-    }
+    declarations.push(...index.byContainer.get(currentTypeName) ?? []);
+    declarations.push(...recoveredStaticMemberDeclarations(index.declarations, currentTypeName));
+    const baseName = index.byName.get(currentTypeName)?.find(isTypeDeclaration)?.baseName;
+    if (baseName !== undefined) { visit(baseName); }
   }
-
   visit(typeName);
-  return Array.from(new Map(declarations.map((declaration) => [declaration.id, declaration])).values())
-    .sort(compareDeclarations);
+  const result = Array.from(new Map(declarations.map(declaration => [declaration.id, declaration])).values()).sort(compareDeclarations);
+  index.hierarchies.set(typeName, result);
+  return result.slice();
 }
 
 export function findDeclarationMember(

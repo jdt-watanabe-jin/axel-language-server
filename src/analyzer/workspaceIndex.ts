@@ -23,7 +23,7 @@ import type {
 } from '../types/analysis';
 import { DocumentAnalyzer } from './documentAnalyzer';
 import { collectForcedIncludeFiles, type ForcedIncludeOptions } from './forcedIncludes';
-import { resolveInclude, resolveScriptExecution } from './includeResolver';
+import { resolveInclude, resolveScriptExecution, type IncludeResolution } from './includeResolver';
 import type { WorkspaceDeclarationLookup } from './resolution';
 import { collectSemanticDiagnostics } from './semanticDiagnostics';
 import { mergeWorkspaceIndexOptions } from './workspaceConfig';
@@ -62,6 +62,7 @@ export class WorkspaceIndex {
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
+  private readonly pendingDependencyInputs = new Map<string, AnalyzeDocumentInput>();
   private readonly diagnosticIncludeDependencies = new Map<string, Set<string>>();
   private readonly includeGraph = new Map<string, Set<string>>();
   private readonly definiteIncludeGraph = new Map<string, Set<string>>();
@@ -179,20 +180,27 @@ export class WorkspaceIndex {
       return cached.analysis;
     }
 
-    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
+    const initialAnalysis = cached?.version === input.version ? cached.analysis
+      : this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
     this.documents.set(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
       filePath: filePathFromUri(input.uri),
       workspaceDiagnosticsComplete: false
     });
-    this.indexResolvedIncludes(initialAnalysis, new Set([input.uri]));
+    this.pendingDependencyInputs.set(input.uri, input);
+    try {
+      this.indexResolvedIncludes(initialAnalysis, new Set([input.uri]));
+    } finally {
+      this.pendingDependencyInputs.delete(input.uri);
+    }
     const analysis = this.withWorkspaceDiagnostics(this.reanalyzeWithVisibleContext(input, initialAnalysis));
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
       analysis,
       workspaceDiagnosticsComplete: true
     });
+    this.analyzer.releaseSyntax(analysis.uri);
     return analysis;
   }
 
@@ -453,6 +461,7 @@ export class WorkspaceIndex {
       mtimeMs: stat.mtimeMs,
       workspaceDiagnosticsComplete: true
     });
+    this.analyzer.releaseSyntax(analysis.uri);
     return analysis;
   }
 
@@ -554,7 +563,9 @@ export class WorkspaceIndex {
     const macroDefinitions = this.collectPositionAwareMacroDefinitions(input.uri)
       .filter((macro) => macro.uri !== input.uri);
     if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0 && uncertainNames.length === 0) {
-      return initialAnalysis;
+      return initialAnalysis.typeSnapshot ? initialAnalysis : this.analyzer.analyzeDocument({
+        ...input,tool:this.tool,internalFeatures:this.internalFeatures,targetPlatform:this.targetPlatform
+      });
     }
 
     const analysis = this.analyzer.analyzeDocument({
@@ -596,6 +607,15 @@ export class WorkspaceIndex {
       if (!this.isUncertainRange(analysis, include.range)) { definiteUris.add(resolution.uri); }
       if (!visitedUris.has(resolution.uri)) {
         this.indexDiskDocumentInternal(resolution.filePath, new Set([...visitedUris, resolution.uri]));
+      } else {
+        // A cyclic include needs the open document's declarations, including unsaved edits.
+        const pending = this.pendingDependencyInputs.get(resolution.uri);
+        const indexed = this.documents.get(resolution.uri);
+        if (pending && indexed && !indexed.analysis.typeSnapshot) {
+          indexed.analysis = this.analyzer.analyzeDocument({
+            ...pending, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform
+          });
+        }
       }
     }
 
@@ -702,6 +722,7 @@ export class WorkspaceIndex {
         mtimeMs: stat.mtimeMs,
         workspaceDiagnosticsComplete: true
       });
+      this.analyzer.releaseSyntax(uri);
     });
   }
 
@@ -839,13 +860,14 @@ export class WorkspaceIndex {
 
   private collectPositionAwareMacroDefinitions(sourceUri: string, recordUndef = false): AnalysisMacroDefinition[] {
     const definitions: AnalysisMacroDefinition[] = [];
+    const resolutions = new Map<string, IncludeResolution>();
     const fileStart = { line: 0, character: 0 };
 
     for (const forcedUri of this.knownForcedIncludeUris()) {
-      this.appendDocumentMacroDefinitions(forcedUri, fileStart, new Set(), definitions, recordUndef);
+      this.appendDocumentMacroDefinitions(forcedUri, fileStart, new Set(), definitions, recordUndef, resolutions);
     }
 
-    this.appendDocumentMacroDefinitions(sourceUri, undefined, new Set(), definitions, recordUndef);
+    this.appendDocumentMacroDefinitions(sourceUri, undefined, new Set(), definitions, recordUndef, resolutions);
     return definitions;
   }
 
@@ -854,7 +876,8 @@ export class WorkspaceIndex {
     visibilityStart: AnalysisPosition | undefined,
     visitedUris: Set<string>,
     definitions: AnalysisMacroDefinition[],
-    recordUndef = false
+    recordUndef: boolean,
+    resolutions: Map<string, IncludeResolution>
   ): void {
     if (visitedUris.has(uri)) {
       return;
@@ -894,18 +917,21 @@ export class WorkspaceIndex {
             return;
           }
 
-          const resolution = resolveInclude({
-            includingFilePath,
-            includeText: includeTextForResolution(include.includePath, include.kind),
-            includeRoots: this.includeRoots
-          });
+          const includeText = includeTextForResolution(include.includePath, include.kind);
+          const key = JSON.stringify([includingFilePath, includeText]);
+          let resolution = resolutions.get(key);
+          if (!resolution) {
+            resolution = resolveInclude({includingFilePath, includeText, includeRoots:this.includeRoots});
+            resolutions.set(key, resolution);
+          }
           if (resolution.status === 'resolved') {
             this.appendDocumentMacroDefinitions(
               resolution.uri,
               visibilityStart ?? include.range.end,
               visited,
               definitions,
-              recordUndef
+              recordUndef,
+              resolutions
             );
           }
         }

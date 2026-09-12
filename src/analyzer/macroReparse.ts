@@ -1,3 +1,4 @@
+import { mapSourceOffset } from './sourceOffsetMap';
 import type * as Parser from 'tree-sitter';
 import type { AnalysisPosition, AnalysisRange, AnalyzedDocument } from '../types/analysis';
 import { createMacroLookup } from './diagnostics';
@@ -52,17 +53,9 @@ export function macroReparse(root: Parser.SyntaxNode, original: AnalyzedDocument
   });
   text += source.slice(cursor);
   const expandedPositions = positions(text);
-  function offset(index: number, end: boolean): number {
-    let delta=0;
-    for (const s of segments) {
-      if (index < s.expandedStart || index === s.expandedStart && end) { break; }
-      if (index < s.expandedEnd || index === s.expandedEnd && !end && s.expandedStart===s.expandedEnd) {
-        return end ? s.end : s.start;
-      }
-      delta=s.end-s.expandedEnd;
-    }
-    return index+delta;
-  }
+  const toOriginalSegments = segments.map(s=>({start:s.expandedStart,end:s.expandedEnd,targetStart:s.start,targetEnd:s.end}));
+  const toExpandedSegments = segments.map(s=>({start:s.start,end:s.end,targetStart:s.expandedStart,targetEnd:s.expandedEnd}));
+  const offset = (index:number,end:boolean) => mapSourceOffset(toOriginalSegments,index,end);
   const point = (p: AnalysisPosition, end=false): AnalysisPosition => sourcePositions.position(offset(expandedPositions.offset(p),end));
   const mappedRange = (r: AnalysisRange): AnalysisRange => ({start:point(r.start),end:point(r.end,true)});
   const mappedObjects = new WeakMap<object, unknown>();
@@ -84,13 +77,7 @@ export function macroReparse(root: Parser.SyntaxNode, original: AnalyzedDocument
   }
   const toExpanded = (p: AnalysisPosition, end=false): AnalysisPosition => {
     const index=sourcePositions.offset(p);
-    let delta=0;
-    for (const s of segments) {
-      if (index<s.start || index===s.start && end) { break; }
-      if (index<s.end) { return expandedPositions.position(end ? s.expandedEnd : s.expandedStart); }
-      delta=s.expandedEnd-s.end;
-    }
-    return expandedPositions.position(index+delta);
+    return expandedPositions.position(mapSourceOffset(toExpandedSegments,index,end));
   };
   const result = map(analyze(text,toExpanded)) as AnalyzedDocument;
   // Macro hover/navigation use the written invocation, not tokens introduced by its body.
@@ -102,10 +89,21 @@ export function macroReparse(root: Parser.SyntaxNode, original: AnalyzedDocument
   result.macroDefinitions = original.macroDefinitions;
   result.expandedMacroReferences = replacements.map(r=>({name:r.name,uri:original.uri,
     range:{start:sourcePositions.position(r.start),end:sourcePositions.position(r.start+r.name.length)}}));
-  const inExpansion = (range: AnalysisRange): boolean => replacements.some(r =>
-    sourcePositions.offset(range.start)>=r.start && sourcePositions.offset(range.end)<=r.end);
-  const argumentsInSource = original.references.filter(ref => replacements.some(r =>
-    sourcePositions.offset(ref.range.start)>=r.start+r.name.length && sourcePositions.offset(ref.range.end)<=r.end));
+  const containingReplacement = (range: AnalysisRange) => {
+    const start=sourcePositions.offset(range.start), end=sourcePositions.offset(range.end);
+    let low=0, high=replacements.length;
+    while(low<high) {
+      const mid=(low+high)>>>1;
+      if(replacements[mid].start<=start) { low=mid+1; } else { high=mid; }
+    }
+    const replacement=replacements[low-1];
+    return replacement && end<=replacement.end ? replacement : undefined;
+  };
+  const inExpansion = (range: AnalysisRange): boolean => containingReplacement(range)!==undefined;
+  const argumentsInSource = original.references.filter(ref => {
+    const replacement=containingReplacement(ref.range);
+    return replacement!==undefined && sourcePositions.offset(ref.range.start)>=replacement.start+replacement.name.length;
+  });
   result.navigationReferences = [...result.expandedMacroReferences, ...argumentsInSource,
     ...result.references.filter(ref=>!inExpansion(ref.range))];
   result.references.unshift(...result.expandedMacroReferences);

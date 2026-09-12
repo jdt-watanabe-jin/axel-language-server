@@ -70,16 +70,24 @@ function diagnosticsForSyntaxNode(
   return [defaultDiagnostic];
 }
 
+const macroNameIndexes = new WeakMap<readonly AnalysisMacroDefinition[], Map<string, AnalysisMacroDefinition[]>>();
+
 export function createMacroLookup(
   macros: readonly AnalysisMacroDefinition[],
   sourceUri?: AnalysisDocumentUri,
   position?: AnalysisMacroDefinition['selectionRange']['start']
 ): MacroLookup {
+  let byName = macroNameIndexes.get(macros);
+  if (!byName) {
+    byName = new Map();
+    for (const macro of macros) {
+      const entries = byName.get(macro.name) ?? [];
+      entries.push(macro); byName.set(macro.name, entries);
+    }
+    macroNameIndexes.set(macros, byName);
+  }
   return {
-    findMacro: (name) => macros
-      .filter((macro) => macro.name === name)
-      .filter((macro) => macroIsVisibleAtPosition(macro, sourceUri, position))
-      .at(-1)
+    findMacro: name => byName.get(name)?.findLast(macro => macroIsVisibleAtPosition(macro, sourceUri, position))
   };
 }
 

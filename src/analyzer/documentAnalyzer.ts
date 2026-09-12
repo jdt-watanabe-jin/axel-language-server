@@ -1,3 +1,5 @@
+import { nodeToAnalysisRange } from './syntaxTree';
+import { cachedSyntaxNode } from './cachedSyntaxNode';
 import { conditionalReparse } from './conditionalReparse';
 import { macroReparse } from './macroReparse';
 import { collectSyntaxRecovery } from './syntaxRecovery';
@@ -46,34 +48,49 @@ export class DocumentAnalyzer {
   private readonly parser: Parser;
   private readonly logger: AnalysisLogger;
   private readonly cache = new Map<string, CachedAnalysis>();
+  private readonly syntaxCache = new Map<string, {version:number; roots:Map<string, Parser.SyntaxNode>}>();
+
+  private syntaxRoot(input: AnalyzeDocumentInput, text = input.text): Parser.SyntaxNode {
+    let generation = this.syntaxCache.get(input.uri);
+    if (!generation || generation.version !== input.version) {
+      generation = {version:input.version, roots:new Map()};
+      this.syntaxCache.set(input.uri, generation);
+    }
+    let root = generation.roots.get(text);
+    if (!root) {
+      root = cachedSyntaxNode(this.parser.parse(text).rootNode);
+      generation.roots.set(text,root);
+    }
+    return root;
+  }
 
   public constructor(parser = createAxelParser(), logger: AnalysisLogger = NullLogger) {
     this.parser = parser;
     this.logger = logger;
   }
 
-  public analyzeDocument(input: AnalyzeDocumentInput, expandMacros = true): AnalyzedDocument {
-    const analysisContextKey = analysisContextKeyFromInput(input) + String(expandMacros);
+  public analyzeDocument(input: AnalyzeDocumentInput, expandMacros = true, dependenciesOnly = false): AnalyzedDocument {
+    const analysisContextKey = analysisContextKeyFromInput(input) + String(expandMacros) + String(dependenciesOnly);
     const cached = this.cache.get(input.uri);
     if (cached?.version === input.version && cached.analysisContextKey === analysisContextKey) {
       return cached.analysis;
     }
 
     return measureDurationMs(this.logger, 'document.analyze', { uri: input.uri, version: input.version }, () => {
-      const originalTree = this.parser.parse(input.text);
-      const conditional = originalTree.rootNode.hasError
+      const originalRoot = this.syntaxRoot(input);
+      const conditional = originalRoot.hasError
         ? conditionalReparse(input, text => this.parser.parse(text)) : undefined;
-      const tree = conditional ? this.parser.parse(conditional.text) : originalTree;
-      const systemSyntax = collectSystemMacroSyntax(originalTree.rootNode);
-      const guiClasses = buildGuiIndex(tree.rootNode, input.uri, knownGuiClassMapFromInput(input));
-      const guiMethods = collectExternalGuiMethods(tree.rootNode);
+      const root = conditional ? this.syntaxRoot(input, conditional.text) : originalRoot;
+      const systemSyntax = dependenciesOnly ? {references:[],mutations:[],excludedRanges:[]} : collectSystemMacroSyntax(originalRoot);
+      const guiClasses = buildGuiIndex(root, input.uri, knownGuiClassMapFromInput(input));
+      const guiMethods = collectExternalGuiMethods(root);
       const knownGuiClassNames = new Set([
         ...(input.knownGuiClassNames ?? []),
         ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
         ...guiClasses.map((guiClass) => guiClass.name)
       ]);
-      const { inactiveRanges, uncertainRanges, uncertainNames } = conditional?.evaluation ?? evaluatePreprocessor(tree.rootNode, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
-      const macroDefinitions = collectMacroDefinitions(tree.rootNode, input.uri);
+      const { inactiveRanges, uncertainRanges, uncertainNames } = conditional?.evaluation ?? evaluatePreprocessor(root, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
+      const macroDefinitions = collectMacroDefinitions(root, input.uri);
       const activeMacroDefinitions = macroDefinitions.filter((macro) => !isSystemMacroName(macro.name)
         && !startsInInactiveRange(macro.selectionRange, [...inactiveRanges, ...uncertainRanges]));
       const visibleMacroDefinitions = [
@@ -83,12 +100,41 @@ export class DocumentAnalyzer {
           visibilityStart: macro.range.end
         }))
       ].sort(compareMacroVisibility);
-      const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
-      const recoveredCalls = resolveAmbiguousCalls(tree.rootNode,input.uri,symbolIndex.declarations,
+      if (dependenciesOnly) {
+        const declarations = root.descendantsOfType(['preproc_def','preproc_function_def'])
+          .flatMap(node => buildSymbolIndex(node,input.uri).declarations)
+          .filter(d => !isSystemMacroName(d.name) && !startsInInactiveRange(d.selectionRange,[...inactiveRanges,...uncertainRanges]));
+        let analysis: AnalyzedDocument = {
+          uri:input.uri, version:input.version, tool:normalizeTool(input.tool),
+          internalFeatures:normalizeInternalFeatures(input.internalFeatures),targetPlatform:normalizeTargetPlatform(input.targetPlatform),
+          diagnostics:[], symbols:[], declarations, references:[],
+          scopes:[{id:'global',range:nodeToAnalysisRange(root),declarationIds:declarations.map(d=>d.id)}],
+          includes:collectIncludes(root).filter(i=>!startsInInactiveRange(i.range,inactiveRanges)),
+          scriptExecutions:collectScriptExecutions(root).filter(e=>!startsInInactiveRange(e.selectionRange,inactiveRanges)),
+          macroDefinitions:activeMacroDefinitions, macroInvocations:[],
+          guiClasses:filterGuiClassesForInactiveRanges(guiClasses,[...inactiveRanges,...uncertainRanges]),
+          guiMethods:[],inactiveRanges,uncertainRanges,uncertainNames,
+          uncertainMacroDefinitions:macroDefinitions.filter(m=>startsInInactiveRange(m.selectionRange,uncertainRanges)
+            && !startsInInactiveRange(m.selectionRange,inactiveRanges))
+        };
+        if (expandMacros) {
+          analysis = macroReparse(root,analysis,visibleMacroDefinitions,(text,position)=>this.analyzeDocument({...input,text,
+            preprocessorSymbols:input.preprocessorSymbols?.map(symbol=>({...symbol,sourceRange:symbol.sourceRange
+              ? {start:position(symbol.sourceRange.start),end:position(symbol.sourceRange.end,true)} : undefined})),
+            macroDefinitions:input.macroDefinitions?.map(macro=>({...macro,
+              visibilityStart:macro.visibilityStart ? position(macro.visibilityStart) : undefined}))
+          },false,true));
+        }
+        if (conditional) { analysis.inactiveRanges=inactiveRanges; }
+        this.cache.set(input.uri,{version:input.version,analysisContextKey,analysis});
+        return analysis;
+      }
+      const symbolIndex = buildSymbolIndex(root, input.uri, knownGuiClassNames);
+      const recoveredCalls = resolveAmbiguousCalls(root,input.uri,symbolIndex.declarations,
         [...inactiveRanges,...uncertainRanges],text=>this.parser.parse(text).rootNode);
       const recoveredStatements = recoveredCalls;
       const recoveredStatementRanges = recoveredStatements.map(statement=>statement.range);
-      const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
+      const syntaxDiagnostics = collectSyntaxDiagnostics(root, {
         uri: input.uri,
         macroDefinitions: visibleMacroDefinitions,
         parseText: (text) => this.parser.parse(text).rootNode
@@ -100,14 +146,14 @@ export class DocumentAnalyzer {
         startsInInactiveRange(declaration.selectionRange, uncertainRanges)
         && !startsInInactiveRange(declaration.selectionRange, inactiveRanges)
         && !(declaration.kind === 'macro' && isSystemMacroName(declaration.name)));
-      const scopes = buildScopeIndex(tree.rootNode, input.uri, symbolIndex.declarations);
-      const includes = collectIncludes(tree.rootNode);
-      const scriptExecutions = collectScriptExecutions(tree.rootNode);
-      const macroInvocations = collectMacroInvocations(tree.rootNode, input.uri);
-      const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
-      const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
+      const scopes = buildScopeIndex(root, input.uri, symbolIndex.declarations);
+      const includes = collectIncludes(root);
+      const scriptExecutions = collectScriptExecutions(root);
+      const macroInvocations = collectMacroInvocations(root, input.uri);
+      const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(root);
+      const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(root, input.uri);
       let analysis: AnalyzedDocument = {
-        typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri, recoveredStatements.map(statement=>statement.node)),
+        ...(!expandMacros ? {typeSnapshot:buildTypeSnapshot(root,input.uri,recoveredStatements.map(statement=>statement.node))} : {}),
         internalFeatures: normalizeInternalFeatures(input.internalFeatures),
         tool: normalizeTool(input.tool),
         targetPlatform: normalizeTargetPlatform(input.targetPlatform),
@@ -128,7 +174,7 @@ export class DocumentAnalyzer {
             ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
           }))
         ],
-        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(tree.rootNode, { guiClasses, guiMethods, excludedRanges: [...inactiveRanges, ...recoveredStatementRanges] }), [...inactiveRanges,...recoveredStatementRanges]),
+        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(root, { guiClasses, guiMethods, excludedRanges: [...inactiveRanges, ...recoveredStatementRanges] }), [...inactiveRanges,...recoveredStatementRanges]),
         declarations: symbolIndex.declarations.filter((declaration) => !(declaration.kind === 'macro' && isSystemMacroName(declaration.name))
           && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
@@ -150,10 +196,10 @@ export class DocumentAnalyzer {
         inactiveRanges
       };
 
-      analysis.syntaxRecovery = collectSyntaxRecovery(tree.rootNode, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
+      analysis.syntaxRecovery = collectSyntaxRecovery(root, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
 
       if (expandMacros) {
-        analysis = macroReparse(tree.rootNode, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocument({...input, text,
+        analysis = macroReparse(root, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocument({...input, text,
           preprocessorSymbols: input.preprocessorSymbols?.map(symbol => ({...symbol, sourceRange: symbol.sourceRange
             ? {start:position(symbol.sourceRange.start),end:position(symbol.sourceRange.end,true)} : undefined})),
           macroDefinitions: input.macroDefinitions?.map(macro => ({...macro,
@@ -161,6 +207,7 @@ export class DocumentAnalyzer {
         }, false));
       }
 
+      analysis.typeSnapshot ??= buildTypeSnapshot(root,input.uri,recoveredStatements.map(statement=>statement.node));
       if (conditional) {
         analysis.inactiveRanges = inactiveRanges;
         analysis.systemMacroReferences = systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges));
@@ -175,13 +222,20 @@ export class DocumentAnalyzer {
     });
   }
 
+  /** Release native syntax views after the workspace has finished this analysis operation. */
+  public releaseSyntax(uri: string): void {
+    this.syntaxCache.delete(uri);
+  }
+
   public clear(uri?: string): void {
     if (uri === undefined) {
       this.cache.clear();
+      this.syntaxCache.clear();
       return;
     }
 
     this.cache.delete(uri);
+    this.syntaxCache.delete(uri);
   }
 }
 
