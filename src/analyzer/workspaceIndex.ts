@@ -1,3 +1,4 @@
+import { affectedBySyntaxRecovery } from './syntaxRecovery';
 import { normalizeTargetPlatform } from './targetPlatform';
 import { descendants, field } from './typeChecking/syntax';
 import { collectTypeDiagnostics } from './typeChecking/diagnostics';
@@ -474,7 +475,8 @@ export class WorkspaceIndex {
           documents: this.collectDefiniteVisibleUris(analysis.uri).flatMap(uri => {
             const visible = this.documents.get(uri)?.analysis;
             return visible ? [visible] : [];
-          }), catalog: this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles)}),
+          }), catalog: this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles)})
+          .filter(diagnostic => !affectedBySyntaxRecovery(analysis.syntaxRecovery, diagnostic.range)),
         ...this.unresolvedIncludeDiagnostics(analysis),
         ...this.unresolvedScriptExecutionDiagnostics(analysis),
         ...collectSemanticDiagnostics({

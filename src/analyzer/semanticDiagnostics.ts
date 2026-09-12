@@ -1,3 +1,4 @@
+import { affectedBySyntaxRecovery } from './syntaxRecovery';
 import { message, type MessageDescriptor } from '../i18n/messages';
 import { containsSourcePosition, isSystemMacroName, resolveSystemMacro } from './systemMacros';
 import type {
@@ -34,7 +35,7 @@ import {
 } from './resolution';
 
 export interface SemanticDiagnosticsInput {
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations'>;
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool' | 'syntaxRecovery' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations'>;
   workspaceIndex?: WorkspaceSemanticDiagnosticsIndex;
 }
 
@@ -46,7 +47,7 @@ export interface WorkspaceSemanticDiagnosticsIndex {
 
 export function collectSemanticDiagnostics(input: SemanticDiagnosticsInput): AnalysisDiagnostic[] {
   input = {...input, analysis: {...input.analysis,
-    references: input.analysis.references.filter(reference => !reference.preprocessor)}};
+    references: input.analysis.references.filter(reference => !reference.preprocessor && !affectedBySyntaxRecovery(input.analysis.syntaxRecovery, reference.range))}};
   // Potential declarations cannot prove a duplicate, missing name or signature.
   // Keep unrelated references so an unknown branch does not disable diagnostics.
   const uncertainNames = new Set(input.analysis.uncertainNames ?? []);
@@ -246,10 +247,6 @@ function unresolvedTypeReferenceDiagnostics(
   analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
-  if (hasSyntaxDiagnostics(analysis.diagnostics)) {
-    return [];
-  }
-
   return analysis.references
     .filter((reference) => reference.typeReference === true)
     .filter((reference) => !isMacroLikeTypeRecovery(reference.name))
@@ -293,10 +290,6 @@ function unresolvedIdentifierDiagnostics(
   analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
-  if (hasSyntaxDiagnostics(analysis.diagnostics)) {
-    return [];
-  }
-
   return analysis.references
     .filter((reference) => reference.typeReference !== true)
     .filter((reference) => !isKnownIdentifierReference(reference, analysis, workspaceIndex))
@@ -415,10 +408,6 @@ function callArgumentCountDiagnostics(
   analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
-  if (hasSyntaxDiagnostics(analysis.diagnostics)) {
-    return [];
-  }
-
   const diagnostics: AnalysisDiagnostic[] = [];
   for (const reference of analysis.references) {
     if (reference.call !== true || reference.argumentCount === undefined) {
@@ -569,16 +558,13 @@ function findGuiPartByName(
 }
 
 function guiReceiverPathDiagnostics(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'guiClasses' | 'guiMethods'>,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'syntaxRecovery' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
-  if (hasSyntaxDiagnostics(analysis.diagnostics)) {
-    return [];
-  }
-
   const diagnostics: AnalysisDiagnostic[] = [];
 
   for (const method of analysis.guiMethods) {
+    if (affectedBySyntaxRecovery(analysis.syntaxRecovery, method.range)) { continue; }
     const diagnostic = guiReceiverPathDiagnostic(analysis, workspaceIndex, method);
     if (diagnostic !== undefined) {
       diagnostics.push(diagnostic);
@@ -618,13 +604,6 @@ function guiReceiverPathDiagnostic(
   }
 
   return undefined;
-}
-
-function hasSyntaxDiagnostics(diagnostics: readonly AnalysisDiagnostic[]): boolean {
-  return diagnostics.some((diagnostic) => (
-    diagnostic.severity === 'error'
-    && (diagnostic.message === 'Syntax error.' || diagnostic.message.startsWith('Missing '))
-  ));
 }
 
 function findPart(

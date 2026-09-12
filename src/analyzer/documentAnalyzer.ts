@@ -1,3 +1,4 @@
+import { collectSyntaxRecovery } from './syntaxRecovery';
 import { resolveAmbiguousCalls } from './ambiguousCalls';
 import { recoverMacroCommands } from './macroCommands';
 import { buildTypeSnapshot } from './typeChecking/syntax';
@@ -146,6 +147,8 @@ export class DocumentAnalyzer {
         guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, [...inactiveRanges, ...uncertainRanges])),
         inactiveRanges
       };
+
+      analysis.syntaxRecovery = collectSyntaxRecovery(tree.rootNode, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
 
       this.cache.set(input.uri, {
         version: input.version,

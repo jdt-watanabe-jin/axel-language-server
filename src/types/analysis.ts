@@ -299,6 +299,7 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  syntaxRecovery?: import("../analyzer/syntaxRecovery").SyntaxRecovery;
   typeSnapshot?: import('../analyzer/typeChecking/syntax').TypeSnapshot;
   tool?: string;
   targetPlatform?: string;

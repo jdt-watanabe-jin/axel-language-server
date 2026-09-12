@@ -50,6 +50,16 @@ suite('LSP stdio document lifecycle', function () {
     assert.deepStrictEqual(hover.contents, { kind: 'markdown', value: '```axel\nstring newName\n```' });
   });
 
+  test('keeps independent undefined diagnostics while syntax is broken', async () => {
+    await open('void broken(){ DEBUG dat.Now(); } void main(){ DBCategory cat; DMIniF.Store(); }');
+    const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
+    assert.strictEqual(report.kind, 'full');
+    if (report.kind !== 'full') { return; }
+    assert.ok(report.items.some(item => item.message === 'Syntax error.'));
+    assert.ok(report.items.some(item => item.message === "Unknown type 'DBCategory'."));
+    assert.ok(report.items.some(item => item.message === "Unknown identifier 'DMIniF'."));
+  });
+
   test('pull diagnostics clear after malformed source is repaired', async () => {
     await open('void main( {');
     const broken = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
