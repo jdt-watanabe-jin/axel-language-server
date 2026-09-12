@@ -29,11 +29,11 @@ suite('Member receiver scope', () => {
   });
   test('local variables still shadow class fields', () => {
     const diagnostics = check('int socket; socket.SetDialog(this);');
-    assert.ok(diagnostics.some(d => d.message === "Unknown identifier 'SetDialog'."));
+    assert.ok(diagnostics.some(d => d.message === "Member 'SetDialog' was not found on type 'int'."));
   });
   test('reports missing members on a correctly resolved receiver', () => {
     const diagnostics = check('socket.Missing();');
-    assert.ok(diagnostics.some(d => d.message === "Unknown identifier 'Missing'."));
+    assert.ok(diagnostics.some(d => d.message === "Member 'Missing' was not found on type 'MySocket'."));
   });
   for (const [name, args, signature] of [
     ['SetDialog', 'this', 'void MySocket::SetDialog(Dialog *dlg)'],

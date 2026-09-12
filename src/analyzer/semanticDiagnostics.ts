@@ -293,12 +293,17 @@ function unresolvedIdentifierDiagnostics(
   return analysis.references
     .filter((reference) => reference.typeReference !== true)
     .filter((reference) => !isKnownIdentifierReference(reference, analysis, workspaceIndex))
-    .map((reference) => ({
-      severity: 'error',
-      source: 'axel',
-      ...message("Unknown identifier '{0}'.", reference.name),
-      range: reference.range
-    }));
+    .map((reference): AnalysisDiagnostic => {
+      const ownerType = memberReferenceOwnerType(reference, analysis, workspaceIndex);
+      return {
+        severity: 'error',
+        source: 'axel',
+        ...(ownerType === undefined
+          ? message("Unknown identifier '{0}'.", reference.name)
+          : message("Member '{0}' was not found on type '{1}'.", reference.name, ownerType)),
+        range: reference.range
+      };
+    });
 }
 
 function isKnownIdentifierReference(
@@ -341,9 +346,20 @@ function isKnownMemberReference(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): boolean {
+  const ownerType = memberReferenceOwnerType(reference, analysis, workspaceIndex);
+  if (ownerType === undefined || isGuiPartTypeName(ownerType)) { return true; }
+  const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
+  return findDeclarationMember(input, ownerType, reference.name) !== undefined;
+}
+
+function memberReferenceOwnerType(
+  reference: AnalysisReference,
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
+): string | undefined {
   const memberAccess = reference.memberAccess;
   if (memberAccess === undefined) {
-    return true;
+    return undefined;
   }
 
   const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
@@ -352,18 +368,14 @@ function isKnownMemberReference(
     : receiverTypeName(input, memberAccess.receiverName)
       ?? typeDeclarationName(input, memberAccess.receiverName);
   if (receiverType === undefined) {
-    return true;
+    return undefined;
   }
 
   const parentMembers = memberAccess.memberNames.slice(0, -1);
   const ownerType = parentMembers.length === 0
     ? receiverType
     : resolveMemberAccessType(input, receiverType, parentMembers);
-  if (ownerType === undefined || isGuiPartTypeName(ownerType)) {
-    return true;
-  }
-
-  return findDeclarationMember(input, ownerType, reference.name) !== undefined;
+  return ownerType;
 }
 
 function isKnownDirectGuiDialogCall(
