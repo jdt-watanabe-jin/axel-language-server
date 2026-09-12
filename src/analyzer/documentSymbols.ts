@@ -109,8 +109,13 @@ function includeSymbolFromNode(node: Parser.SyntaxNode): AnalysisSymbol | null {
     return null;
   }
 
+  const name = includePathName(pathNode.text);
+  if (name.trim().length === 0) {
+    return null;
+  }
+
   return {
-    name: includePathName(pathNode.text),
+    name,
     kind: 'include',
     detail: normalizeSymbolText(node.text),
     range: nodeToAnalysisRange(node),
@@ -124,7 +129,7 @@ function macroSymbolFromNode(node: Parser.SyntaxNode): AnalysisSymbol | null {
   }
 
   const nameNode = node.childForFieldName('name');
-  if (nameNode === null) {
+  if (nameNode === null || nameNode.text.trim().length === 0) {
     return null;
   }
 
@@ -143,7 +148,7 @@ function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolConte
   }
 
   const nameNode = getDeclaratorName(node);
-  if (nameNode === null) {
+  if (nameNode === null || nameNode.text.trim().length === 0) {
     return null;
   }
 
@@ -213,7 +218,7 @@ function attachExternalMethods(
 
 function typeSymbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol | null {
   const nameNode = node.childForFieldName('name');
-  if (nameNode === null) {
+  if (nameNode === null || nameNode.text.trim().length === 0) {
     return null;
   }
 
@@ -263,7 +268,7 @@ function enumMemberSymbolsFromNode(enumNode: Parser.SyntaxNode, enumName: string
 
 function enumMemberSymbolFromNode(enumerator: Parser.SyntaxNode, enumName: string): AnalysisSymbol[] {
   const nameNode = enumerator.childForFieldName('name');
-  if (nameNode === null) {
+  if (nameNode === null || nameNode.text.trim().length === 0) {
     return [];
   }
 

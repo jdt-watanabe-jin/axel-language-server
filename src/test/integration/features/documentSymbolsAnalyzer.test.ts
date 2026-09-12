@@ -8,6 +8,44 @@ import type { AnalysisSymbol } from '../../../types/analysis';
 
 suite('collectDocumentSymbols', () => {
 
+  test('preserves static type definitions and their outline members', () => {
+    const text = 'static struct StrParaRec { int value; };\nstatic class StrParaList { int count; };';
+    const analysis = new DocumentAnalyzer().analyzeDocument({ uri: 'file:///static-types.h', version: 1, text });
+    assert.deepStrictEqual(analysis.diagnostics, []);
+    const symbols = analysis.symbols.map(toLspDocumentSymbol);
+    assert.deepStrictEqual(symbols.map(symbol => [symbol.name, symbol.kind]), [
+      ['StrParaRec', SymbolKind.Struct], ['StrParaList', SymbolKind.Class]
+    ]);
+    assert.deepStrictEqual(symbols.map(symbol => symbol.children?.map(child => [child.name, child.kind])), [
+      [['value', SymbolKind.Field]], [['count', SymbolKind.Field]]
+    ]);
+    assert.deepStrictEqual(symbols.map(symbol => symbol.selectionRange.start), [
+      { line: 0, character: 14 }, { line: 1, character: 13 }
+    ]);
+  });
+
+  for (const source of ['int *;', '#include ""', '#include "   "']) {
+    test(`omits an unnamed outline entry from ${source}`, () => {
+      const symbols = collectDocumentSymbols(createAxelParser().parse(`${source}\nint good;`).rootNode);
+      assert.deepStrictEqual(symbols.map(symbol => symbol.name), ['good']);
+    });
+  }
+
+  test('omits a type with a missing name', () => {
+    const root = createAxelParser().parse('class ;').rootNode;
+    assert.strictEqual(root.hasError, true);
+    assert.deepStrictEqual(collectDocumentSymbols(root), []);
+  });
+
+  test('omits missing member names while retaining named members', () => {
+    const root = createAxelParser().parse('class C { int *; int good; };').rootNode;
+    assert.strictEqual(root.hasError, true);
+    const symbols = collectDocumentSymbols(root).map(toLspDocumentSymbol);
+    assert.deepStrictEqual(symbols.map(symbol => symbol.name), ['C']);
+    assert.deepStrictEqual(symbols[0].children?.map(symbol => symbol.name), ['good']);
+  });
+
+
   test('nests external methods and preserves overloads, declarations and navigation', () => {
     const text = [
       'class Version { static Version makeVersion(int value); };',
