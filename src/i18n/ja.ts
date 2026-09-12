@@ -1,5 +1,6 @@
 /** Translations of server-owned text; source code and user comments are never keys. */
 export const japaneseMessages: Readonly<Record<string, string>> = {
+  "Member '{0}' was not found on type '{1}'.": "型 '{1}' にメンバー '{0}' が見つかりません。",
   "Cannot instantiate class '{0}' without instance data.": "データメンバーのないクラス'{0}'の変数は生成できません。",
   'Runtime values remain symbolic: {0}.': '実行時に決まる値はマクロ名を残しています: {0}。',
   'System-defined macro: {0} ({1})': 'システム定義マクロ: {0} ({1})',

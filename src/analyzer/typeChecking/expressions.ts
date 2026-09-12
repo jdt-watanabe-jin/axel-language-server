@@ -358,7 +358,8 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
             category:'storage',guiReceiver:{owner,path}};
         }
       }
-      problem(ctx, name, 'member', undefined, type);
+      ctx.diagnostics.push({severity: 'error', source: 'axel', code: 'axel.type.member', range: name.range,
+        ...message("Member '{0}' was not found on type '{1}'.", name.text, type.name)});
       return unknown();
     }
     case 'subscript_expression': {
