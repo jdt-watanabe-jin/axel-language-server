@@ -341,7 +341,12 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
     case 'field_expression': {
       const value = expression(field(node, 'argument'));
       let type = dereference(value.type);
-      if (op.startsWith('->') && type.element) { type = type.element; }
+      if (op === '.' && type.kind === 'pointer' && type.element) {
+        ctx.diagnostics.push({severity: 'warning', source: 'axel', code: 'axel.type.pointer_dot',
+          range: field(node, 'operator')!.range,
+          ...message("Use '->' instead of '.' to access members of pointer type '{0}'.", type.name)});
+        type = type.element;
+      } else if (op.startsWith('->') && type.element) { type = type.element; }
       const name = field(node, 'field');
       if (!name || type.kind === 'unknown') { return unknown(); }
       const found = member(ctx, type, name.text);

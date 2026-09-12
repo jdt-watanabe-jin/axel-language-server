@@ -62,3 +62,5 @@ Changes to source, configuration, or a notified included file trigger renewed an
 If builtin conversions or prototype handling look wrong, verify the loaded server/parser build, the explicit entry path, the companion's profile, and its file list. Keep analysis-only headers out of runtime compilation. Their declaration syntax and contents serve editor analysis, while the runtime profile defines executable behavior.
 
 See [developer architecture and verification](../developer/type-checking.md) for regression coverage and the optional runtime runner.
+
+AXEL permits member access through `.` on a pointer. The server resolves the pointed-to member and reports a warning recommending `->`. A missing member remains an error.
