@@ -664,10 +664,12 @@ function parametersFromParameterList(parameterList: Parser.SyntaxNode): Analysis
       typedEllipsis = isTypedVariadicParameter(child);
       parameters.push({
         label: normalizeSignatureText(child.text) + (typedEllipsis ? ' ...' : ''),
+        ...(getDeclaratorName(child)?.text ? { name: getDeclaratorName(child)?.text } : {}),
+        ...(typedEllipsis ? { variadic: true } : {}),
         ...(hasDefaultArgument(child) ? { optional: true } : {})
       });
     } else if (child?.text === '...') {
-      if (!typedEllipsis) { parameters.push({ label: '...' }); }
+      if (!typedEllipsis) { parameters.push({ label: '...', variadic: true }); }
       typedEllipsis = false;
     }
   }
@@ -735,6 +737,7 @@ function leadingDocumentationForNode(node: Parser.SyntaxNode): string | undefine
   let sibling = previousNamedSibling(node);
 
   while (sibling?.type === 'comment' && sibling.endPosition.row + 1 === nextNode.startPosition.row) {
+    if (/^(?:\/\*!|\/\*\*(?!\*)|\/\/[!/])/.test(sibling.text.trimStart())) { break; }
     comments.unshift(sibling.text);
     nextNode = sibling;
     sibling = previousNamedSibling(sibling);

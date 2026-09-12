@@ -1,3 +1,5 @@
+import { bindDocumentation } from './documentation/index';
+import type { DocumentationBindings } from './documentation/model';
 import { affectedBySyntaxRecovery } from './syntaxRecovery';
 import { normalizeTargetPlatform } from './targetPlatform';
 import { descendants, field } from './typeChecking/syntax';
@@ -50,6 +52,7 @@ interface IndexedDocument {
 }
 
 export class WorkspaceIndex {
+  private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
   private readonly analyzer: DocumentAnalyzer;
   private includeRoots: string[];
   private forcedIncludeRoots: string[];
@@ -281,6 +284,22 @@ export class WorkspaceIndex {
       .sort(compareDeclarations);
   }
 
+  public documentationBindings(sourceUri: string): DocumentationBindings {
+    this.ensureForcedIncludesIndexed();
+    const source = this.documents.get(sourceUri)?.analysis;
+    if (!source) { return new Map(); }
+    const documents = [sourceUri, ...this.collectDefiniteVisibleUris(sourceUri)]
+      .map(uri => this.documents.get(uri)?.analysis)
+      .filter((doc): doc is AnalyzedDocument => doc !== undefined);
+    const cached = this.documentationCache.get(sourceUri);
+    if (cached && cached.documents.length === documents.length && documents.every((doc, i) => doc === cached.documents[i])) {
+      return cached.bindings;
+    }
+    const bindings = bindDocumentation(source, documents, this.listVisibleDeclarations(sourceUri));
+    this.documentationCache.set(sourceUri, { documents, bindings });
+    return bindings;
+  }
+
   public listVisibleDocuments(sourceUri: string): AnalyzedDocument[] {
     this.ensureForcedIncludesIndexed();
     return [sourceUri, ...this.collectVisibleUris(sourceUri)]
@@ -398,6 +417,7 @@ export class WorkspaceIndex {
   public deleteDocument(uri: string): void {
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
+    this.documentationCache.clear();
     this.documents.delete(uri);
     this.replaceIncludeEdges(uri, new Set());
     this.analyzer.clear(uri);
@@ -409,6 +429,7 @@ export class WorkspaceIndex {
   }
 
   public invalidateUri(uri: string): void {
+    this.documentationCache.clear();
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
     this.builtinCatalogCache = undefined;
     if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().includes(uri)) {
@@ -1100,6 +1121,7 @@ export class WorkspaceIndex {
       this.analyzer.clear(uri);
     }
 
+    this.documentationCache.clear();
     this.documents.clear();
     this.diagnosticIncludeDependencies.clear();
     this.includeGraph.clear();

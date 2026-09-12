@@ -71,11 +71,17 @@ export interface AnalysisDeclaration {
 }
 
 export interface AnalysisParameter {
+  name?: string;
+  variadic?: boolean;
+  documentation?: string;
+  documentationMarkdown?: string;
   label: string;
   optional?: boolean;
 }
 
 export interface AnalysisSignature {
+  documentation?: string;
+  documentationMarkdown?: string;
   label: string;
   parameters: AnalysisParameter[];
 }
@@ -173,6 +179,7 @@ export type AnalysisCompletionItemKind =
   | 'event';
 
 export interface AnalysisCompletionItem {
+  documentationMarkdown?: string;
   name: string;
   kind: AnalysisCompletionItemKind;
   detail?: string;
@@ -301,6 +308,7 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  documentationBlocks?: readonly import('../analyzer/documentation/model').DocumentationBlock[];
   expandedMacroReferences?: AnalysisReference[];
   navigationReferences?: AnalysisReference[];
   syntaxRecovery?: import("../analyzer/syntaxRecovery").SyntaxRecovery;

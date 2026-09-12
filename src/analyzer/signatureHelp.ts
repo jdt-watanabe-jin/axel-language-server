@@ -1,3 +1,5 @@
+import { boundDocumentationFor } from './documentation/access';
+import { renderDocumentation, renderParameterDocumentation } from './documentation/render';
 import type * as Parser from 'tree-sitter';
 import type {
   AnalyzedDocument,
@@ -10,6 +12,7 @@ import { findSmallestNamedNodeAtPosition, nodeToAnalysisRange } from './syntaxTr
 import { comparePositions, contains, positionBeforeOrEqual } from './resolution';
 
 export interface SignatureHelpInput {
+  locale?: string;
   analysis: AnalyzedDocument;
   text: string;
   position: AnalysisPosition;
@@ -36,10 +39,23 @@ export function getSignatureHelp(input: SignatureHelpInput): AnalysisSignatureHe
     return null;
   }
 
+  const bound = boundDocumentationFor(input.analysis, input.workspaceIndex, declaration);
+  const rendered = bound ? renderDocumentation(bound, input.locale) : undefined;
+  const signature = rendered ? {
+    ...declaration.signature,
+    documentation: rendered.plainText,
+    documentationMarkdown: rendered.markdown,
+    parameters: declaration.signature.parameters.map((parameter, i) => {
+      const description = renderParameterDocumentation(bound!, i, input.locale);
+      return description ? { ...parameter, documentation: description.plainText, documentationMarkdown: description.markdown } : parameter;
+    })
+  } : declaration.signature;
+  const variadic = signature.parameters.findIndex(parameter => parameter.variadic);
+  const active = activeParameterIndex(call, input.position);
   return {
-    signatures: [declaration.signature],
+    signatures: [signature],
     activeSignature: 0,
-    activeParameter: activeParameterIndex(call, input.position)
+    activeParameter: variadic >= 0 && active >= variadic ? variadic : active
   };
 }
 

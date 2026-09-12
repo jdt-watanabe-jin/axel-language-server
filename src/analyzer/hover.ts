@@ -1,3 +1,6 @@
+import { renderedDocumentationFor } from './documentation/access';
+import type { RenderedDocumentation } from './documentation/model';
+import type { DocumentationBindings } from './documentation/model';
 import { withDeclarationOrigin } from './declarationOrigin';
 import { describeSystemMacro, resolveSystemMacro, systemMacroAt } from './systemMacros';
 import { translate } from '../i18n/messages';
@@ -45,6 +48,7 @@ export interface HoverInput {
 }
 
 export interface WorkspaceDeclarationIndex {
+  documentationBindings?(sourceUri: string): DocumentationBindings;
   listVisibleDocuments?(sourceUri: string): AnalyzedDocument[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;
@@ -86,7 +90,7 @@ export function getHover(input: HoverInput): AnalysisHover | null {
   const declaration = findDeclarationAtPosition(input.analysis, input.position);
 
   if (declaration !== undefined) {
-    return hoverForDeclaration(declaration);
+    return hoverForDeclaration(input, declaration);
   }
 
   const reference = findReferenceAtPosition(input.analysis, input.position);
@@ -109,7 +113,7 @@ export function getHover(input: HoverInput): AnalysisHover | null {
     }
 
     return withDeclarationOrigin(
-      hoverForReferenceDeclaration(referenceDeclaration, reference), input.analysis.uri, referenceDeclaration.uri, input.locale
+      hoverForReferenceDeclaration(input, referenceDeclaration, reference), input.analysis.uri, referenceDeclaration.uri, input.locale
     );
   }
 
@@ -173,15 +177,20 @@ function hoverForMacroInvocation(
   const expandedText = formatMacroExpansionForHover(expansion.expandedText);
   const expansionNote = (expansion.truncated ? '\n' + translate(input.locale, 'Expansion truncated at depth 8.') : '')
     + ((expansion.runtimeMacros?.length ?? 0) > 0 ? '\n' + translate(input.locale, 'Runtime values remain symbolic: {0}.', expansion.runtimeMacros!.join(', ')) : '');
+  const macroDeclaration = [...input.analysis.declarations,
+    ...(input.workspaceIndex.findVisibleDeclarations?.(input.analysis.uri, macro.name) ?? [])]
+    .find(d => d.kind === 'macro' && d.uri === macro.uri && comparePositions(d.selectionRange.start, macro.selectionRange.start) === 0);
+  const macroDocumentation = macroDeclaration
+    ? renderedDocumentationFor(input.analysis, input.workspaceIndex, macroDeclaration, input.locale) : undefined;
   const plainText = [
     macro.detail,
-    ...(macro.documentation === undefined ? [] : [macro.documentation]),
+    ...((macroDocumentation?.plainText ?? macro.documentation) === undefined ? [] : [macroDocumentation?.plainText ?? macro.documentation]),
     translate(input.locale, 'Expansion:'),
     expandedText + expansionNote
   ].join('\n');
 
   return withDeclarationOrigin({
-    markdown: markdownForMacroExpansion(macro.detail, macro.documentation, expandedText, expansionNote, input.locale),
+    markdown: markdownForMacroExpansion(macro.detail, macroDocumentation?.markdown ?? macro.documentation, expandedText, expansionNote, input.locale),
     plainText
   }, input.analysis.uri, macro.uri, input.locale);
 }
@@ -248,12 +257,12 @@ function findGuiDeclarationHover(
 ): AnalysisHover | null | undefined {
   const guiClass = findVisibleGuiClass(input, declaration.name);
   if (declaration.kind === 'class' && guiClass !== undefined) {
-    return hoverForDeclarationText(guiClassText(guiClass), declaration.documentation);
+    return hoverForDeclarationText(guiClassText(guiClass), hoverDocumentation(input, declaration));
   }
 
   const part = findGuiPartForDeclaration(input.analysis.guiClasses, declaration);
   if (part !== undefined) {
-    return hoverForDeclarationText(guiPartText(part.ownerName, part.part), declaration.documentation);
+    return hoverForDeclarationText(guiPartText(part.ownerName, part.part), hoverDocumentation(input, declaration));
   }
 
   const method = findGuiMethodForDeclaration(input.analysis, declaration);
@@ -262,7 +271,7 @@ function findGuiDeclarationHover(
   }
 
   return isResolvableGuiMethod(input, method)
-    ? hoverForDeclarationText(declaration.detail, declaration.documentation)
+    ? hoverForDeclarationText(declaration.detail, hoverDocumentation(input, declaration))
     : null;
 }
 
@@ -311,7 +320,7 @@ function findImplicitGuiReferenceHover(
     shouldUseReceiverType
       ? hoverTextForGuiContextMemberDeclaration(ownerMember, context)
       : hoverTextForMemberDeclaration(ownerMember),
-    ownerMember.documentation
+    hoverDocumentation(input, ownerMember)
   ), input.analysis.uri, ownerMember.uri, input.locale);
 }
 
@@ -368,7 +377,7 @@ function hoverForImplicitGuiMemberAccess(
   const member = findDeclarationMember(input, partPrefix.part.part.typeName, memberName, reference);
   return member === undefined ? undefined : withDeclarationOrigin(hoverForDeclarationText(
     hoverTextForMemberDeclaration(member),
-    member.documentation
+    hoverDocumentation(input, member)
   ), input.analysis.uri, member.uri, input.locale);
 }
 
@@ -662,25 +671,26 @@ function findLocalDeclaration(
   return resolveLocalDeclaration(analysis, name, position);
 }
 
-function hoverForDeclaration(declaration: AnalysisDeclaration): AnalysisHover {
+function hoverForDeclaration(input: HoverInput, declaration: AnalysisDeclaration): AnalysisHover {
   if (declaration.kind === 'function' && declaration.containerName !== undefined) {
-    return hoverForDeclarationText(hoverTextForMemberDeclaration(declaration), declaration.documentation);
+    return hoverForDeclarationText(hoverTextForMemberDeclaration(declaration), hoverDocumentation(input, declaration));
   }
 
   const plainText = declaration.detail === declaration.kind
     ? `${declaration.detail} ${declaration.name}`
     : declaration.detail;
-  return hoverForDeclarationText(plainText, declaration.documentation);
+  return hoverForDeclarationText(plainText, hoverDocumentation(input, declaration));
 }
 
 function hoverForReferenceDeclaration(
+  input: HoverInput,
   declaration: AnalysisDeclaration,
   reference: { memberAccess?: AnalysisMemberAccess }
 ): AnalysisHover {
   const plainText = reference.memberAccess === undefined
     ? hoverTextForDeclaration(declaration)
     : hoverTextForMemberDeclaration(declaration);
-  return hoverForDeclarationText(plainText, declaration.documentation);
+  return hoverForDeclarationText(plainText, hoverDocumentation(input, declaration));
 }
 
 function hoverTextForDeclaration(declaration: AnalysisDeclaration): string {
@@ -752,14 +762,14 @@ function hoverFromText(plainText: string, language = 'axel'): AnalysisHover {
   };
 }
 
-function hoverForDeclarationText(plainText: string, documentation: string | undefined): AnalysisHover {
+function hoverForDeclarationText(plainText: string, documentation: string | RenderedDocumentation | undefined): AnalysisHover {
   if (documentation === undefined) {
     return hoverFromText(plainText);
   }
 
   return {
-    markdown: `\`\`\`axel\n${plainText}\n\`\`\`\n\n${documentation}`,
-    plainText: `${plainText}\n${documentation}`
+    markdown: `\`\`\`axel\n${plainText}\n\`\`\`\n\n${typeof documentation === 'string' ? documentation : documentation.markdown}`,
+    plainText: `${plainText}\n${typeof documentation === 'string' ? documentation : documentation.plainText}`
   };
 }
 
@@ -893,4 +903,8 @@ function compareDeclarations(left: AnalysisDeclaration, right: AnalysisDeclarati
   return left.uri.localeCompare(right.uri)
     || comparePositions(left.selectionRange.start, right.selectionRange.start)
     || comparePositions(left.selectionRange.end, right.selectionRange.end);
+}
+
+function hoverDocumentation(input: HoverInput, declaration: AnalysisDeclaration): string | RenderedDocumentation | undefined {
+  return renderedDocumentationFor(input.analysis, input.workspaceIndex, declaration, input.locale) ?? declaration.documentation;
 }

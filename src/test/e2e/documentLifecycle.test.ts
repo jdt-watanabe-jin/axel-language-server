@@ -10,7 +10,7 @@ suite('LSP stdio document lifecycle', function () {
   setup(async () => {
     server = startLspServer();
     await server.request('initialize', {
-      processId: null, rootUri: null, capabilities: {}, initializationOptions: {}
+      processId: null, rootUri: null, capabilities: { textDocument: { hover: { contentFormat: ['markdown'] } } }, initializationOptions: {}
     });
     await server.notify('initialized', {});
   });

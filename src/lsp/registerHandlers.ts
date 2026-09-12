@@ -28,7 +28,7 @@ import { collectSemanticTokens } from '../analyzer/semanticTokens';
 import { measureDurationMs } from '../util/logger';
 import { createInitializeResult } from './capabilities';
 import { toLspCodeActions } from './codeActions';
-import { toLspCompletionItem } from './completion';
+import { toLspCompletionItemForClient } from './completion';
 import { toLspDefinitionLocations } from './definition';
 import { toDocumentDiagnosticReport } from './diagnostics';
 import { toLspDocumentSymbol } from './documentSymbols';
@@ -93,12 +93,18 @@ interface RefactorHandlerConnection {
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
   let locale: string | undefined;
+  let hoverMarkdown = false;
+  let completionMarkdown = false;
+  let signatureMarkdown = false;
   let featureSettings: Record<string, unknown> = {};
   const updateFeatures = (settings: unknown): void => {
     featureSettings = settings !== null && typeof settings === 'object' ? settings as Record<string, unknown> : {};
   };
   context.connection.onInitialize((params) => {
     locale = params.locale;
+    hoverMarkdown = params.capabilities?.textDocument?.hover?.contentFormat?.includes('markdown') ?? false;
+    completionMarkdown = params.capabilities?.textDocument?.completion?.completionItem?.documentationFormat?.includes('markdown') ?? false;
+    signatureMarkdown = params.capabilities?.textDocument?.signatureHelp?.signatureInformation?.documentationFormat?.includes('markdown') ?? false;
     updateFeatures(params.initializationOptions);
     context.analyzer.configure?.(params.initializationOptions);
     return createInitializeResult();
@@ -154,7 +160,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           position: params.position,
           workspaceIndex: context.analyzer
         });
-        return hover === null ? null : toLspHover(hover);
+        return hover === null ? null : toLspHover(hover, hoverMarkdown);
       } catch (error: unknown) {
         context.logger.error(`Hover failed: ${getErrorMessage(error)}`);
         return null;
@@ -183,7 +189,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           text,
           position: params.position,
           workspaceIndex: context.analyzer
-        }).map(toLspCompletionItem);
+        }).map(item => toLspCompletionItemForClient(item, completionMarkdown));
       } catch (error: unknown) {
         context.logger.error(`Completion failed: ${getErrorMessage(error)}`);
         return [];
@@ -399,12 +405,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           text
         });
         const signatureHelp = getSignatureHelp({
+          locale,
           analysis,
           text,
           position: params.position,
           workspaceIndex: context.analyzer
         });
-        return signatureHelp === null ? null : toLspSignatureHelp(signatureHelp);
+        return signatureHelp === null ? null : toLspSignatureHelp(signatureHelp, signatureMarkdown);
       } catch (error: unknown) {
         context.logger.error(`Signature help failed: ${getErrorMessage(error)}`);
         return null;

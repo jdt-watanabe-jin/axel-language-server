@@ -112,7 +112,7 @@ suite('getSignatureHelp', () => {
     });
 
     assert.strictEqual(help?.signatures[0].label, 'void inherited(int value)');
-    assert.deepStrictEqual(help?.signatures[0].parameters, [{ label: 'int value' }]);
+    assert.deepStrictEqual(help?.signatures[0].parameters, [{ label: 'int value', name: 'value' }]);
   });
 
   test('resolves this arrow member call signatures', () => {

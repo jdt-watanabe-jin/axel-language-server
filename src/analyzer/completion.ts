@@ -1,3 +1,5 @@
+import { renderedDocumentationFor } from './documentation/access';
+import type { DocumentationBindings } from './documentation/model';
 import { declarationOrigin } from './declarationOrigin';
 import { containsSourcePosition, describeSystemMacro, resolveSystemMacro, systemMacroNames } from './systemMacros';
 import { translate } from '../i18n/messages';
@@ -35,6 +37,7 @@ export interface CompletionInput {
 }
 
 export interface WorkspaceCompletionIndex {
+  documentationBindings?(sourceUri: string): DocumentationBindings;
   listVisibleDocuments?(sourceUri: string): AnalyzedDocument[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   listVisibleDeclarations?(sourceUri: string): AnalysisDeclaration[];
@@ -546,10 +549,11 @@ function completionFromDeclaration(
 function completionDocumentation(
   input: CompletionInput,
   declaration: AnalysisDeclaration
-): Pick<AnalysisCompletionItem, 'documentation'> {
+): Pick<AnalysisCompletionItem, 'documentation' | 'documentationMarkdown'> {
   const origin = declarationOrigin(input.analysis.uri, declaration.uri, input.locale);
-  const documentation = [declaration.documentation, origin].filter((text) => text !== undefined).join('\n\n');
-  return documentation.length === 0 ? {} : { documentation };
+  const rendered = renderedDocumentationFor(input.analysis, input.workspaceIndex, declaration, input.locale);
+  const documentation = [rendered?.plainText ?? declaration.documentation, origin].filter((text) => text !== undefined).join('\n\n');
+  return documentation.length === 0 ? {} : { documentation, ...(rendered ? { documentationMarkdown: [rendered.markdown, origin].filter(Boolean).join('\n\n') } : {}) };
 }
 
 function completionKindForDeclaration(declaration: AnalysisDeclaration): AnalysisCompletionItem['kind'] {

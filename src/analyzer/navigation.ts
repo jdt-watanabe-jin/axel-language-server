@@ -1,3 +1,4 @@
+import type { DocumentationBindings } from './documentation/model';
 import { systemMacroAt } from './systemMacros';
 import type {
   AnalysisDeclaration,
@@ -49,6 +50,7 @@ export interface ReferencesInput extends NavigationInput {
 }
 
 export interface WorkspaceNavigationIndex {
+  documentationBindings?(sourceUri: string): DocumentationBindings;
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   listVisibleDeclarations?(sourceUri: string): AnalysisDeclaration[];
   findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;

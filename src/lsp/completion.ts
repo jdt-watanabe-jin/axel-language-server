@@ -5,11 +5,15 @@ import {
 import type { AnalysisCompletionItem } from '../types/analysis';
 
 export function toLspCompletionItem(item: AnalysisCompletionItem): CompletionItem {
+  return toLspCompletionItemForClient(item, true);
+}
+
+export function toLspCompletionItemForClient(item: AnalysisCompletionItem, markdown: boolean): CompletionItem {
   return {
     label: item.name,
     kind: toCompletionItemKind(item.kind),
     detail: item.detail,
-    documentation: item.documentation,
+    documentation: markdown && item.documentationMarkdown !== undefined ? { kind: 'markdown', value: item.documentationMarkdown } : item.documentation,
     insertText: item.insertText,
     filterText: item.filterText,
     sortText: item.sortText,

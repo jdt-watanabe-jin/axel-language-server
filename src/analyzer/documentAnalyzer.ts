@@ -1,3 +1,4 @@
+import { buildDocumentationBlocks } from './documentation/index';
 import { nodeToAnalysisRange } from './syntaxTree';
 import { cachedSyntaxNode } from './cachedSyntaxNode';
 import { conditionalReparse } from './conditionalReparse';
@@ -212,6 +213,7 @@ export class DocumentAnalyzer {
         analysis.inactiveRanges = inactiveRanges;
         analysis.systemMacroReferences = systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges));
       }
+      analysis.documentationBlocks = buildDocumentationBlocks(originalRoot, input.text, analysis);
       this.cache.set(input.uri, {
         version: input.version,
         analysisContextKey,
