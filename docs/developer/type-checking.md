@@ -40,3 +40,5 @@ npm run test:integration -- --grep "Type checking"
 ```
 
 Ordinary checks do not start AXEL. Successful corpus checks establish agreement with those recorded expectations only; unsupported generalizations and different runtime versions need new evidence and regression cases.
+
+Conditional syntax recovery runs before semantic indexing when the original Tree-sitter tree has errors. `conditionalReparse.ts` lexes directive boundaries outside comments and literals, masks ordinary code, and lets Tree-sitter parse the directives. The existing preprocessor evaluator supplies branch activity and source ranges; it does not depend on the broken AXEL brace structure. Definite inactive code and resolved conditional directives are replaced with spaces while preserving UTF-16 offsets and line endings, then Tree-sitter parses the resulting AXEL source. Uncertain conditional groups and malformed directive trees are left unresolved. Ordinary syntax-valid documents retain the normal parsing path.

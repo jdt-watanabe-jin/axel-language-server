@@ -16,6 +16,8 @@ User-defined functions and methods can share a name when their parameter counts 
 
 A fully defined user class with no instance data, including inherited data, cannot be instantiated as a variable or array (C56). Merely declaring the class, a pointer, or a value parameter does not trigger this check. Registered analysis declarations may represent hidden runtime data and are exempt.
 
+When conditional compilation splits a statement or brace pair across branches, the server reparses the source after selecting definite branches. For example, alternative `if (...) {` lines can share a closing `}` after `#endif`. Diagnostics retain their original source positions. Uncertain conditions are not guessed, and malformed preprocessor directives remain diagnostic candidates.
+
 Object-like and function-like macros are reparsed after expansion, so conditional prefixes such as `#define DEBUG if(0)`, expressions and generated declarations participate in diagnostics. Errors introduced by expansion are reported at the invocation; written arguments retain their navigation and rename locations. Expansion is bounded and is deferred when definitions are uncertain or recursively expand. Strings and comments are not substituted.
 
 Syntax errors do not disable undefined-name, undefined-type, or argument-count diagnostics throughout the file. Independent statements and functions remain checked. Diagnostics inside recovered statements and references depending on damaged declarations are deferred; uncertain scope boundaries can defer an entire scope, or the file if its structure cannot be recovered. These decisions are recomputed when the document is edited.

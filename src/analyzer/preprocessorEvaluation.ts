@@ -17,6 +17,7 @@ interface Branch {
   name?: Parser.SyntaxNode;
   directiveText: string;
   content: Parser.SyntaxNode[];
+  contentRange: AnalysisRange;
 }
 
 const PREPROCESSOR_IF_NODE_TYPES = new Set([
@@ -28,6 +29,8 @@ const PREPROCESSOR_IF_NODE_TYPES = new Set([
 ]);
 
 export interface PreprocessorEvaluation {
+  uncertainConditionalRanges?: AnalysisRange[];
+  branchRanges?: boolean;
   inactiveRanges: AnalysisRange[];
   uncertainRanges: AnalysisRange[];
   uncertainNames: string[];
@@ -48,9 +51,11 @@ export function evaluatePreprocessor(
   predefinedSymbols: readonly AnalysisPreprocessorSymbol[] = [],
   tool?: string,
   targetPlatform?: string,
-  internalFeatures?: string
+  internalFeatures?: string,
+  branchRanges = false
 ): PreprocessorEvaluation {
   const result: PreprocessorEvaluation = { inactiveRanges: [], uncertainRanges: [], uncertainNames: [] };
+  if (branchRanges) { result.branchRanges = true; }
   const macros = macroDefinitionsFromSymbols(predefinedSymbols);
   for (const name of systemMacroNames(tool)) {
     const macro = resolveSystemMacro(name, '', { line: 0, character: 0 }, tool, targetPlatform, internalFeatures);
@@ -58,6 +63,7 @@ export function evaluatePreprocessor(
   }
   visitChildren(rootNode.namedChildren, macros, result, true, predefinedSymbols.filter(symbol => symbol.sourceRange !== undefined));
   result.uncertainNames = [...new Set(result.uncertainNames)];
+  delete result.branchRanges;
   return result;
 }
 
@@ -106,7 +112,15 @@ function visitConditional(
   const outcomes: MacroDefinitions[] = [];
   for (const branch of branchesFromConditional(node)) {
     const condition = evaluateBranchCondition(branch, macros);
+    if (parentActive !== false && remaining !== false && condition === undefined) {
+      (result.uncertainConditionalRanges ??= []).push(nodeToAnalysisRange(node));
+    }
     const selected = and(remaining, condition);
+    if (result.branchRanges) {
+      const activity = and(parentActive, selected);
+      if (activity === false) { result.inactiveRanges.push(branch.contentRange); }
+      else if (activity === undefined) { result.uncertainRanges.push(branch.contentRange); }
+    }
     const branchMacros = new Map(macros);
     visitChildren(branch.content, branchMacros, result, and(parentActive, selected), includeSymbols);
     if (selected !== false) { outcomes.push(branchMacros); }
@@ -156,20 +170,26 @@ function branchesFromConditional(node: Parser.SyntaxNode): Branch[] {
   const branches: Branch[] = [];
   let current: Parser.SyntaxNode | undefined = node;
   while (current !== undefined) {
-    branches.push(branchFromConditionalNode(current));
+    const end = alternativeNode(current)?.startPosition
+      ?? node.children.find(child => child.type === '#endif')?.startPosition ?? node.endPosition;
+    branches.push(branchFromConditionalNode(current, {line:end.row, character:end.column}));
     current = alternativeNode(current);
   }
 
   return branches;
 }
 
-function branchFromConditionalNode(node: Parser.SyntaxNode): Branch {
+function branchFromConditionalNode(node: Parser.SyntaxNode, end: AnalysisRange['end']): Branch {
   const condition = node.childForFieldName('condition') ?? undefined;
   const name = node.childForFieldName('name') ?? undefined;
   return {
     condition,
     name,
     directiveText: firstLine(node.text),
+    contentRange: {
+      start: {line: (condition ?? name ?? node.firstChild ?? node).endPosition.row + 1, character: 0},
+      end
+    },
     content: node.namedChildren.filter((child) => (
       child.id !== condition?.id
       && child.id !== name?.id

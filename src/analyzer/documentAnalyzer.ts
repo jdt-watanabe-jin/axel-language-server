@@ -1,3 +1,4 @@
+import { conditionalReparse } from './conditionalReparse';
 import { macroReparse } from './macroReparse';
 import { collectSyntaxRecovery } from './syntaxRecovery';
 import { resolveAmbiguousCalls } from './ambiguousCalls';
@@ -59,8 +60,11 @@ export class DocumentAnalyzer {
     }
 
     return measureDurationMs(this.logger, 'document.analyze', { uri: input.uri, version: input.version }, () => {
-      const tree = this.parser.parse(input.text);
-      const systemSyntax = collectSystemMacroSyntax(tree.rootNode);
+      const originalTree = this.parser.parse(input.text);
+      const conditional = originalTree.rootNode.hasError
+        ? conditionalReparse(input, text => this.parser.parse(text)) : undefined;
+      const tree = conditional ? this.parser.parse(conditional.text) : originalTree;
+      const systemSyntax = collectSystemMacroSyntax(originalTree.rootNode);
       const guiClasses = buildGuiIndex(tree.rootNode, input.uri, knownGuiClassMapFromInput(input));
       const guiMethods = collectExternalGuiMethods(tree.rootNode);
       const knownGuiClassNames = new Set([
@@ -68,7 +72,7 @@ export class DocumentAnalyzer {
         ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
         ...guiClasses.map((guiClass) => guiClass.name)
       ]);
-      const { inactiveRanges, uncertainRanges, uncertainNames } = evaluatePreprocessor(tree.rootNode, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
+      const { inactiveRanges, uncertainRanges, uncertainNames } = conditional?.evaluation ?? evaluatePreprocessor(tree.rootNode, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
       const macroDefinitions = collectMacroDefinitions(tree.rootNode, input.uri);
       const activeMacroDefinitions = macroDefinitions.filter((macro) => !isSystemMacroName(macro.name)
         && !startsInInactiveRange(macro.selectionRange, [...inactiveRanges, ...uncertainRanges]));
@@ -157,6 +161,10 @@ export class DocumentAnalyzer {
         }, false));
       }
 
+      if (conditional) {
+        analysis.inactiveRanges = inactiveRanges;
+        analysis.systemMacroReferences = systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges));
+      }
       this.cache.set(input.uri, {
         version: input.version,
         analysisContextKey,
