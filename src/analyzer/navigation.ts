@@ -103,6 +103,10 @@ export function getReferences(input: ReferencesInput): AnalysisLocation[] {
 }
 
 export function findNavigationTargetDeclaration(input: NavigationInput): AnalysisDeclaration | undefined {
+  const writtenMacro = input.analysis.expandedMacroReferences?.find(ref => contains(ref.range, input.position));
+  if (writtenMacro) { return findDeclarationForReference(input, writtenMacro); }
+  const writtenArgument = input.analysis.navigationReferences?.find(ref => contains(ref.range,input.position));
+  if (writtenArgument) { return findDeclarationForReference(input,writtenArgument); }
   const declaration = findDeclarationAtPosition(input.analysis, input.position);
   if (declaration !== undefined) {
     return declaration;
@@ -133,7 +137,7 @@ function referencesToDeclaration(
   target: AnalysisDeclaration
 ): AnalysisLocation[] {
   const locations: AnalysisLocation[] = [];
-  for (const reference of analysis.references) {
+  for (const reference of analysis.navigationReferences ?? analysis.references) {
     const declaration = findNavigationTargetDeclaration({
       analysis,
       position: reference.range.start,

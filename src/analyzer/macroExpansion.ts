@@ -326,6 +326,14 @@ function findNestedInvocationTexts(text: string): { text: string; start: number;
   return results.reverse();
 }
 
+function numericTokenEnd(text: string, start: number): number {
+  if (!/[0-9]/.test(text[start] ?? '') && !(text[start] === '.' && /[0-9]/.test(text[start+1] ?? ''))) { return start; }
+  let index=start+1;
+  while (index<text.length && (/[A-Za-z0-9_$.]/.test(text[index])
+    || /[+-]/.test(text[index]) && /[eEpP]/.test(text[index-1]))) { index++; }
+  return index;
+}
+
 function skipQuotedText(text: string, start: number, quote: string): number {
   let index = start + 1;
   while (index < text.length) {
@@ -434,6 +442,8 @@ export function expandObjectMacroText(text: string, lookup: MacroLookup, stack: 
         : text[i+1] === '/' ? skipLineComment(text,i) : skipBlockComment(text,i);
       expandedText += text.slice(i,end); i=end; continue;
     }
+    const numericEnd = numericTokenEnd(text,i);
+    if (numericEnd>i) { expandedText+=text.slice(i,numericEnd); i=numericEnd; continue; }
     const name = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(text.slice(i))?.[0];
     if (!name) { expandedText += char; i++; continue; }
     const macro = lookup.findMacro(name);
@@ -445,4 +455,83 @@ export function expandObjectMacroText(text: string, lookup: MacroLookup, stack: 
     i += name.length;
   }
   return {expandedText,steps,truncated,diagnostics:[]};
+}
+
+export interface MacroSourceReplacement {
+  start: number;
+  end: number;
+  name: string;
+  text: string;
+}
+
+/** Lex macro tokens only; AXEL syntax is always parsed by Tree-sitter after expansion. */
+export function collectMacroSourceReplacements(text: string,
+  lookupAt: (offset: number) => MacroLookup | undefined): MacroSourceReplacement[] {
+  const result: MacroSourceReplacement[] = [];
+  for (let index = 0; index < text.length;) {
+    const c = text[index];
+    if (c === '"' || c === "'" || c === '/' && ['/', '*'].includes(text[index + 1])) {
+      index = c !== '/' ? skipQuotedText(text, index, c)
+        : text[index + 1] === '/' ? skipLineComment(text, index) : skipBlockComment(text, index);
+      continue;
+    }
+    // Directive bodies are definitions/conditions, not runtime macro uses.
+    if (c === '#' && text.slice(text.lastIndexOf('\n', index - 1) + 1, index).trim() === '') {
+      do {
+        const end = text.indexOf('\n', index);
+        if (end < 0) { index = text.length; break; }
+        const continued = text.slice(index, end).trimEnd().endsWith('\\');
+        index = end + 1;
+        if (!continued) { break; }
+      } while (index < text.length);
+      continue;
+    }
+    if (/[0-9]/.test(c) || c === '.' && /[0-9]/.test(text[index+1] ?? '')) {
+      index++;
+      while (index<text.length && (/[A-Za-z0-9_$.]/.test(text[index])
+        || /[+-]/.test(text[index]) && /[eEpP]/.test(text[index-1]))) { index++; }
+      continue;
+    }
+    const name = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(text.slice(index))?.[0];
+    if (!name) { index++; continue; }
+    const start = index;
+    index += name.length;
+    const lookup = lookupAt(start);
+    const macro = lookup?.findMacro(name);
+    if (!lookup || !macro) { continue; }
+    let expansion: MacroExpansionResult;
+    if (macro.parameters !== undefined) {
+      const open = skipWhitespace(text, index);
+      if (text[open] !== '(') { continue; }
+      const close = findMatchingCloseParen(text, open);
+      if (close < 0) { continue; }
+      index = close + 1;
+      expansion = expandMacroInvocationText(text.slice(start, index), lookup);
+    } else {
+      expansion = expandObjectMacroText(name, lookup);
+      const alias = lookup.findMacro(expansion.expandedText.trim());
+      const open = skipWhitespace(text,index);
+      if (alias?.parameters !== undefined && text[open] === '(') {
+        const close=findMatchingCloseParen(text,open);
+        if (close>=0) {
+          expansion=expandMacroInvocationText(expansion.expandedText+text.slice(open,close+1),lookup);
+          index=close+1;
+        }
+      }
+    }
+    if (expansion.truncated || expansion.diagnostics.length) { continue; }
+    // Expand object tokens introduced by function macros, and vice versa.
+    let expanded = expansion.expandedText;
+    let complete = true;
+    for (let depth = 0; depth < 8; depth++) {
+      const objects = expandObjectMacroText(expanded, lookup);
+      const calls = expandNestedInvocations(objects.expandedText, lookup, {maxDepth:8,depth,stack:[]});
+      if (objects.truncated || calls.truncated || calls.diagnostics.length) { complete = false; break; }
+      if (calls.expandedText === expanded) { break; }
+      expanded = calls.expandedText;
+      if (depth === 7) { complete = false; }
+    }
+    if (complete) { result.push({start, end:index, name, text:expanded}); }
+  }
+  return result;
 }

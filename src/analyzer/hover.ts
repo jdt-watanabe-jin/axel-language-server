@@ -58,6 +58,11 @@ export interface WorkspaceDeclarationIndex {
 }
 
 export function getHover(input: HoverInput): AnalysisHover | null {
+  const writtenMacro = input.analysis.expandedMacroReferences?.find(ref => contains(ref.range, input.position));
+  if (writtenMacro) {
+    const invocation = findMacroInvocationAtPosition(input);
+    if (invocation) { const hover = hoverForMacroInvocation(input, invocation); if (hover) { return hover; } }
+  }
   const systemReference = systemMacroAt(input.analysis, input.position);
   if (systemReference !== undefined) {
     const macro = resolveSystemMacro(systemReference.name, input.analysis.uri, systemReference.range.start, input.analysis.tool, input.analysis.targetPlatform, input.analysis.internalFeatures);
@@ -463,7 +468,7 @@ function findReferenceAtPosition(
   analysis: AnalyzedDocument,
   position: AnalysisPosition
 ): AnalysisReference | undefined {
-  return analysis.references.find((item) => contains(item.range, position));
+  return (analysis.navigationReferences ?? analysis.references).find((item) => contains(item.range, position));
 }
 
 function findMemberDeclaration(

@@ -281,6 +281,7 @@ suite('WorkspaceIndex', () => {
       version: 1,
       text: [
         '#include "_asxccbase.h"',
+        'class stringMAP { int x; int Remove(string key){ return 1; } };',
         'class cstringmap_int { define_stringMAP_one(int) };',
       ].join('\n')
     });

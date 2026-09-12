@@ -299,6 +299,8 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  expandedMacroReferences?: AnalysisReference[];
+  navigationReferences?: AnalysisReference[];
   syntaxRecovery?: import("../analyzer/syntaxRecovery").SyntaxRecovery;
   typeSnapshot?: import('../analyzer/typeChecking/syntax').TypeSnapshot;
   tool?: string;

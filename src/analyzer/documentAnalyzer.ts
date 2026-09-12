@@ -1,6 +1,6 @@
+import { macroReparse } from './macroReparse';
 import { collectSyntaxRecovery } from './syntaxRecovery';
 import { resolveAmbiguousCalls } from './ambiguousCalls';
-import { recoverMacroCommands } from './macroCommands';
 import { buildTypeSnapshot } from './typeChecking/syntax';
 import type * as Parser from 'tree-sitter';
 import { message } from '../i18n/messages';
@@ -51,8 +51,8 @@ export class DocumentAnalyzer {
     this.logger = logger;
   }
 
-  public analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
-    const analysisContextKey = analysisContextKeyFromInput(input);
+  public analyzeDocument(input: AnalyzeDocumentInput, expandMacros = true): AnalyzedDocument {
+    const analysisContextKey = analysisContextKeyFromInput(input) + String(expandMacros);
     const cached = this.cache.get(input.uri);
     if (cached?.version === input.version && cached.analysisContextKey === analysisContextKey) {
       return cached.analysis;
@@ -79,12 +79,10 @@ export class DocumentAnalyzer {
           visibilityStart: macro.range.end
         }))
       ].sort(compareMacroVisibility);
-      const recoveredCommands = recoverMacroCommands(tree.rootNode,input.uri,visibleMacroDefinitions,
-        [...inactiveRanges,...uncertainRanges], text=>this.parser.parse(text).rootNode);
       const symbolIndex = buildSymbolIndex(tree.rootNode, input.uri, knownGuiClassNames);
       const recoveredCalls = resolveAmbiguousCalls(tree.rootNode,input.uri,symbolIndex.declarations,
         [...inactiveRanges,...uncertainRanges],text=>this.parser.parse(text).rootNode);
-      const recoveredStatements = [...recoveredCommands,...recoveredCalls];
+      const recoveredStatements = recoveredCalls;
       const recoveredStatementRanges = recoveredStatements.map(statement=>statement.range);
       const syntaxDiagnostics = collectSyntaxDiagnostics(tree.rootNode, {
         uri: input.uri,
@@ -104,7 +102,7 @@ export class DocumentAnalyzer {
       const macroInvocations = collectMacroInvocations(tree.rootNode, input.uri);
       const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(tree.rootNode);
       const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(tree.rootNode, input.uri);
-      const analysis: AnalyzedDocument = {
+      let analysis: AnalyzedDocument = {
         typeSnapshot: buildTypeSnapshot(tree.rootNode, input.uri, recoveredStatements.map(statement=>statement.node)),
         internalFeatures: normalizeInternalFeatures(input.internalFeatures),
         tool: normalizeTool(input.tool),
@@ -149,6 +147,15 @@ export class DocumentAnalyzer {
       };
 
       analysis.syntaxRecovery = collectSyntaxRecovery(tree.rootNode, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
+
+      if (expandMacros) {
+        analysis = macroReparse(tree.rootNode, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocument({...input, text,
+          preprocessorSymbols: input.preprocessorSymbols?.map(symbol => ({...symbol, sourceRange: symbol.sourceRange
+            ? {start:position(symbol.sourceRange.start),end:position(symbol.sourceRange.end,true)} : undefined})),
+          macroDefinitions: input.macroDefinitions?.map(macro => ({...macro,
+            visibilityStart: macro.visibilityStart ? position(macro.visibilityStart) : undefined}))
+        }, false));
+      }
 
       this.cache.set(input.uri, {
         version: input.version,

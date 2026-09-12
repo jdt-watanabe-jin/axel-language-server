@@ -88,7 +88,7 @@ function hasAmbiguousVisibleDeclaration(
 }
 
 function rangeAtPosition(input: NavigationInput, target: AnalysisDeclaration): AnalysisRange {
-  const reference = input.analysis.references.find((candidate) => (
+  const reference = (input.analysis.navigationReferences ?? input.analysis.references).find((candidate) => (
     candidate.name === target.name && contains(candidate.range, input.position)
   ));
   return reference?.range ?? target.selectionRange;
