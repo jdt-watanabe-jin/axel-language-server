@@ -51,7 +51,7 @@ Unknown and malformed commands remain visible as source text instead of being re
 
 `@param` accepts no direction, `[in]`, `[out]`, and `[in,out]`. Whitespace between the command and direction is allowed. Accepted bidirectional spellings include reversed order, comma or whitespace separators, and the joined `inout` and `outin` forms; display normalizes them to `[in,out]`.
 
-A comma-separated selector such as `@param first,second` applies one description to both parameters. For unnamed parameters, a one-based position or `-` selects the corresponding declaration parameter. `...` selects the variadic parameter and is not assigned to a fixed parameter. Repeated descriptions are preserved in source order. Unknown names, invalid directions, and selectors that cannot be resolved remain unmatched instead of being guessed onto another parameter.
+A comma-separated selector such as `@param first,second` applies one description to both parameters. For unnamed parameters, a one-based position or `-` selects the corresponding declaration parameter. `...` selects the variadic parameter and is not assigned to a fixed parameter. Repeated descriptions are preserved in source order. Unknown names and selectors that cannot be resolved are not guessed onto another parameter. All parameter labels are displayed in their written order under Parameters, including unmatched labels. A token such as `name(i)` is kept literally and does not bind to `name`; `(i)` is not a direction. With `@param name (i) description`, `(i)` remains part of the description. Invalid directions remain visible as unparsed source text.
 
 General returns and individual values can coexist. `@retval 1` displays the value without inventing a description. Backticked and Japanese value labels are retained as written.
 
@@ -59,13 +59,17 @@ General returns and individual values can coexist. `@retval 1` displays the valu
 
 Without `@fn`, `@class`, `@var`, `@def`, or `@typedef`, a leading block binds to the immediately following declaration in the same syntax scope. Blank lines are allowed, but another declaration, statement, preprocessor directive, or ordinary comment stops the search. Group-only blocks are never used as the next declaration's description.
 
-`@fn` is a structural target rather than a replacement signature. It searches the current file and files visible through the current analysis context; unrelated workspace files are not searched. Matching uses the function name, owner scope, return and parameter types, and variadic shape. Parameter names and formatting differences do not affect matching. Qualified class members and overloads remain distinct, and a return type alone does not select an overload.
+For a comment immediately preceding a function declaration or definition, the actual function takes priority over `@fn`. An omitted return type or argument list, or even a different function name, does not discard the attached documentation. The behavior follows the adjacent-comment cases observed with Microsoft cpptools 1.34.4, not a guarantee of complete cpptools compatibility.
 
-A target must resolve unambiguously. A malformed, mismatched, or ambiguous explicit target does not fall back to a neighboring declaration, and a comment never creates a synthetic symbol. `@class`, `@var`, `@def`, and `@typedef` follow the same scope and ambiguity rules for their symbol kinds.
+When no adjacent function is available, `@fn` searches the current file and files visible through the current analysis context; unrelated workspace files are not searched. Matching uses the function name, owner scope, return and parameter types, and variadic shape. Parameter names and formatting differences do not affect matching. Qualified class members and overloads remain distinct, and a return type alone does not select an overload.
+
+A distant target must resolve unambiguously. A malformed, mismatched, or ambiguous distant target is not attached to another declaration, and a comment never creates a synthetic symbol. `@class`, `@var`, `@def`, and `@typedef` retain strict matching for their symbol kinds; the adjacent-function exception does not apply when these target kinds are present.
 
 Documentation attached directly to a selected declaration or definition has priority. If that location has no usable description, the server may borrow documentation from one uniquely equivalent declaration or definition. It does not merge independent descriptions from multiple locations or choose arbitrarily among multiple candidates. The displayed signature always comes from the real AXEL declaration, never from the `@fn` text.
 
 ## Presentation
+
+The untagged paragraph immediately following `@fn` is omitted from presentation, as observed in cpptools. Use `@brief` or `@details` for an explicit description. The complete original comment remains available in the documentation source model.
 
 Hover shows the real declaration followed by the structured documentation. Completion uses the same documentation and preserves existing definition-origin information. Signature help includes the function documentation and adds the matching description to each parameter, including the active variadic parameter.
 

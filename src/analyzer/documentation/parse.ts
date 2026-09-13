@@ -18,7 +18,7 @@ const parameterPattern = new RegExp(
   'u'
 );
 
-type PendingKind = 'brief' | 'details' | 'parameter' | 'return' | 'retval' | 'supplement' | 'unparsed';
+type PendingKind = 'brief' | 'details' | 'parameter' | 'return' | 'retval' | 'supplement' | 'unparsed' | 'fnBody';
 
 interface PendingEntry {
   kind: PendingKind;
@@ -65,6 +65,9 @@ export function parseDocumentation(comment: ExtractedComment): ParsedDocumentati
 
   const finishPending = (): void => {
     if (pending === undefined) { return; }
+    // cpptools hides the untagged paragraph following fn. Keep its original
+    // source in document.source; the target remains the first line only.
+    if (pending.kind === 'fnBody') { pending = undefined; return; }
     const text = pending.textLines.join('\n');
     const source = combineSources(pending.sourceLines, comment.source);
     switch (pending.kind) {
@@ -216,6 +219,7 @@ function handleCommand(
   }
   if (targetCommands.has(command.name as DocTarget['kind'])) {
     document.targets.push({ kind: command.name as DocTarget['kind'], text: rest, source });
+    if (command.name === 'fn') { setPending({ kind: 'fnBody', textLines: [], sourceLines: [] }); }
     return;
   }
   if (groupCommands.has(command.name as DocGroup['kind'])) {
@@ -240,7 +244,13 @@ function parseParameter(rest: string): {
     remaining = remaining.slice(close + 1).trimStart();
   }
   const match = parameterPattern.exec(remaining);
-  if (match === null) { return undefined; }
+  if (match === null) {
+    // Keep nonstandard labels such as name(i) visible without guessing a
+    // direction or binding them to a differently named declaration parameter.
+    const literal = /^(\S+)(?:\s+([\s\S]*))?$/.exec(remaining);
+    return literal === null ? undefined : { names: [literal[1]], text: literal[2] ?? '',
+      ...(direction === undefined ? {} : { direction }) };
+  }
   return {
     names: match[1].split(',').map(name => name.trim()),
     ...(direction === undefined ? {} : { direction }),

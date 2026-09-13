@@ -106,13 +106,6 @@ function parameterLabel(entry: DocParameter, name: string, output: OutputKind): 
   return [direction, renderedName].filter(part => part.length > 0).join(' ');
 }
 
-function declaredParameterName(bound: BoundDocumentation, index: number, entry: DocParameter): string {
-  const parameter = bound.declaration.signature?.parameters[index] as ({ name?: string; variadic?: boolean } | undefined);
-  if (parameter?.variadic === true) { return '...'; }
-  if (parameter?.name !== undefined && parameter.name.length > 0) { return parameter.name; }
-  return entry.names.join(', ');
-}
-
 function unparsedBlock(value: string, output: OutputKind): string {
   const normalized = trimBlankLines(value);
   if (output === 'plainText') { return normalized; }
@@ -145,19 +138,12 @@ function render(bound: BoundDocumentation, locale: string | undefined, output: O
   appendBodies(bound.documents.flatMap(document => document.brief));
   appendSection('Details', bound.documents.flatMap(document => document.details));
 
-  const parameters: string[] = [];
-  for (const [index, entries] of [...bound.parameterEntries.entries()].sort(([left], [right]) => left - right)) {
-    for (const entry of entries) {
-      const item = listItem(parameterLabel(entry, declaredParameterName(bound, index, entry), output), entry.text, output);
-      if (item !== undefined) { parameters.push(item); }
-    }
-  }
-  if (parameters.length > 0) { blocks.push(heading(locale, 'Parameters', output), parameters.join('\n')); }
-
-  const unmatched = bound.unmatchedParameters
+  // Display the written labels, including unmatched labels, in source order.
+  // Parameter-specific signature help still uses the separately bound entries.
+  const parameters = bound.documents.flatMap(document => document.parameters)
     .map(entry => listItem(parameterLabel(entry, entry.names.join(', '), output), entry.text, output))
     .filter((value): value is string => value !== undefined);
-  if (unmatched.length > 0) { blocks.push(heading(locale, 'Unmatched parameters', output), unmatched.join('\n')); }
+  if (parameters.length > 0) { blocks.push(heading(locale, 'Parameters', output), parameters.join('\n')); }
 
   appendSection('Returns', bound.documents.flatMap(document => document.returns));
 

@@ -43,9 +43,15 @@ export function bindDocumentation(source: AnalyzedDocument, documents: readonly 
   for (const origin of origins) {
     for (const block of origin.documentationBlocks ?? []) {
       if (block.document.groups.some(g => g.kind !== 'ingroup')) { continue; }
-      const candidates = block.document.targets.length
-        ? resolver.resolve(block, origin)
-        : block.adjacentDeclarationIds.map(id => visibleById.get(id)).filter((d): d is AnalysisDeclaration => d !== undefined);
+      const adjacent = block.adjacentDeclarationIds.map(id => visibleById.get(id))
+        .filter((d): d is AnalysisDeclaration => d !== undefined);
+      // Like cpptools, a leading function comment documents its actual neighbor.
+      // An incomplete or conflicting fn does not discard the attached description.
+      const directFunction = block.document.targets.length > 0
+        && block.document.targets.every(target => target.kind === 'fn')
+        ? adjacent.filter(d => d.kind === 'function' || d.kind === 'method') : [];
+      const candidates = directFunction.length ? directFunction : block.document.targets.length
+        ? resolver.resolve(block, origin) : adjacent;
       if (!candidates.length || (candidates.length > 1 && !candidates.every(d => resolver.equivalent(candidates[0], d)))) { continue; }
       for (const declaration of candidates) {
         const entries = proposals.get(declaration.id) ?? [];

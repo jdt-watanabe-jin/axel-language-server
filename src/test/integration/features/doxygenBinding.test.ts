@@ -21,16 +21,16 @@ suite('Doxygen binding', () => {
     assert.ok(result?.markdown?.includes('First paragraph\n\nSecond paragraph'));
   });
   test('resolves a distant fn and does not attach it to the next function', () => {
-    const source = 'int Find(int n);\n/*! @fn int Find(int count)\n * @brief Search files\n */\nint Other();\n';
+    const source = 'int Find(int n);\n/*! @fn int Find(int count)\n * @brief Search files\n */\n// boundary\nint Other();\n';
     assert.ok(hover(source + 'void main(){ Fi|nd(1); }')?.markdown?.includes('Search files'));
     assert.ok(!hover(source + 'void main(){ Ot|her(); }')?.plainText.includes('Search files'));
   });
-  test('does not transfer a mismatched explicit fn to a neighbor', () => {
+  test('uses the adjacent function even when fn names a different target', () => {
     const result = hover('/*! @fn int Missing(int n)\n * @brief Wrong target\n */\nint Find();\nvoid main(){ Fi|nd(); }');
-    assert.ok(!result?.plainText.includes('Wrong target'));
+    assert.ok(result?.plainText.includes('Wrong target'));
   });
   test('resolves overloads by parameter types while ignoring parameter names', () => {
-    const source = 'int Find(int n);\nint Find(string s);\n/*! @fn int Find(string name)\n * @brief String search\n */\n';
+    const source = 'int Find(int n);\nint Find(string s);\n/*! @fn int Find(string name)\n * @brief String search\n */\n// boundary\n';
     assert.ok(hover(source + 'void main(){ Fi|nd("x"); }')?.plainText.includes('String search'));
     assert.ok(!hover(source.replace('int Find(int n)', 'int Fi|nd(int n)'))?.plainText.includes('String search'));
   });
