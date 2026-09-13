@@ -308,7 +308,10 @@ export function isVisibleAt(
   position: AnalysisPosition,
   sourceUri: string
 ): boolean {
-  return declaration.uri !== sourceUri || positionBeforeOrEqual(declaration.selectionRange.start, position);
+  // Functions are visible throughout their owning scope, including calls before
+  // their definition. Scope traversal still controls which declarations qualify.
+  return declaration.kind === 'function' || declaration.kind === 'method'
+    || declaration.uri !== sourceUri || positionBeforeOrEqual(declaration.selectionRange.start, position);
 }
 
 export function findInnermostScope(

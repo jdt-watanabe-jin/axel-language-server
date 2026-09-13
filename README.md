@@ -28,6 +28,8 @@ The server currently supports these Language Server Protocol features:
 - Semantic tokens for declarations and references, including functions, variables, parameters, types, enum members, macros, member access, method calls, GUI receiver paths, GUI event declarations, and AXEL execution file names.
 - Document and range formatting for conservative leading indentation based on structural braces.
 
+Functions and methods can be resolved before their declaration or definition within their owning scope. Hover, definition navigation, references, completion, and signature help use this lookup; variables retain their declaration-order visibility and normal scope shadowing.
+
 Formatting intentionally changes indentation only. It does not rewrite expression spacing, comments, or documents with syntax errors or unbalanced braces.
 
 Leading Doxygen comments can provide structured documentation for hover, completion, and signature help. See the [Doxygen comments guide](docs/user/doxygen-comments.md) for supported forms, commands, binding rules, and limits.
