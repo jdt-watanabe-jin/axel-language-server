@@ -20,10 +20,9 @@ function positions(text: string) {
 }
 
 /** Reparse a virtual source and map all analysis locations back to the user's document. */
-export function macroReparse(root: Parser.SyntaxNode, original: AnalyzedDocument,
+export function macroReparse(root: Parser.SyntaxNode, source: string, original: AnalyzedDocument,
   macros: AnalyzedDocument['macroDefinitions'], analyze: (text: string, position: (p: AnalysisPosition, end?: boolean) => AnalysisPosition) => AnalyzedDocument): AnalyzedDocument {
   if (!macros.length) { return original; }
-  const source = root.text;
   const sourcePositions = positions(source);
   const excluded = [...original.inactiveRanges ?? [], ...original.uncertainRanges ?? []];
   const undefs = root.descendantsOfType('preproc_call').filter(n => n.childForFieldName('directive')?.text.trim() === '#undef'

@@ -119,7 +119,7 @@ export class DocumentAnalyzer {
             && !startsInInactiveRange(m.selectionRange,inactiveRanges))
         };
         if (expandMacros) {
-          analysis = macroReparse(root,analysis,visibleMacroDefinitions,(text,position)=>this.analyzeDocument({...input,text,
+          analysis = macroReparse(root,conditional?.text ?? input.text,analysis,visibleMacroDefinitions,(text,position)=>this.analyzeDocument({...input,text,
             preprocessorSymbols:input.preprocessorSymbols?.map(symbol=>({...symbol,sourceRange:symbol.sourceRange
               ? {start:position(symbol.sourceRange.start),end:position(symbol.sourceRange.end,true)} : undefined})),
             macroDefinitions:input.macroDefinitions?.map(macro=>({...macro,
@@ -200,7 +200,7 @@ export class DocumentAnalyzer {
       analysis.syntaxRecovery = collectSyntaxRecovery(root, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
 
       if (expandMacros) {
-        analysis = macroReparse(root, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocument({...input, text,
+        analysis = macroReparse(root, conditional?.text ?? input.text, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocument({...input, text,
           preprocessorSymbols: input.preprocessorSymbols?.map(symbol => ({...symbol, sourceRange: symbol.sourceRange
             ? {start:position(symbol.sourceRange.start),end:position(symbol.sourceRange.end,true)} : undefined})),
           macroDefinitions: input.macroDefinitions?.map(macro => ({...macro,

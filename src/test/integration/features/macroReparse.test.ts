@@ -8,6 +8,29 @@ suite('General macro reparsing', () => {
   function check(text: string) {
     return fixtures.createWorkspaceIndex().analyzeDocument({uri:'file:///macros.axl',version:1,text});
   }
+  for (const newline of ['\n', '\r\n']) {
+    for (const prefix of ['', '  ', newline, newline + newline + '  ']) {
+      test(`preserves source positions with leading whitespace ${JSON.stringify({newline, prefix})}`, () => {
+        const text = prefix + ['#define DEBUG if(0)', '', '',
+          'void main(){ int value; DEBUG { value = 1; } }', ''].join(newline);
+        const analysis = check(text);
+        const lines = text.split('\n');
+        const mainLine = lines.findIndex(line => line.startsWith('void main'));
+        assert.deepStrictEqual(analysis.diagnostics, []);
+        assert.strictEqual(analysis.expandedMacroReferences?.length, 1);
+        assert.deepStrictEqual(analysis.declarations.find(d => d.name === 'main')?.selectionRange,
+          {start:{line:mainLine, character:5}, end:{line:mainLine, character:9}});
+        for (const declaration of analysis.declarations) {
+          const range = declaration.selectionRange;
+          assert.strictEqual(lines[range.start.line].slice(range.start.character, range.end.character), declaration.name);
+        }
+        for (const reference of analysis.navigationReferences ?? []) {
+          const range = reference.range;
+          assert.strictEqual(lines[range.start.line].slice(range.start.character, range.end.character), reference.name);
+        }
+      });
+    }
+  }
   test('reparses conditional prefixes before member calls', () => {
     const a = check('#define DEBUG if(0)\nclass Date { int x; void Now(){} }; void f(Date dat){ DEBUG dat.Now(); }');
     assert.deepStrictEqual(a.diagnostics, []);
