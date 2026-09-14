@@ -30,6 +30,7 @@ export function collectSemanticTokens(
   const tokens = [
     ...analysis.declarations.flatMap(tokenFromDeclaration),
     ...analysis.references.flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
+    ...(analysis.navigationReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
     ...(analysis.semanticTokenReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
     ...(analysis.semanticTokens ?? []),
     ...analysis.scriptExecutions.map((execution) => ({
@@ -41,7 +42,20 @@ export function collectSemanticTokens(
     ...guiMethodDeclarationTokens(analysis)
   ];
 
-  return dedupeAndSort(tokens).filter(isSingleLineToken);
+  // Expansion-generated functions/members may map onto the written macro name.
+  // Emit only its macro token there, preserving the original source classification.
+  const writtenMacros: AnalysisSemanticToken[] = (analysis.expandedMacroReferences ?? [])
+    .map(reference => ({ range: reference.range, tokenType: 'macro', modifiers: [] }));
+  const macroRangesByLine = new Map<number, AnalysisRange[]>();
+  for (const token of writtenMacros) {
+    const ranges = macroRangesByLine.get(token.range.start.line) ?? [];
+    ranges.push(token.range);
+    macroRangesByLine.set(token.range.start.line, ranges);
+  }
+  const visibleTokens = tokens.filter(isSingleLineToken).filter(token =>
+    !(macroRangesByLine.get(token.range.start.line) ?? []).some(range =>
+      token.range.start.character < range.end.character && range.start.character < token.range.end.character));
+  return dedupeAndSort([...visibleTokens, ...writtenMacros]).filter(isSingleLineToken);
 }
 
 function createCachedWorkspaceDeclarationLookup(

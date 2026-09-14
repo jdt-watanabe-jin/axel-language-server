@@ -96,12 +96,12 @@ function expandKnownMacro(
 ): MacroExpansionResult {
   const parameters = macro.parameters;
   if (parameters === undefined) {
-    return {
-      expandedText: originalText,
-      steps: [],
-      truncated: false,
-      diagnostics: [message("Macro '{0}' is not function-like.", macro.name)]
-    };
+    const objects = expandObjectMacroText(originalText, visibleMacros, state.stack);
+    if (objects.truncated) { return objects; }
+    const nested = expandNestedInvocations(objects.expandedText, visibleMacros, {
+      ...state, depth: state.depth + 1, stack: [...state.stack, macro.name]
+    });
+    return { ...nested, steps: [...objects.steps, ...nested.steps] };
   }
 
   const expected = parameters.length;

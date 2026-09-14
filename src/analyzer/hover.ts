@@ -156,7 +156,7 @@ function hoverForMacroInvocation(
     invocation.name,
     invocation.range.start
   );
-  if (macro === undefined || macro.parameters === undefined) {
+  if (macro === undefined) {
     return undefined;
   }
 
