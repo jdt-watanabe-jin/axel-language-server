@@ -165,4 +165,26 @@ suite('Login scope', () => {
     index.invalidateFile(forced);
     assert.ok(index.indexOpenDocument(input).diagnostics.some(d => d.code === 'axel.type.initialization'));
   });
+
+  test('indexes shared forced headers a bounded number of times during startup', () => {
+    const root = createTempDir();
+    fs.mkdirSync(path.join(root, 'bin'));
+    const headers = path.join(root, 'headers');
+    fs.mkdirSync(headers);
+    fs.writeFileSync(path.join(root, 'bin/_login.axl'), 'int shared; void main() {}');
+    fs.writeFileSync(path.join(headers, 'common.h'), '#define COMMON 1\nclass Common {};');
+    for (let n = 0; n < 12; n++) {
+      fs.writeFileSync(path.join(headers, `header${n}.h`), `#define HEADER_${n} 1\n#include "common.h"\nint forced${n};`);
+    }
+    let commonAnalyses = 0;
+    const index = createWorkspaceIndex({ sxmHome: root, forcedIncludeRoots: [headers], logger: {
+      info(message) { if (message.includes('operation=document.analyze') && message.includes('/common.h ')) { commonAnalyses++; } },
+      error(message) { assert.fail(message); }
+    } });
+    index.getLoginDependencies();
+    assert.ok(commonAnalyses <= 4, `shared forced header parsed ${commonAnalyses} times`);
+    const previous = commonAnalyses;
+    index.getLoginDependencies();
+    assert.strictEqual(commonAnalyses, previous);
+  });
 });

@@ -18,10 +18,12 @@ suite('Login LSP', function () {
     const uri = pathToFileURL(path.join(root, 'consumer.axl')).toString();
     const headerUri = pathToFileURL(header).toString();
     const server = startLspServer();
+    const logs: string[] = [];
+    server.onNotification('window/logMessage', (event: { message: string }) => logs.push(event.message));
     const notifications: { generation: number; uris: string[] }[] = [];
     server.onNotification('axel/loginDependencies', (event: { generation: number; uris: string[] }) => notifications.push(event));
     try {
-      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { sxmHome: root } });
+      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { sxmHome: root, forcedIncludeFiles: [header] } });
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', { textDocument: { uri, version: 1, languageId: 'axel', text: 'void main() { shared; }' } });
       const position = { textDocument: { uri }, position: { line: 0, character: 15 } };
@@ -34,6 +36,7 @@ suite('Login LSP', function () {
       await server.notify('workspace/didChangeConfiguration', { settings: { sxmHome: '' } });
       await server.request('textDocument/hover', position);
       assert.ok(notifications.some(n => n.uris.length === 0));
+      assert.ok(!logs.some(log => /operation=(document\.analyze|workspace\.)/.test(log)), logs.join('\n'));
     } finally { await server.stop(); }
   });
 });

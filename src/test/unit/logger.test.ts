@@ -33,4 +33,17 @@ suite('logger utilities', () => {
     assert.match(entries[0], /failed=true/);
     assert.match(entries[0], /durationMs=\d+/);
   });
+
+  test('routes timings separately from operational messages when requested', () => {
+    const entries: string[] = [];
+    const timings: string[] = [];
+    const logger: AnalysisLogger & { timing(message: string): void } = {
+      info: message => entries.push(message), error: message => entries.push(message),
+      timing: message => timings.push(message)
+    };
+    measureDurationMs(logger, 'document.analyze', {}, () => 42);
+    logger.info('[login] missing startup file');
+    assert.deepStrictEqual(entries, ['[login] missing startup file']);
+    assert.strictEqual(timings.length, 1);
+  });
 });

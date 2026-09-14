@@ -36,6 +36,21 @@ export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacem
   return {uri, root:copy(root)};
 }
 export function field(node: TypeNode, name: string): TypeNode | undefined { return node.fields[name]?.[0]; }
+// Type snapshots are immutable and replaced on edits. Weak keys release old generations.
+const descendantCache = new WeakMap<TypeNode, Map<string, TypeNode[]>>();
 export function descendants(node: TypeNode, kind: string): TypeNode[] {
-  return [...(node.kind === kind ? [node] : []), ...node.children.flatMap(n => descendants(n, kind))];
+  let byKind = descendantCache.get(node);
+  const cached = byKind?.get(kind);
+  if (cached) { return cached; }
+  const result: TypeNode[] = [];
+  const pending = [node];
+  while (pending.length) {
+    const current = pending.pop()!;
+    if (current.kind === kind) { result.push(current); }
+    const children = current.children;
+    for (let i = children.length - 1; i >= 0; i--) { pending.push(children[i]); }
+  }
+  if (!byKind) { byKind = new Map(); descendantCache.set(node, byKind); }
+  byKind.set(kind, result);
+  return result;
 }

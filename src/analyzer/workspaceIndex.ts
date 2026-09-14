@@ -651,7 +651,7 @@ export class WorkspaceIndex {
     initialAnalysis: AnalyzedDocument
   ): AnalyzedDocument {
     if (!this.indexingForcedIncludes) {
-      this.indexForcedIncludes();
+      this.ensureForcedIncludesIndexed();
     }
 
     const knownGuiClasses = this.collectVisibleGuiClassEntries(input.uri)
@@ -708,7 +708,9 @@ export class WorkspaceIndex {
       resolvedUris.add(resolution.uri);
       if (!this.isUncertainRange(analysis, include.range)) { definiteUris.add(resolution.uri); }
       if (!visitedUris.has(resolution.uri)) {
-        if (this.inheritIncludeContext) {
+        // Forced headers have an independent global context; callers must not invalidate it.
+        if (this.inheritIncludeContext && !this.indexingForcedIncludes
+          && !this.knownForcedIncludeUris().includes(resolution.uri)) {
           const visible = new Map<string, AnalysisMacroDefinition>();
           for (const macro of [...this.includeContexts.get(analysis.uri)?.macroDefinitions ?? [],
             ...this.collectPositionAwareMacroDefinitions(analysis.uri, true)]) {

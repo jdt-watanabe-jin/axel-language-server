@@ -1,5 +1,6 @@
 export interface AnalysisLogger {
   info(message: string): void;
+  timing?(message: string): void;
   error(message: string): void;
 }
 
@@ -17,7 +18,7 @@ export function measureDurationMs<T>(
   const startedAt = Date.now();
   try {
     const result = work();
-    logger.info(formatTimingMessage(operation, details, Date.now() - startedAt));
+    (logger.timing ?? logger.info).call(logger, formatTimingMessage(operation, details, Date.now() - startedAt));
     return result;
   } catch (error: unknown) {
     logger.error(formatTimingMessage(operation, { ...details, failed: true }, Date.now() - startedAt));
