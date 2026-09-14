@@ -1,13 +1,47 @@
-﻿import * as assert from 'assert';
+import { mock } from 'node:test';
+import { descendants, field } from '../../../analyzer/typeChecking/syntax';
+import * as assert from 'assert';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { loadBuiltinCatalog } from '../../../analyzer/typeChecking/builtinCatalog';
-import { buildTypeContext, lookupBinding, lookupClass } from '../../../analyzer/typeChecking/declarations';
+import { buildTypeContext, lookupBinding, lookupClass, resolveType } from '../../../analyzer/typeChecking/declarations';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
 
 suite('Type checking: declaration resolution', () => {
   function analyze(text: string) {
     return new DocumentAnalyzer().analyzeDocument({uri:'file:///declarations.axl',version:1,text});
   }
+  test('does not probe unrelated header scopes for an absent type alias', () => {
+    const analyzer = new DocumentAnalyzer();
+    const documents = Array.from({length: 100}, (_, n) => analyzer.analyzeDocument({
+      uri: 'file:///header' + n + '.h', version: 1, text: 'typedef int Alias' + n + ';' }));
+    const analysis = analyze('Missing value;');
+    const ctx = buildTypeContext({analysis, documents, catalog:loadBuiltinCatalog([])});
+    const node = field(descendants(analysis.typeSnapshot!.root, 'object_definition')[0], 'type')!;
+    const spy = mock.method(ctx.aliases, 'get', ctx.aliases.get.bind(ctx.aliases));
+    try {
+      assert.strictEqual(resolveType(ctx, node, ctx.nodeScopes.get(node)!).kind, 'unknown');
+      assert.ok(spy.mock.callCount() <= 2, 'must not look up the name in every included header');
+    } finally { spy.mock.restore(); }
+  });
+
+  test('preserves alias precedence, local shadowing and declaration order', () => {
+    const analyzer = new DocumentAnalyzer();
+    for (const [version, type] of [[1, 'short'], [2, 'double']] as const) {
+      const documents = [
+        analyzer.analyzeDocument({uri:'file:///first.h',version,text:'typedef ' + type + ' Shared;'}),
+        analyzer.analyzeDocument({uri:'file:///second.h',version,text:'typedef long Shared;'})
+      ];
+      const analysis = analyze('Shared imported; void main(){ typedef int Shared; Shared inner; }\nShared after; Later early; typedef int Later; Later late;');
+      const ctx = buildTypeContext({analysis,documents,catalog:loadBuiltinCatalog([])});
+      const types = Object.fromEntries(ctx.bindings.map(binding => [binding.name,binding.type.name]));
+      assert.strictEqual(types.imported,type);
+      assert.strictEqual(types.inner,'int');
+      assert.strictEqual(types.after,type);
+      assert.strictEqual(ctx.bindings.find(binding => binding.name === 'early')?.type.kind,'unknown');
+      assert.strictEqual(types.late,'int');
+    }
+  });
+
   test('does not chain user conversions to double or use them for initialization', () => {
     const text='class A {int data; operator int(){return 0;}};\nvoid take(double value){}\nvoid main(){A a; take(a); int i=a;}';
     const diagnostics=new WorkspaceIndex().analyzeDocument({uri:'file:///conversion.axl',version:1,text}).diagnostics;

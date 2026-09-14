@@ -1,8 +1,19 @@
+import { mock } from 'node:test';
+import * as guiResolution from '../../../analyzer/guiResolution';
 import * as assert from 'assert';
 import { collectSemanticTokens } from '../../../analyzer/semanticTokens';
 import { createVisibleEnumMemberDeclarations, createReferenceHeavyAnalysis, createGuiReferenceHeavyAnalysis } from '../../support/semanticTokenLoad';
 
 suite('semantic token lookup scaling', () => {
+  test('collects GUI methods once for a reference-heavy document', () => {
+    const original = guiResolution.allGuiMethods;
+    const spy = mock.method(guiResolution, 'allGuiMethods', original);
+    try {
+      const tokens = collectSemanticTokens(createGuiReferenceHeavyAnalysis(200));
+      assert.strictEqual(tokens.length, 2);
+      assert.strictEqual(spy.mock.callCount(), 1);
+    } finally { spy.mock.restore(); }
+  });
   for (const [name, makeAnalysis] of [
     ['named references', createReferenceHeavyAnalysis],
     ['implicit GUI references', createGuiReferenceHeavyAnalysis]

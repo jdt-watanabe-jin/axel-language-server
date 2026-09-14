@@ -7,6 +7,9 @@ import { descendants, field, type TypeNode, type TypeSnapshot } from './syntax';
 
 const classKinds = new Set(['class_specifier', 'struct_specifier', 'union_specifier']);
 const declarationKinds = new Set(['object_definition', 'field_declaration', 'type_definition', 'function_definition']);
+// Populated alongside aliases while building each context; discarded with it.
+const aliasScopeIndexes = new WeakMap<TypeContext, Map<string, Scope[]>>();
+
 const basics = new Set([...numericNames, 'void']);
 
 export function scopeFor(ctx: TypeContext, node: TypeNode): Scope {
@@ -41,7 +44,10 @@ function lookupAlias(ctx: TypeContext, name: string, scope: Scope): Type | undef
     const alias = ctx.aliases.get(aliasKey(current, name));
     if (alias) { return alias; }
   }
-  for (const root of ctx.scopes.filter(s => !s.parent && s.uri !== scope.uri)) {
+  const indexed = aliasScopeIndexes.get(ctx);
+  const roots = indexed ? indexed.get(name) ?? [] : ctx.scopes.filter(s => !s.parent);
+  for (const root of roots) {
+    if (root.uri === scope.uri) { continue; }
     const alias = ctx.aliases.get(aliasKey(root, name));
     if (alias) { return alias; }
   }
@@ -124,6 +130,8 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
     ...options, documents, classes: [], scopes: [], functions: [], bindings: [], aliases: new Map(),
     nodeScopes: new Map(), diagnostics: [], cache: new Map()
   };
+  const aliasScopes = new Map<string, Scope[]>();
+  aliasScopeIndexes.set(ctx, aliasScopes);
   const login = options.loginScope;
   const entry = login?.documents.find(document => document.uri === login.entryUri);
   if (login && entry) {
@@ -208,6 +216,11 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
         const shaped = shapeType(ctx, declarator, base, effectiveScope, node);
         if (node.kind === 'type_definition') {
           ctx.aliases.set(aliasKey(scope, name), shaped.type);
+          if (!scope.parent) {
+            const scopes = aliasScopes.get(name) ?? [];
+            if (!scopes.includes(scope)) { scopes.push(scope); }
+            aliasScopes.set(name, scopes);
+          }
           continue;
         }
         const binding: Binding = { name, type: shaped.type, node, scope: effectiveScope, uri: scope.uri };

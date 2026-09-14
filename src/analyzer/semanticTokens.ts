@@ -26,7 +26,8 @@ export function collectSemanticTokens(
   workspaceIndex: WorkspaceDeclarationLookup = {}
 ): AnalysisSemanticToken[] {
   const cachedWorkspaceIndex = createCachedWorkspaceDeclarationLookup(workspaceIndex);
-  const resolutionCache = createSemanticTokenResolutionCache(analysis, cachedWorkspaceIndex);
+  const guiMethods = allGuiMethods(analysis);
+  const resolutionCache = createSemanticTokenResolutionCache(analysis, cachedWorkspaceIndex, guiMethods);
   const tokens = [
     ...analysis.declarations.flatMap(tokenFromDeclaration),
     ...analysis.references.flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
@@ -38,8 +39,8 @@ export function collectSemanticTokens(
       tokenType: 'function' as const,
       modifiers: []
     })),
-    ...guiReceiverPathTokens(analysis),
-    ...guiMethodDeclarationTokens(analysis)
+    ...guiMethods.flatMap(tokenFromGuiReceiverPath),
+    ...guiMethods.flatMap(tokenFromGuiMethodDeclaration)
   ];
 
   // Expansion-generated functions/members may map onto the written macro name.
@@ -128,7 +129,7 @@ function tokenFromReference(
   workspaceIndex: WorkspaceDeclarationLookup,
   resolutionCache: SemanticTokenResolutionCache
 ): AnalysisSemanticToken[] {
-  if (isGuiMethodSelectionReference(analysis, reference)) {
+  if (resolutionCache.isGuiMethodSelectionReference(reference)) {
     return [];
   }
 
@@ -310,6 +311,7 @@ function isRecoveredGuiMember(declaration: AnalysisDeclaration, memberName: stri
 }
 
 interface SemanticTokenResolutionCache {
+  isGuiMethodSelectionReference(reference: AnalysisReference): boolean;
   visibleDeclarationsByName(input: DeclarationResolutionInput, name: string): AnalysisDeclaration[];
   findDeclarationMember(
     input: DeclarationResolutionInput,
@@ -320,7 +322,8 @@ interface SemanticTokenResolutionCache {
 
 function createSemanticTokenResolutionCache(
   analysis: AnalyzedDocument,
-  workspaceIndex: WorkspaceDeclarationLookup
+  workspaceIndex: WorkspaceDeclarationLookup,
+  guiMethods: AnalysisGuiMethod[]
 ): SemanticTokenResolutionCache {
   let visibleDeclarations: AnalysisDeclaration[] | undefined;
   let visibleDeclarationIndex: Map<string, AnalysisDeclaration[]> | undefined;
@@ -333,7 +336,17 @@ function createSemanticTokenResolutionCache(
     return visibleDeclarations;
   }
 
+  const methodSelections = new Map<string, AnalysisRange[]>();
+  for (const method of guiMethods) {
+    if (!method.selectionRange) { continue; }
+    const ranges = methodSelections.get(method.name) ?? [];
+    ranges.push(method.selectionRange);
+    methodSelections.set(method.name, ranges);
+  }
+
   return {
+    isGuiMethodSelectionReference: reference => (methodSelections.get(reference.name) ?? [])
+      .some(range => sameRange(range, reference.range)),
     visibleDeclarationsByName: (input, name) => {
       if (input.analysis.uri !== analysis.uri) {
         return visibleDeclarationsByName(input, name);
@@ -472,29 +485,6 @@ function comparePositions(
   right: AnalysisDeclaration['selectionRange']['start']
 ): number {
   return left.line - right.line || left.character - right.character;
-}
-
-function isGuiMethodSelectionReference(
-  analysis: Pick<AnalyzedDocument, 'guiClasses' | 'guiMethods'>,
-  reference: AnalysisReference
-): boolean {
-  return allGuiMethods(analysis).some((method) => (
-    method.name === reference.name
-    && method.selectionRange !== undefined
-    && sameRange(method.selectionRange, reference.range)
-  ));
-}
-
-function guiReceiverPathTokens(analysis: Pick<AnalyzedDocument, 'guiClasses' | 'guiMethods'>): AnalysisSemanticToken[] {
-  return allGuiMethods(analysis)
-    .flatMap(tokenFromGuiReceiverPath);
-}
-
-function guiMethodDeclarationTokens(
-  analysis: Pick<AnalyzedDocument, 'guiClasses' | 'guiMethods'>
-): AnalysisSemanticToken[] {
-  return allGuiMethods(analysis)
-    .flatMap(tokenFromGuiMethodDeclaration);
 }
 
 function tokenFromGuiMethodDeclaration(method: AnalysisGuiMethod): AnalysisSemanticToken[] {
