@@ -85,6 +85,7 @@ export class WorkspaceIndex {
   private readonly includeGraph = new Map<string, Set<string>>();
   private readonly definiteIncludeGraph = new Map<string, Set<string>>();
   private readonly reverseIncludeGraph = new Map<string, Set<string>>();
+  private includeResolutionCache: Map<string, IncludeResolution> | undefined;
   private forcedIncludeFileCache: string[] | undefined;
   private indexingForcedIncludes = false;
   private forcedIncludesIndexed = false;
@@ -162,17 +163,19 @@ export class WorkspaceIndex {
   }
 
   public analyzeDiagnosticDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
-    const foregroundAnalysis = this.analyzeForegroundDocument(input);
-    if (this.backgroundIndexingScheduled || this.pendingBackgroundDocuments.size > 0) {
-      if (this.documents.get(input.uri)?.workspaceDiagnosticsComplete) { return foregroundAnalysis; }
-      // Missing direct includes are already known without waiting for header parsing.
-      return {...foregroundAnalysis, diagnostics: limitDiagnostics([
-        ...this.unresolvedIncludeDiagnostics(foregroundAnalysis, true),
-        ...foregroundAnalysis.diagnostics
-      ], this.maxNumberOfProblems)};
-    }
+    return this.withIncludeResolutionCache(() => {
+      const foregroundAnalysis = this.analyzeForegroundDocument(input);
+      if (this.backgroundIndexingScheduled || this.pendingBackgroundDocuments.size > 0) {
+        if (this.documents.get(input.uri)?.workspaceDiagnosticsComplete) { return foregroundAnalysis; }
+        // Missing direct includes are already known without waiting for header parsing.
+        return {...foregroundAnalysis, diagnostics: limitDiagnostics([
+          ...this.unresolvedIncludeDiagnostics(foregroundAnalysis, true),
+          ...foregroundAnalysis.diagnostics
+        ], this.maxNumberOfProblems)};
+      }
 
-    return this.indexOpenDocument(input);
+      return this.indexOpenDocument(input);
+    });
   }
 
   public getIncludeResolutionStatus(analysis: AnalyzedDocument): IncludeResolutionStatus {
@@ -207,59 +210,65 @@ export class WorkspaceIndex {
   }
 
   public indexOpenDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
-    this.rememberOpenInput(input);
-    const cached = this.documents.get(input.uri);
-    if (cached?.version === input.version && cached.workspaceDiagnosticsComplete === true) {
-      return cached.analysis;
-    }
+    return this.withIncludeResolutionCache(() => {
+      this.rememberOpenInput(input);
+      const cached = this.documents.get(input.uri);
+      if (cached?.version === input.version && cached.workspaceDiagnosticsComplete === true) {
+        return cached.analysis;
+      }
 
-    const initialAnalysis = cached?.version === input.version ? cached.analysis
-      : this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
-    this.documents.set(input.uri, {
-      analysis: initialAnalysis,
-      version: input.version,
-      filePath: filePathFromUri(input.uri),
-      workspaceDiagnosticsComplete: false
+      const initialAnalysis = cached?.version === input.version ? cached.analysis
+        : this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
+      this.documents.set(input.uri, {
+        analysis: initialAnalysis,
+        version: input.version,
+        filePath: filePathFromUri(input.uri),
+        workspaceDiagnosticsComplete: false
+      });
+      this.pendingDependencyInputs.set(input.uri, input);
+      try {
+        this.indexResolvedIncludes(initialAnalysis, new Set([input.uri]));
+      } finally {
+        this.pendingDependencyInputs.delete(input.uri);
+      }
+      const analysis = this.withWorkspaceDiagnostics(this.reanalyzeWithVisibleContext(input, initialAnalysis));
+      this.documents.set(input.uri, {
+        ...(this.documents.get(input.uri) ?? {}),
+        analysis,
+        workspaceDiagnosticsComplete: true
+      });
+      this.analyzer.releaseSyntax(analysis.uri);
+      return analysis;
     });
-    this.pendingDependencyInputs.set(input.uri, input);
-    try {
-      this.indexResolvedIncludes(initialAnalysis, new Set([input.uri]));
-    } finally {
-      this.pendingDependencyInputs.delete(input.uri);
-    }
-    const analysis = this.withWorkspaceDiagnostics(this.reanalyzeWithVisibleContext(input, initialAnalysis));
-    this.documents.set(input.uri, {
-      ...(this.documents.get(input.uri) ?? {}),
-      analysis,
-      workspaceDiagnosticsComplete: true
-    });
-    this.analyzer.releaseSyntax(analysis.uri);
-    return analysis;
   }
 
   public indexDiskDocument(filePath: string): AnalyzedDocument {
-    const indexed = this.indexDiskDocumentInternal(path.normalize(filePath), new Set());
-    const cached = this.documents.get(indexed.uri);
-    if (cached?.workspaceDiagnosticsComplete) { return indexed; }
-    const analysis = this.withWorkspaceDiagnostics(indexed);
-    if (cached) { this.documents.set(indexed.uri, { ...cached, analysis, workspaceDiagnosticsComplete: true }); }
-    return analysis;
+    return this.withIncludeResolutionCache(() => {
+      const indexed = this.indexDiskDocumentInternal(path.normalize(filePath), new Set());
+      const cached = this.documents.get(indexed.uri);
+      if (cached?.workspaceDiagnosticsComplete) { return indexed; }
+      const analysis = this.withWorkspaceDiagnostics(indexed);
+      if (cached) { this.documents.set(indexed.uri, { ...cached, analysis, workspaceDiagnosticsComplete: true }); }
+      return analysis;
+    });
   }
 
   public indexForcedIncludes(): void {
-    if (this.indexingForcedIncludes) {
-      return;
-    }
-
-    this.indexingForcedIncludes = true;
-    try {
-      for (const filePath of this.getForcedIncludeFiles()) {
-        this.indexDiskDocumentInternal(filePath, new Set());
+    return this.withIncludeResolutionCache(() => {
+      if (this.indexingForcedIncludes) {
+        return;
       }
-      this.forcedIncludesIndexed = true;
-    } finally {
-      this.indexingForcedIncludes = false;
-    }
+
+      this.indexingForcedIncludes = true;
+      try {
+        for (const filePath of this.getForcedIncludeFiles()) {
+          this.indexDiskDocumentInternal(filePath, new Set());
+        }
+        this.forcedIncludesIndexed = true;
+      } finally {
+        this.indexingForcedIncludes = false;
+      }
+    });
   }
 
   private ensureForcedIncludesIndexed(): void {
@@ -413,7 +422,7 @@ export class WorkspaceIndex {
       return undefined;
     }
 
-    const resolution = resolveInclude({
+    const resolution = this.resolveInclude({
       includingFilePath,
       includeText: includeTextForResolution(include.includePath, include.kind),
       includeRoots: this.includeRoots
@@ -612,7 +621,7 @@ export class WorkspaceIndex {
       .filter(include => !unconditionalOnly || !include.conditional)
       .map((include) => ({
         include,
-        resolution: resolveInclude({
+        resolution: this.resolveInclude({
           includingFilePath,
           includeText: includeTextForResolution(include.includePath, include.kind),
           includeRoots: this.includeRoots
@@ -701,7 +710,7 @@ export class WorkspaceIndex {
     const resolvedUris = new Set<string>();
     const definiteUris = new Set<string>();
     for (const include of analysis.includes) {
-      const resolution = resolveInclude({
+      const resolution = this.resolveInclude({
         includingFilePath,
         includeText: includeTextForResolution(include.includePath, include.kind),
         includeRoots: this.includeRoots
@@ -755,7 +764,7 @@ export class WorkspaceIndex {
     const resolvedUris = new Set<string>();
     const definiteUris = new Set<string>();
     for (const include of analysis.includes) {
-      const resolution = resolveInclude({
+      const resolution = this.resolveInclude({
         includingFilePath,
         includeText: includeTextForResolution(include.includePath, include.kind),
         includeRoots: this.includeRoots
@@ -818,35 +827,37 @@ export class WorkspaceIndex {
   }
 
   private indexSingleBackgroundDiskDocument(uri: string, filePath: string): void {
-    measureDurationMs(this.logger, 'workspace.background', { uri }, () => {
-      const open = this.openDocumentInput?.(uri) ?? this.openInputs.get(fileIdentity(uri));
-      if (open) { this.indexOpenDocument(open); return; }
-      const normalizedPath = path.normalize(filePath);
-      const stat = fs.statSync(normalizedPath);
-      const cached = this.documents.get(uri);
-      if (cached?.mtimeMs === stat.mtimeMs) {
-        this.replaceResolvedIncludeEdgesAndEnqueue(cached.analysis);
-        return;
-      }
+    return this.withIncludeResolutionCache(() => {
+      measureDurationMs(this.logger, 'workspace.background', { uri }, () => {
+        const open = this.openDocumentInput?.(uri) ?? this.openInputs.get(fileIdentity(uri));
+        if (open) { this.indexOpenDocument(open); return; }
+        const normalizedPath = path.normalize(filePath);
+        const stat = fs.statSync(normalizedPath);
+        const cached = this.documents.get(uri);
+        if (cached?.mtimeMs === stat.mtimeMs) {
+          this.replaceResolvedIncludeEdgesAndEnqueue(cached.analysis);
+          return;
+        }
 
-      const text = fs.readFileSync(normalizedPath, 'utf8');
-      const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
-      this.documents.set(uri, {
-        analysis: initialAnalysis,
-        filePath: normalizedPath,
-        mtimeMs: stat.mtimeMs,
-        workspaceDiagnosticsComplete: false
+        const text = fs.readFileSync(normalizedPath, 'utf8');
+        const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
+        this.documents.set(uri, {
+          analysis: initialAnalysis,
+          filePath: normalizedPath,
+          mtimeMs: stat.mtimeMs,
+          workspaceDiagnosticsComplete: false
+        });
+        this.replaceResolvedIncludeEdgesAndEnqueue(initialAnalysis);
+        const analysis = this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis);
+        this.documents.set(uri, {
+          analysis,
+          filePath: normalizedPath,
+          mtimeMs: stat.mtimeMs,
+          workspaceIndexComplete: true,
+          workspaceDiagnosticsComplete: false
+        });
+        this.analyzer.releaseSyntax(uri);
       });
-      this.replaceResolvedIncludeEdgesAndEnqueue(initialAnalysis);
-      const analysis = this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis);
-      this.documents.set(uri, {
-        analysis,
-        filePath: normalizedPath,
-        mtimeMs: stat.mtimeMs,
-        workspaceIndexComplete: true,
-        workspaceDiagnosticsComplete: false
-      });
-      this.analyzer.releaseSyntax(uri);
     });
   }
 
@@ -1044,7 +1055,7 @@ export class WorkspaceIndex {
           const key = JSON.stringify([includingFilePath, includeText]);
           let resolution = resolutions.get(key);
           if (!resolution) {
-            resolution = resolveInclude({includingFilePath, includeText, includeRoots:this.includeRoots});
+            resolution = this.resolveInclude({includingFilePath, includeText, includeRoots:this.includeRoots});
             resolutions.set(key, resolution);
           }
           if (resolution.status === 'resolved') {
@@ -1112,7 +1123,7 @@ export class WorkspaceIndex {
     const includingFilePath = filePathFromUri(sourceUri);
     if (includingFilePath !== undefined) {
       for (const include of this.documents.get(sourceUri)?.analysis.includes ?? []) {
-        const resolution = resolveInclude({
+        const resolution = this.resolveInclude({
           includingFilePath,
           includeText: includeTextForResolution(include.includePath, include.kind),
           includeRoots: this.includeRoots
@@ -1208,6 +1219,25 @@ export class WorkspaceIndex {
       ...this.forcedIncludeFiles,
       ...(this.forcedIncludeFileCache ?? [])
     ])).sort();
+  }
+
+  // A synchronous analysis transaction sees one resolution per include. Discard
+  // the cache afterwards so new files and changed search paths are observed.
+  private withIncludeResolutionCache<T>(work: () => T): T {
+    if (this.includeResolutionCache) { return work(); }
+    this.includeResolutionCache = new Map();
+    try { return work(); } finally { this.includeResolutionCache = undefined; }
+  }
+
+  private resolveInclude(input: Parameters<typeof resolveInclude>[0]): IncludeResolution {
+    const cache = this.includeResolutionCache;
+    if (!cache) { return resolveInclude(input); }
+    const key = JSON.stringify([input.includingFilePath, input.includeText]);
+    const cached = cache.get(key);
+    if (cached) { return cached; }
+    const resolution = resolveInclude(input);
+    cache.set(key, resolution);
+    return resolution;
   }
 
   private clearCachedAnalysis(): void {
