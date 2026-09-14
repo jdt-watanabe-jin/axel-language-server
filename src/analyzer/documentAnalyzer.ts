@@ -9,7 +9,7 @@ import { buildTypeSnapshot } from './typeChecking/syntax';
 import type * as Parser from 'tree-sitter';
 import { message } from '../i18n/messages';
 import { normalizeTargetPlatform } from './targetPlatform';
-import { collectSystemMacroSyntax, isSystemMacroName, normalizeInternalFeatures, normalizeTool, resolveSystemMacro } from './systemMacros';
+import { collectSystemMacroSyntax, isSystemMacroName, normalizeInternalFeatures, normalizeTool } from './systemMacros';
 import type {
   AnalysisDiagnostic,
   AnalysisGuiClass,
@@ -181,13 +181,7 @@ export class DocumentAnalyzer {
         macroDefinitions: activeMacroDefinitions,
         macroInvocations: macroInvocations.filter((invocation) => !startsInInactiveRange(invocation.selectionRange, inactiveRanges)),
         get semanticTokenReferences() { return collectPreprocessorSemanticTokenReferences(root, input.uri).filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)); },
-        get semanticTokens() { return [
-          ...collectPreprocessorSemanticTokens(root).filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
-          ...systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)
-            && resolveSystemMacro(ref.name, input.uri, ref.range.start, input.tool, input.targetPlatform, input.internalFeatures)?.defined).map(ref => ({
-            range: ref.range, tokenType: 'macro' as const, modifiers: []
-          }))
-        ]; },
+        get semanticTokens() { return collectPreprocessorSemanticTokens(root).filter((token) => !startsInInactiveRange(token.range, inactiveRanges)); },
         get scopes() { return scopes(); },
         includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
         get scriptExecutions() { return collectScriptExecutions(root).filter((execution) => !startsInInactiveRange(execution.selectionRange, [...inactiveRanges,...recoveredStatementRanges])); },

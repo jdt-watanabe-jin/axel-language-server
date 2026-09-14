@@ -1,3 +1,4 @@
+import { resolveSystemMacro } from './systemMacros';
 import type {
   AnalysisDeclaration,
   AnalysisGuiMethod,
@@ -34,6 +35,11 @@ export function collectSemanticTokens(
     ...(analysis.navigationReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
     ...(analysis.semanticTokenReferences ?? []).flatMap((reference) => tokenFromReference(reference, analysis, cachedWorkspaceIndex, resolutionCache)),
     ...(analysis.semanticTokens ?? []),
+    // Written references survive conditional recovery and macro reparsing.
+    ...(analysis.systemMacroReferences ?? []).filter(reference =>
+      resolveSystemMacro(reference.name, analysis.uri, reference.range.start,
+        analysis.tool, analysis.targetPlatform, analysis.internalFeatures)?.defined)
+      .map(reference => ({range:reference.range, tokenType:'macro' as const, modifiers:[]})),
     ...analysis.scriptExecutions.map((execution) => ({
       range: execution.selectionRange,
       tokenType: 'function' as const,

@@ -8,6 +8,21 @@ import { prepareRename } from '../../../analyzer/rename';
 import { positionFromOffset } from '../../support/source';
 
 suite('system macros', () => {
+  for (const directive of ['#if __OS_WINDOWS__', '#ifdef __OS_WINDOWS__', '#if __AXEL_INTERNAL__']) {
+    test('keeps system macro highlighting through conditional recovery and expansion: ' + directive, () => {
+      const text = ['#define VALUE 1', directive, 'void main(){', '#else', 'void main(){', '#endif',
+        'int value = VALUE;', '}', '// __OS_WINDOWS__', 'string label = "__OS_WINDOWS__";',
+        '#if 0', 'int hidden = __OS_WINDOWS__;', '#endif'].join('\n');
+      const { analysis } = fixture(text);
+      const name = directive.split(' ')[1];
+      const tokens = collectSemanticTokens(analysis);
+      assert.deepStrictEqual(tokens.filter(token => token.range.start.line === 1), [{
+        range: {start:{line:1,character:directive.indexOf(name)},end:{line:1,character:directive.length}},
+        tokenType:'macro',modifiers:[]
+      }]);
+      assert.ok(!tokens.some(token => token.tokenType === 'macro' && [8,9,11].includes(token.range.start.line)));
+    });
+  }
   const uri = 'file:///D:/project/main.axl';
   function fixture(text: string, tool = 'axel') {
     const index = new WorkspaceIndex();
