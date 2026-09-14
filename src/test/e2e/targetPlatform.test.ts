@@ -18,11 +18,14 @@ suite('LSP target platform', function () {
     try {
       await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { targetPlatform: 'hpux-hppa32' } });
       await server.notify('initialized', {});
-      await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text: '#include "platform.h"\nvoid main(){ windowsOnly; unixOnly; }\nint bits = __OS_64bit__;' } });
       for (const [targetPlatform, unknownName, bit] of [['hpux-hppa32', 'windowsOnly', 0], ['windows-x64', 'unixOnly', 1], ['linux-x86', 'windowsOnly', 0]] as const) {
-        if (targetPlatform !== 'hpux-hppa32') {
+        const refreshed = new Promise<void>(resolve => server.onDiagnosticRefresh(resolve));
+        if (targetPlatform === 'hpux-hppa32') {
+        await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text: '#include "platform.h"\nvoid main(){ windowsOnly; unixOnly; }\nint bits = __OS_64bit__;' } });
+        } else {
           await server.notify('workspace/didChangeConfiguration', { settings: { targetPlatform } });
         }
+        await refreshed;
         const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
         assert.ok(report.kind === 'full');
         assert.ok(report.items.some(item => item.message.includes(unknownName)), JSON.stringify(report));

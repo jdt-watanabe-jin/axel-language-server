@@ -1,3 +1,4 @@
+import { runAnalysisSteps } from '../util/analysisSteps';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { AnalysisDeclaration, AnalyzedDocument } from '../types/analysis';
@@ -19,11 +20,15 @@ export interface LoginScopeSnapshot {
 
 /** Startup and subsequent-file macro environments must use separate indexes. */
 export function buildLoginScope(entryPath: string, options: WorkspaceIndexOptions): LoginScopeSnapshot {
+  return runAnalysisSteps(buildLoginScopeSteps(entryPath, options));
+}
+
+export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndexOptions): Generator<void, LoginScopeSnapshot, void> {
   const index = new WorkspaceIndex({ ...options, sxmHome: '', inheritIncludeContext: true, dependencyAnalysisOnly: true });
   const entryUri = pathToFileURL(entryPath).toString();
   const snapshot: LoginScopeSnapshot = { entryUri, declarations: [], documents: [], dependencyUris: [entryUri] };
   try {
-    index.indexDiskDocument(entryPath);
+    yield* index.indexDiskDocumentSteps(entryPath);
   } catch (error: unknown) {
     options.logger?.info(`[login] Unable to read ${entryPath}: ${error instanceof Error ? error.message : String(error)}`);
     return snapshot;

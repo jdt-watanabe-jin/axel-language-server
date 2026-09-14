@@ -61,7 +61,7 @@ export interface AnalyzerLike extends
   configure?(options: unknown): void;
   invalidateUri?(uri: string): void;
   onBackgroundIndexingComplete?(listener: () => void): void;
-  getLoginDependencies?(): { generation: number; uris: string[] };
+  getLoginDependencies?(cachedOnly?: boolean): { generation: number; uris: string[] };
 }
 
 export interface HandlerRegistrationContext {
@@ -574,6 +574,7 @@ function getErrorMessage(error: unknown): string {
 
 function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext): void {
   context.analyzer.onBackgroundIndexingComplete?.(() => {
+    sendLoginDependencies(context);
     context.connection.languages.semanticTokens.refresh();
     context.connection.languages.diagnostics.refresh();
   });

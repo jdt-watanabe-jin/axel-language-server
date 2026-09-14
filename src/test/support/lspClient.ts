@@ -32,6 +32,9 @@ export function startLspServer() {
     }
   }
   return {
+    onDiagnosticRefresh(handler: () => void) {
+      return connection.onRequest('workspace/diagnostic/refresh', () => { handler(); return null; });
+    },
     onNotification<T>(method: string, handler: (params: T) => void) {
       return connection.onNotification(method, handler);
     },

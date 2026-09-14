@@ -21,7 +21,12 @@ suite('Login LSP', function () {
     const logs: string[] = [];
     server.onNotification('window/logMessage', (event: { message: string }) => logs.push(event.message));
     const notifications: { generation: number; uris: string[] }[] = [];
-    server.onNotification('axel/loginDependencies', (event: { generation: number; uris: string[] }) => notifications.push(event));
+    let dependenciesPublished: () => void = () => undefined;
+    const published = new Promise<void>(resolve => { dependenciesPublished = resolve; });
+    server.onNotification('axel/loginDependencies', (event: { generation: number; uris: string[] }) => {
+      notifications.push(event);
+      if (event.uris.includes(headerUri)) { dependenciesPublished(); }
+    });
     try {
       await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { sxmHome: root, forcedIncludeFiles: [header] } });
       await server.notify('initialized', {});
@@ -29,6 +34,7 @@ suite('Login LSP', function () {
       const position = { textDocument: { uri }, position: { line: 0, character: 15 } };
       const definitions = await server.request<{ uri: string }[]>('textDocument/definition', position);
       assert.strictEqual(definitions[0]?.uri, headerUri);
+      await published;
       assert.ok(notifications.some(n => n.uris.includes(headerUri)), JSON.stringify(notifications));
       // An immediate request in the consumer must flush pending unsaved header edits.
       await server.notify('textDocument/didOpen', { textDocument: {
