@@ -96,3 +96,9 @@ See the [developer guide](../developer/type-checking.md) for architecture and ve
 この検査は宣言が多い文書の編集待ちを対象とし、キー入力間隔を再現するものではない。include更新、診断実行中の補完、マクロやGUI構文の多い実ファイルは対象外。サーバー内部の処理時間と通信・待機時間を個別に分解する計測でもない。これらのシナリオは、実際に遅い操作の調査に合わせて追加する。
 
 変更集約の回帰検査は `src/test/unit/documentChangeScheduling.test.ts` にある。途中バージョンを解析しないこと、要求時の即時反映、別文書の変更反映、要求を挟んだ順序、要求なしでの解析、close/reopen時の破棄を検証する。`src/test/e2e/loginScope.test.ts` では未保存ヘッダーの連続変更直後に別文書からホバーし、最新の型が返ることを実際のLSP通信で確認する。
+
+### 実ファイルのセマンティックトークン・診断計測
+
+`AXEL_PERF_SAMPLE` に対象ファイル、`AXEL_PERF_ENCODING` に文字コード（既定 `utf-8`、Shift-JISは `shift_jis`）、`AXEL_PERF_SETTINGS` に言語サーバー解析設定のJSONを指定し、`npm run test:external -- --grep "external semantic and diagnostic performance"` を実行する。設定には実環境の `tool`、`sxmHome`、`includeRoots`、`forcedIncludeFiles` を含める。対象パスが未指定なら、この検査はスキップする。対象ファイル・製品ヘッダーは変更しない。
+
+この検査は解析APIで、初回解析、依存ファイルの解析完了、最大バックグラウンド処理時間、セマンティックトークン、診断、末尾改行の追加後の各時間を出力する。通信やVS Code描画時間を含むLSP往復計測とは区別する。初期診断の表示までと依存解析完了後の診断を混同しないため、依存解析の完了を待ってから診断を測定する。環境依存の実ファイルは通常CIの固定時間上限には含めない。

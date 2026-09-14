@@ -55,6 +55,7 @@ interface IndexedDocument {
   version?: number;
   mtimeMs?: number;
   workspaceDiagnosticsComplete?: boolean;
+  workspaceIndexComplete?: boolean;
 }
 
 export class WorkspaceIndex {
@@ -237,7 +238,12 @@ export class WorkspaceIndex {
   }
 
   public indexDiskDocument(filePath: string): AnalyzedDocument {
-    return this.indexDiskDocumentInternal(path.normalize(filePath), new Set());
+    const indexed = this.indexDiskDocumentInternal(path.normalize(filePath), new Set());
+    const cached = this.documents.get(indexed.uri);
+    if (cached?.workspaceDiagnosticsComplete) { return indexed; }
+    const analysis = this.withWorkspaceDiagnostics(indexed);
+    if (cached) { this.documents.set(indexed.uri, { ...cached, analysis, workspaceDiagnosticsComplete: true }); }
+    return analysis;
   }
 
   public indexForcedIncludes(): void {
@@ -529,7 +535,7 @@ export class WorkspaceIndex {
     const stat = fs.statSync(normalizedPath);
     const cached = this.documents.get(uri);
 
-    if (cached?.mtimeMs === stat.mtimeMs && cached.workspaceDiagnosticsComplete === true) {
+    if (cached?.mtimeMs === stat.mtimeMs && cached.workspaceIndexComplete === true) {
       this.indexResolvedIncludes(cached.analysis, new Set([...visitedUris, uri]));
       return cached.analysis;
     }
@@ -551,14 +557,13 @@ export class WorkspaceIndex {
       workspaceDiagnosticsComplete: false
     });
     this.indexResolvedIncludes(initialAnalysis, new Set([...visitedUris, uri]));
-    const analysis = this.withWorkspaceDiagnostics(
-      this.reanalyzeWithVisibleContext(input, initialAnalysis)
-    );
+    const analysis = this.reanalyzeWithVisibleContext(input, initialAnalysis);
     this.documents.set(uri, {
       analysis,
       filePath: normalizedPath,
       mtimeMs: stat.mtimeMs,
-      workspaceDiagnosticsComplete: true
+      workspaceIndexComplete: true,
+      workspaceDiagnosticsComplete: false
     });
     this.analyzer.releaseSyntax(analysis.uri);
     return analysis;
@@ -833,14 +838,13 @@ export class WorkspaceIndex {
         workspaceDiagnosticsComplete: false
       });
       this.replaceResolvedIncludeEdgesAndEnqueue(initialAnalysis);
-      const analysis = this.withWorkspaceDiagnostics(
-        this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis)
-      );
+      const analysis = this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis);
       this.documents.set(uri, {
         analysis,
         filePath: normalizedPath,
         mtimeMs: stat.mtimeMs,
-        workspaceDiagnosticsComplete: true
+        workspaceIndexComplete: true,
+        workspaceDiagnosticsComplete: false
       });
       this.analyzer.releaseSyntax(uri);
     });
