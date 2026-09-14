@@ -1,11 +1,39 @@
 import * as assert from 'assert';
 import { createAxelParser } from '../../../analyzer/axelParser';
-import { buildGuiIndex } from '../../../analyzer/guiIndex';
+import { buildGuiIndex, collectExternalGuiMethods } from '../../../analyzer/guiIndex';
 
 suite('buildGuiIndex', () => {
   let parser: ReturnType<typeof createAxelParser>;
   setup(() => { parser = createAxelParser(); });
   const uri = 'file:///main.axl';
+
+  test('builds class details once after resolving a reverse-ordered inheritance chain', () => {
+    const root = parser.parse('class A : public B {}; class B : public C {}; class C : public GCDialog {};').rootNode;
+    let bodyReads = 0;
+    for (const node of root.descendantsOfType('class_specifier')) {
+      const original = node.childForFieldName.bind(node);
+      Object.defineProperty(node, 'childForFieldName', {value: (name: string) => {
+        if (name === 'body') { bodyReads++; }
+        return original(name);
+      }, configurable:true});
+    }
+    assert.deepStrictEqual(buildGuiIndex(root,uri).map(c => [c.name,c.kind]),
+      [['A','dialog'],['B','dialog'],['C','dialog']]);
+    assert.strictEqual(bodyReads,3);
+  });
+
+  test('preserves duplicate-name precedence between inheritance passes', () => {
+    const root = parser.parse('class Base : public GCDialog {}; class Shared : public Base {}; class Shared : public GCWidget {}; class Derived : public Shared {};').rootNode;
+    assert.strictEqual(buildGuiIndex(root,uri).find(c => c.name === 'Derived')?.kind,'widget');
+  });
+
+  test('includes the root when analyzing a class or external method subtree', () => {
+    const root = parser.parse('class Dialog : public GCDialog {}; void Dialog::OnCreate(){}').rootNode;
+    const classNode = root.descendantsOfType('class_specifier')[0];
+    const methodNode = root.descendantsOfType('function_definition')[0];
+    assert.strictEqual(buildGuiIndex(classNode,uri)[0]?.name,'Dialog');
+    assert.deepStrictEqual(collectExternalGuiMethods(methodNode).map(m => m.name),['OnCreate']);
+  });
 
   test('classifies direct GUI class bases', () => {
     const index = buildGuiIndex(parser.parse([

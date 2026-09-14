@@ -4,6 +4,23 @@ import { createAxelParser } from '../../../analyzer/axelParser';
 import { cachedSyntaxNode } from '../../../analyzer/cachedSyntaxNode';
 
 suite('Parse-local syntax reads', () => {
+  test('does not enumerate native child arrays when their count is zero', () => {
+    const root = createAxelParser().parse('int value; string empty = "";').rootNode;
+    const leaf = root.descendantsOfType('identifier')[0];
+    const emptyString = root.descendantsOfType('string_literal')[0];
+    for (const node of [leaf, emptyString]) {
+      const expectedChildren = node.children;
+      const expectedNamedChildren = node.namedChildren;
+      let childrenReads = 0, namedReads = 0;
+      Object.defineProperty(node,'children',{get:()=>{childrenReads++;return expectedChildren;},configurable:true});
+      Object.defineProperty(node,'namedChildren',{get:()=>{namedReads++;return expectedNamedChildren;},configurable:true});
+      const view = cachedSyntaxNode(node);
+      assert.deepStrictEqual(view.children.map(child => child.id), expectedChildren.map(child => child.id));
+      assert.deepStrictEqual(view.namedChildren.map(child => child.id), expectedNamedChildren.map(child => child.id));
+      assert.strictEqual(childrenReads, node.childCount === 0 ? 0 : 1);
+      assert.strictEqual(namedReads, node.namedChildCount === 0 ? 0 : 1);
+    }
+  });
   test('does not repeat native child reads for multiple analysis passes', () => {
     const root = createAxelParser().parse('void f(){ int x=1; }').rootNode;
     let reads=0;

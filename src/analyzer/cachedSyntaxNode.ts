@@ -14,6 +14,20 @@ export function cachedSyntaxNode(root: Parser.SyntaxNode): Parser.SyntaxNode {
     const values=new Map<PropertyKey, unknown>();
     const view=new Proxy(node, {get(target,key) {
       if(values.has(key)) { return values.get(key); }
+      if (key === 'children' || key === 'namedChildren') {
+        const countKey = key === 'children' ? 'childCount' : 'namedChildCount';
+        let count = values.get(countKey);
+        if (count === undefined) {
+          count = Reflect.get(target,countKey,target) as number;
+          values.set(countKey,count);
+        }
+        // Native child enumeration resets a traversal cursor even for a leaf.
+        if (count === 0) {
+          const empty: Parser.SyntaxNode[] = [];
+          values.set(key,empty);
+          return empty;
+        }
+      }
       const original=Reflect.get(target,key,target) as unknown;
       let value:unknown=original;
       if(typeof original==='function') {

@@ -16,8 +16,9 @@ export function buildGuiIndex(
   _uri: AnalysisDocumentUri,
   knownGuiClasses: KnownGuiClasses = new Set<string>()
 ): AnalysisGuiClass[] {
-  const resolvedGuiClasses = resolveKnownGuiClasses(rootNode, knownGuiClassMap(knownGuiClasses));
-  const classes = collectGuiClasses(rootNode, resolvedGuiClasses);
+  const classNodes = rootNode.descendantsOfType('class_specifier');
+  const resolvedGuiClasses = resolveKnownGuiClasses(classNodes, knownGuiClassMap(knownGuiClasses));
+  const classes = collectGuiClasses(classNodes, resolvedGuiClasses);
   const classByName = new Map(classes.map((guiClass) => [guiClass.name, guiClass]));
 
   for (const method of collectExternalGuiMethods(rootNode)) {
@@ -30,45 +31,35 @@ export function buildGuiIndex(
 }
 
 function resolveKnownGuiClasses(
-  rootNode: Parser.SyntaxNode,
+  classNodes: Parser.SyntaxNode[],
   initialClasses: ReadonlyMap<string, AnalysisGuiClassKind>
 ): ReadonlyMap<string, AnalysisGuiClassKind> {
   const classesByName = new Map(initialClasses);
+  const bases = classNodes.flatMap(node => {
+    const name = node.childForFieldName('name')?.text;
+    const baseName = baseNameFromClassSpecifier(node);
+    return name !== undefined && baseName !== undefined ? [{name,baseName}] : [];
+  });
   let previousSize = -1;
-
   while (classesByName.size !== previousSize) {
     previousSize = classesByName.size;
-    for (const guiClass of collectGuiClasses(rootNode, classesByName)) {
-      if (!classesByName.has(guiClass.name)) {
-        classesByName.set(guiClass.name, guiClass.kind);
-      }
+    // Resolve each pass before adding names to preserve duplicate-name precedence.
+    const resolved = bases.map(({name,baseName}) => ({name,kind:classifyGuiClassKind(baseName,classesByName)}));
+    for (const {name,kind} of resolved) {
+      if (kind !== undefined && !classesByName.has(name)) { classesByName.set(name,kind); }
     }
   }
-
   return classesByName;
 }
 
 function collectGuiClasses(
-  rootNode: Parser.SyntaxNode,
+  classNodes: Parser.SyntaxNode[],
   knownGuiClasses: ReadonlyMap<string, AnalysisGuiClassKind>
 ): AnalysisGuiClass[] {
-  const classes: AnalysisGuiClass[] = [];
-
-  function visit(node: Parser.SyntaxNode): void {
-    if (node.type === 'class_specifier') {
-      const guiClass = guiClassFromNode(node, knownGuiClasses);
-      if (guiClass !== undefined) {
-        classes.push(guiClass);
-      }
-    }
-
-    for (const child of node.namedChildren) {
-      visit(child);
-    }
-  }
-
-  visit(rootNode);
-  return classes;
+  return classNodes.flatMap(node => {
+    const guiClass = guiClassFromNode(node,knownGuiClasses);
+    return guiClass ? [guiClass] : [];
+  });
 }
 
 function guiClassFromNode(
@@ -227,23 +218,10 @@ function collectInlineGuiMethods(node: Parser.SyntaxNode, receiverPath: string[]
 }
 
 export function collectExternalGuiMethods(rootNode: Parser.SyntaxNode): AnalysisGuiMethod[] {
-  const methods: AnalysisGuiMethod[] = [];
-
-  function visit(node: Parser.SyntaxNode): void {
-    if (node.type === 'function_definition') {
-      const method = externalMethodFromFunctionNode(node);
-      if (method !== undefined) {
-        methods.push(method);
-      }
-    }
-
-    for (const child of node.namedChildren) {
-      visit(child);
-    }
-  }
-
-  visit(rootNode);
-  return methods;
+  return rootNode.descendantsOfType('function_definition').flatMap(node => {
+    const method = externalMethodFromFunctionNode(node);
+    return method ? [method] : [];
+  });
 }
 
 function methodFromFunctionNode(
