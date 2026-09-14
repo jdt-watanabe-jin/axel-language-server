@@ -84,7 +84,6 @@ export class DocumentAnalyzer {
       const root = conditional ? this.syntaxRoot(input, conditional.text) : originalRoot;
       const systemSyntax = dependenciesOnly ? {references:[],mutations:[],excludedRanges:[]} : collectSystemMacroSyntax(originalRoot);
       const guiClasses = buildGuiIndex(root, input.uri, knownGuiClassMapFromInput(input));
-      const guiMethods = collectExternalGuiMethods(root);
       const knownGuiClassNames = new Set([
         ...(input.knownGuiClassNames ?? []),
         ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
@@ -135,11 +134,11 @@ export class DocumentAnalyzer {
         [...inactiveRanges,...uncertainRanges],text=>this.parser.parse(text).rootNode);
       const recoveredStatements = recoveredCalls;
       const recoveredStatementRanges = recoveredStatements.map(statement=>statement.range);
-      const syntaxDiagnostics = collectSyntaxDiagnostics(root, {
+      const syntaxDiagnostics = deferred(() => collectSyntaxDiagnostics(root, {
         uri: input.uri,
         macroDefinitions: visibleMacroDefinitions,
         parseText: (text) => this.parser.parse(text).rootNode
-      });
+      }));
       symbolIndex.declarations = symbolIndex.declarations.filter(declaration=>!startsInInactiveRange(declaration.selectionRange,recoveredStatementRanges));
       symbolIndex.references = [...symbolIndex.references.filter(reference=>!startsInInactiveRange(reference.range,recoveredStatementRanges)),
         ...recoveredStatements.flatMap(statement=>statement.references)];
@@ -147,12 +146,18 @@ export class DocumentAnalyzer {
         startsInInactiveRange(declaration.selectionRange, uncertainRanges)
         && !startsInInactiveRange(declaration.selectionRange, inactiveRanges)
         && !(declaration.kind === 'macro' && isSystemMacroName(declaration.name)));
-      const scopes = buildScopeIndex(root, input.uri, symbolIndex.declarations);
+      const scopes = deferred(() => filterScopesForInactiveRanges(buildScopeIndex(root, input.uri, symbolIndex.declarations), inactiveRanges));
+      const guiMethods = deferred(() => collectExternalGuiMethods(root));
       const includes = collectIncludes(root, originalRoot);
-      const scriptExecutions = collectScriptExecutions(root);
       const macroInvocations = collectMacroInvocations(root, input.uri);
-      const preprocessorSemanticTokens = collectPreprocessorSemanticTokens(root);
-      const preprocessorSemanticTokenReferences = collectPreprocessorSemanticTokenReferences(root, input.uri);
+      const finalDiagnostics = deferred(() => [
+          ...syntaxDiagnostics().filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, [...inactiveRanges,...recoveredStatementRanges])),
+          ...systemSyntax.mutations.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)).map(ref => ({
+            severity: 'warning' as const, source: 'axel' as const, range: ref.range,
+            ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
+          }))
+        ]);
+      // Macro reparsing only needs source provenance here; build final metadata on demand.
       let analysis: AnalyzedDocument = {
         ...(!expandMacros ? {typeSnapshot:buildTypeSnapshot(root,input.uri,recoveredStatements.map(statement=>statement.node))} : {}),
         internalFeatures: normalizeInternalFeatures(input.internalFeatures),
@@ -168,36 +173,28 @@ export class DocumentAnalyzer {
         completionExcludedRanges: systemSyntax.excludedRanges,
         uri: input.uri,
         version: input.version,
-        diagnostics: [
-          ...syntaxDiagnostics.filter((diagnostic) => !intersectsAnyInactiveRange(diagnostic.range, [...inactiveRanges,...recoveredStatementRanges])),
-          ...systemSyntax.mutations.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)).map(ref => ({
-            severity: 'warning' as const, source: 'axel' as const, range: ref.range,
-            ...message("System-defined macro '{0}' cannot be redefined or undefined.", ref.name)
-          }))
-        ],
-        symbols: filterSymbolsForInactiveRanges(collectDocumentSymbols(root, { guiClasses, guiMethods, excludedRanges: [...inactiveRanges, ...recoveredStatementRanges] }), [...inactiveRanges,...recoveredStatementRanges]),
+        get diagnostics() { return finalDiagnostics(); },
+        get symbols() { return filterSymbolsForInactiveRanges(collectDocumentSymbols(root, { guiClasses, guiMethods:guiMethods(), excludedRanges: [...inactiveRanges, ...recoveredStatementRanges] }), [...inactiveRanges,...recoveredStatementRanges]); },
         declarations: symbolIndex.declarations.filter((declaration) => !(declaration.kind === 'macro' && isSystemMacroName(declaration.name))
           && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
         references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
         macroDefinitions: activeMacroDefinitions,
         macroInvocations: macroInvocations.filter((invocation) => !startsInInactiveRange(invocation.selectionRange, inactiveRanges)),
-        semanticTokenReferences: preprocessorSemanticTokenReferences.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
-        semanticTokens: [
-          ...preprocessorSemanticTokens.filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
+        get semanticTokenReferences() { return collectPreprocessorSemanticTokenReferences(root, input.uri).filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)); },
+        get semanticTokens() { return [
+          ...collectPreprocessorSemanticTokens(root).filter((token) => !startsInInactiveRange(token.range, inactiveRanges)),
           ...systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges)
             && resolveSystemMacro(ref.name, input.uri, ref.range.start, input.tool, input.targetPlatform, input.internalFeatures)?.defined).map(ref => ({
             range: ref.range, tokenType: 'macro' as const, modifiers: []
           }))
-        ],
-        scopes: filterScopesForInactiveRanges(scopes, inactiveRanges),
+        ]; },
+        get scopes() { return scopes(); },
         includes: includes.filter((include) => !startsInInactiveRange(include.range, inactiveRanges)),
-        scriptExecutions: scriptExecutions.filter((execution) => !startsInInactiveRange(execution.selectionRange, [...inactiveRanges,...recoveredStatementRanges])),
+        get scriptExecutions() { return collectScriptExecutions(root).filter((execution) => !startsInInactiveRange(execution.selectionRange, [...inactiveRanges,...recoveredStatementRanges])); },
         guiClasses: filterGuiClassesForInactiveRanges(guiClasses, [...inactiveRanges, ...uncertainRanges]),
-        guiMethods: guiMethods.filter((method) => !startsInInactiveRange(method.range, [...inactiveRanges, ...uncertainRanges])),
+        get guiMethods() { return guiMethods().filter((method) => !startsInInactiveRange(method.range, [...inactiveRanges, ...uncertainRanges])); },
         inactiveRanges
       };
-
-      analysis.syntaxRecovery = collectSyntaxRecovery(root, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
 
       if (expandMacros) {
         analysis = macroReparse(root, conditional?.text ?? input.text, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocument({...input, text,
@@ -208,6 +205,9 @@ export class DocumentAnalyzer {
         }, false));
       }
 
+      analysis.syntaxRecovery ??= collectSyntaxRecovery(root, analysis, [...inactiveRanges, ...recoveredStatementRanges]);
+      // Materialize before caching so no deferred syntax-tree reads escape this operation.
+      analysis = {...analysis};
       analysis.typeSnapshot ??= buildTypeSnapshot(root,input.uri,recoveredStatements.map(statement=>statement.node));
       if (conditional) {
         analysis.inactiveRanges = inactiveRanges;
@@ -368,4 +368,13 @@ function compareMacroVisibility(
 ): number {
   const fileStart = { line: 0, character: 0 };
   return comparePositions(left.visibilityStart ?? fileStart, right.visibilityStart ?? fileStart);
+}
+
+function deferred<T>(create: () => T): () => T {
+  let value: T;
+  let initialized = false;
+  return () => {
+    if (!initialized) { value = create(); initialized = true; }
+    return value;
+  };
 }

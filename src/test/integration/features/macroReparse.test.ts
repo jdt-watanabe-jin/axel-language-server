@@ -1,3 +1,7 @@
+import { mock } from 'node:test';
+import * as diagnostics from '../../../analyzer/diagnostics';
+import * as scopeIndex from '../../../analyzer/scopeIndex';
+import * as documentSymbols from '../../../analyzer/documentSymbols';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { getDefinitions, getReferences } from '../../../analyzer/navigation';
 import * as assert from 'assert';
@@ -5,6 +9,29 @@ import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('General macro reparsing', () => {
   const fixtures = useWorkspaceFixtures();
+  for (const expand of [true, false]) {
+    test(`builds final metadata once with macro expansion ${expand}`, () => {
+      const spies = [mock.method(diagnostics, 'collectSyntaxDiagnostics'),
+        mock.method(scopeIndex, 'buildScopeIndex'), mock.method(documentSymbols, 'collectDocumentSymbols')];
+      try {
+        const analyzer = new DocumentAnalyzer();
+        const input = {uri:'file:///metadata.axl',version:1,
+          text:'#define VALUE 1\nvoid main(){ int answer = ' + (expand ? 'VALUE' : '0') + '; }'};
+        const analysis = analyzer.analyzeDocument(input);
+        assert.strictEqual(analysis.expandedMacroReferences?.length ?? 0, expand ? 1 : 0);
+        for (const spy of spies) { assert.strictEqual(spy.mock.callCount(), 1); }
+        assert.deepStrictEqual(analysis.diagnostics, []);
+        assert.ok(analysis.symbols.some(symbol => symbol.name === 'main'));
+        assert.ok(analysis.scopes.length > 1);
+        assert.ok(Object.values(Object.getOwnPropertyDescriptors(analysis)).every(property => !property.get));
+        const snapshot = JSON.stringify(analysis);
+        analyzer.releaseSyntax(input.uri);
+        assert.strictEqual(analyzer.analyzeDocument(input), analysis);
+        assert.strictEqual(JSON.stringify(analysis), snapshot);
+      } finally { for (const spy of spies) { spy.mock.restore(); } }
+    });
+  }
+
   function check(text: string) {
     return fixtures.createWorkspaceIndex().analyzeDocument({uri:'file:///macros.axl',version:1,text});
   }
