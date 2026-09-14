@@ -56,6 +56,7 @@ export interface AnalysisSymbol {
 export type AnalysisDeclarationKind = Exclude<AnalysisSymbolKind, 'operator' | 'constructor'>;
 
 export interface AnalysisDeclaration {
+  startup?: boolean;
   id: AnalysisSymbolId;
   name: string;
   kind: AnalysisDeclarationKind;

@@ -1,4 +1,6 @@
 import type { AnalyzedDocument } from '../../types/analysis';
+import type { LoginScopeSnapshot } from '../loginScope';
+import { containsSourcePosition } from '../systemMacros';
 import { builtinRole, type BuiltinCatalog } from './builtinCatalog';
 import { basic, pointer, unknownType, numericNames, type Binding, type ClassInfo, type FunctionInfo, type Scope, type Type, type TypeContext } from './model';
 import { descendants, field, type TypeNode, type TypeSnapshot } from './syntax';
@@ -18,7 +20,8 @@ export function lookupClass(ctx: TypeContext, name: string, scope: Scope): Class
     if (current.owner?.name === name) { return current.owner; }
   }
   const globals = ctx.classes.filter(c => c.name === name && !c.scope.parent?.parent);
-  return globals.find(c => c.uri === scope.uri && !c.role) ?? globals.find(c => !c.role) ?? globals[0];
+  return globals.find(c => c.uri === scope.uri && !c.role)
+    ?? globals.find(c => !c.role && ctx.scopes.includes(c.scope)) ?? globals.find(c => !c.role) ?? globals[0];
 }
 
 export function lookupBinding(ctx: TypeContext, name: string, scope: Scope, position = Infinity): Binding | undefined {
@@ -28,7 +31,8 @@ export function lookupBinding(ctx: TypeContext, name: string, scope: Scope, posi
     const member = current.owner?.fields.get(name);
     if (member) { return member; }
   }
-  return ctx.bindings.find(b => b.name === name && !b.scope.parent && b.uri !== scope.uri);
+  const globals = ctx.bindings.filter(b => b.name === name && !b.scope.parent && b.uri !== scope.uri);
+  return globals.find(binding => ctx.scopes.includes(binding.scope)) ?? globals[0];
 }
 
 function aliasKey(scope: Scope, name: string): string { return `${scope.uri}#${scope.node.start}:${scope.node.end}#${name}`; }
@@ -114,12 +118,23 @@ function shapeType(ctx: TypeContext, node: TypeNode, base: Type, scope: Scope, d
   return { type, functions };
 }
 
-export function buildTypeContext(options: { analysis: AnalyzedDocument; documents?: readonly AnalyzedDocument[]; catalog: BuiltinCatalog }): TypeContext {
+export function buildTypeContext(options: { analysis: AnalyzedDocument; documents?: readonly AnalyzedDocument[]; catalog: BuiltinCatalog; loginScope?: LoginScopeSnapshot }): TypeContext {
   const documents = [...new Map([...(options.documents ?? []), options.analysis].map(d => [d.uri, d])).values()];
   const ctx: TypeContext = {
     ...options, documents, classes: [], scopes: [], functions: [], bindings: [], aliases: new Map(),
     nodeScopes: new Map(), diagnostics: [], cache: new Map()
   };
+  const login = options.loginScope;
+  const entry = login?.documents.find(document => document.uri === login.entryUri);
+  if (login && entry) {
+    const inherited = login.typeContext ?? buildTypeContext({ analysis: entry, documents: login.documents, catalog: options.catalog });
+    const exported = (uri: string, name: string, node: TypeNode) => login.declarations.some(declaration =>
+      declaration.uri === uri && declaration.name === name && containsSourcePosition(node.range, declaration.selectionRange.start));
+    ctx.classes.push(...inherited.classes.filter(info => exported(info.uri, info.name, info.node)));
+    ctx.bindings.push(...inherited.bindings.filter(binding => !binding.scope.parent && exported(binding.uri, binding.name, binding.node)));
+    ctx.functions.push(...inherited.functions.filter(fn => fn.owner ? ctx.classes.includes(fn.owner) : exported(fn.uri, fn.name, fn.node)));
+    ctx.documents = [...documents, ...login.documents.filter(document => !documents.some(d => d.uri === document.uri))];
+  }
   const roots: TypeNode[] = [];
   const excludedRanges = new Map(documents.map(d => [d.uri, [...(d.inactiveRanges ?? []), ...(d.uncertainRanges ?? [])]]));
   function excluded(node: TypeNode, uri: string): boolean {
@@ -228,5 +243,7 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
   for (const scope of ctx.scopes) {
     if (scope.parent) { scope.fn ??= scope.parent.fn; scope.owner ??= scope.parent.owner; }
   }
+  // Ordinary source/include overloads precede startup-only overloads.
+  ctx.functions.sort((left, right) => Number(ctx.scopes.includes(right.scope)) - Number(ctx.scopes.includes(left.scope)));
   return ctx;
 }

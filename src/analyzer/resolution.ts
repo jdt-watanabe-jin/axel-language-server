@@ -340,7 +340,7 @@ export function comparePositions(left: AnalysisPosition, right: AnalysisPosition
 }
 
 export function compareDeclarations(left: AnalysisDeclaration, right: AnalysisDeclaration): number {
-  return left.uri.localeCompare(right.uri)
+  return Number(!!left.startup) - Number(!!right.startup) || left.uri.localeCompare(right.uri)
     || comparePositions(left.selectionRange.start, right.selectionRange.start)
     || comparePositions(left.selectionRange.end, right.selectionRange.end);
 }

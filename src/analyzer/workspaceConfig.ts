@@ -28,6 +28,7 @@ export function mergeWorkspaceIndexOptions(
   const maxNumberOfProblems = overrides.maxNumberOfProblems ?? base.maxNumberOfProblems;
   const defines = overrides.defines ?? base.defines;
   return {
+    ...(typeof overrides.sxmHome === 'string' ? { sxmHome: overrides.sxmHome } : base.sxmHome === undefined ? {} : { sxmHome: base.sxmHome }),
     ...(overrides.internalFeatures === undefined ? {} : { internalFeatures: normalizeInternalFeatures(overrides.internalFeatures) }),
     includeRoots: normalizePaths(overrides.includeRoots ?? base.includeRoots ?? []),
     ...(overrides.targetPlatform === undefined ? {} : { targetPlatform: normalizeTargetPlatform(overrides.targetPlatform) }),

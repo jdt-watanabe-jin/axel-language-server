@@ -1,5 +1,7 @@
 # AXEL Language Server
 
+Startup language support: [shared globals from _login.axl](docs/user/login-scope.md).
+
 AXEL Language Server is a standalone Language Server Protocol server for AXEL source files.
 
 The package entry point is:

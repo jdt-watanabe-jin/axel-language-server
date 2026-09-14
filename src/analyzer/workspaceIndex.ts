@@ -1,4 +1,6 @@
 import { bindDocumentation } from './documentation/index';
+import { resolveLoginPath } from './loginPath';
+import { buildLoginScope, type LoginScopeSnapshot } from './loginScope';
 import type { DocumentationBindings } from './documentation/model';
 import { affectedBySyntaxRecovery } from './syntaxRecovery';
 import { normalizeTargetPlatform } from './targetPlatform';
@@ -33,6 +35,10 @@ import { collectIncludeResolutionStatus, type IncludeResolutionStatus } from './
 import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logger';
 
 export interface WorkspaceIndexOptions extends ForcedIncludeOptions {
+  sxmHome?: string;
+  openDocumentInput?: (uri: string) => AnalyzeDocumentInput | undefined;
+  inheritIncludeContext?: boolean;
+  dependencyAnalysisOnly?: boolean;
   tool?: string;
   targetPlatform?: string;
   internalFeatures?: string;
@@ -52,6 +58,14 @@ interface IndexedDocument {
 }
 
 export class WorkspaceIndex {
+  private sxmHome: string;
+  private loginSnapshot?: LoginScopeSnapshot;
+  private loginGeneration = 0;
+  private readonly openInputs = new Map<string, AnalyzeDocumentInput>();
+  private readonly openDocumentInput?: (uri: string) => AnalyzeDocumentInput | undefined;
+  private readonly inheritIncludeContext: boolean;
+  private readonly dependencyAnalysisOnly: boolean;
+  private readonly includeContexts = new Map<string, Pick<AnalyzeDocumentInput, 'macroDefinitions' | 'preprocessorSymbols'>>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
   private readonly analyzer: DocumentAnalyzer;
   private includeRoots: string[];
@@ -79,6 +93,10 @@ export class WorkspaceIndex {
   private readonly backgroundCompleteListeners: (() => void)[] = [];
 
   public constructor(options: WorkspaceIndexOptions = {}) {
+    this.sxmHome = options.sxmHome ?? '';
+    this.openDocumentInput = options.openDocumentInput;
+    this.inheritIncludeContext = options.inheritIncludeContext ?? false;
+    this.dependencyAnalysisOnly = options.dependencyAnalysisOnly ?? false;
     this.logger = options.logger ?? NullLogger;
     this.analyzer = options.analyzer ?? new DocumentAnalyzer(undefined, this.logger);
     this.includeRoots = normalizePaths(options.includeRoots ?? []);
@@ -95,12 +113,16 @@ export class WorkspaceIndex {
   public configure(options: unknown): void {
     this.logSystemMacroConfiguration(options);
     const merged = mergeWorkspaceIndexOptions({
+      sxmHome: this.sxmHome,
       includeRoots: this.includeRoots,
       forcedIncludeRoots: this.forcedIncludeRoots,
       forcedIncludeFiles: this.forcedIncludeFiles,
       defines: this.defines
     }, options);
 
+    this.sxmHome = merged.sxmHome ?? '';
+    this.loginGeneration++;
+    this.loginSnapshot = undefined;
     this.includeRoots = normalizePaths(merged.includeRoots ?? []);
     this.forcedIncludeRoots = normalizePaths(merged.forcedIncludeRoots ?? []);
     this.forcedIncludeFiles = normalizePaths(merged.forcedIncludeFiles ?? []);
@@ -118,6 +140,7 @@ export class WorkspaceIndex {
   }
 
   public analyzeForegroundDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
+    this.rememberOpenInput(input);
     return measureDurationMs(this.logger, 'workspace.foreground', { uri: input.uri, version: input.version }, () => {
       const cached = this.documents.get(input.uri);
       if (cached?.version === input.version) {
@@ -183,6 +206,7 @@ export class WorkspaceIndex {
   }
 
   public indexOpenDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
+    this.rememberOpenInput(input);
     const cached = this.documents.get(input.uri);
     if (cached?.version === input.version && cached.workspaceDiagnosticsComplete === true) {
       return cached.analysis;
@@ -249,10 +273,11 @@ export class WorkspaceIndex {
 
   public findVisibleDeclarations(sourceUri: string, name: string): AnalysisDeclaration[] {
     this.ensureForcedIncludesIndexed();
-    return this.collectDefiniteVisibleUris(sourceUri)
+    const ordinary = this.collectDefiniteVisibleUris(sourceUri)
       .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
       .filter((declaration) => declaration.name === name)
       .sort(compareDeclarations);
+    return uniqueDeclarations([...ordinary, ...this.visibleLoginDeclarations(sourceUri).filter(d => d.name === name)]);
   }
 
   public findVisibleMacroDefinitions(sourceUri: string, name: string): AnalysisMacroDefinition[] {
@@ -280,8 +305,43 @@ export class WorkspaceIndex {
       ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
-    return Array.from(new Map(declarations.map((declaration) => [declaration.id, declaration])).values())
-      .sort(compareDeclarations);
+    return uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri)]);
+  }
+
+  private visibleLoginDeclarations(sourceUri: string, cachedOnly = false): AnalysisDeclaration[] {
+    const snapshot = cachedOnly ? this.loginSnapshot : this.loginScope(sourceUri);
+    if (!snapshot || fileIdentity(snapshot.entryUri) === fileIdentity(sourceUri)) { return []; }
+    const ordinaryClasses = new Set([sourceUri, ...this.collectDefiniteVisibleUris(sourceUri)]
+      .flatMap(uri => this.documents.get(uri)?.analysis.declarations ?? [])
+      .filter(declaration => declaration.kind === 'class').map(declaration => declaration.name));
+    return snapshot.declarations.filter(declaration => !ordinaryClasses.has(declaration.containerName ?? '')
+      && !(declaration.kind === 'class' && ordinaryClasses.has(declaration.name)));
+  }
+
+  private loginScope(sourceUri: string): LoginScopeSnapshot | undefined {
+    const entry = resolveLoginPath(this.sxmHome, this.tool);
+    if (!entry || fileIdentity(pathToFileURL(entry).toString()) === fileIdentity(sourceUri)) { return undefined; }
+    this.loginSnapshot ??= buildLoginScope(entry, { includeRoots: this.includeRoots,
+      forcedIncludeFiles: this.forcedIncludeFiles, forcedIncludeRoots: this.forcedIncludeRoots,
+      tool: this.tool, targetPlatform: this.targetPlatform, internalFeatures: this.internalFeatures,
+      defines: this.defines, logger: this.logger, openDocumentInput: uri => this.openInputs.get(fileIdentity(uri)) });
+    return this.loginSnapshot;
+  }
+
+  private rememberOpenInput(input: AnalyzeDocumentInput): void {
+    const previous = this.openInputs.get(fileIdentity(input.uri));
+    if (previous?.version !== input.version || previous.text !== input.text) {
+      if (this.loginSnapshot?.dependencyUris.some(uri => fileIdentity(uri) === fileIdentity(input.uri))) {
+        this.loginGeneration++;
+        this.loginSnapshot = undefined;
+        this.clearCachedAnalysis();
+      }
+      this.openInputs.set(fileIdentity(input.uri), input);
+    }
+  }
+
+  public getLoginDependencies(): { generation: number; uris: string[] } {
+    return { generation: this.loginGeneration, uris: this.loginScope('')?.dependencyUris ?? [] };
   }
 
   public documentationBindings(sourceUri: string): DocumentationBindings {
@@ -291,6 +351,7 @@ export class WorkspaceIndex {
     const documents = [sourceUri, ...this.collectDefiniteVisibleUris(sourceUri)]
       .map(uri => this.documents.get(uri)?.analysis)
       .filter((doc): doc is AnalyzedDocument => doc !== undefined);
+    documents.push(...this.loginScope(sourceUri)?.documents ?? []);
     const cached = this.documentationCache.get(sourceUri);
     if (cached && cached.documents.length === documents.length && documents.every((doc, i) => doc === cached.documents[i])) {
       return cached.bindings;
@@ -302,16 +363,17 @@ export class WorkspaceIndex {
 
   public listVisibleDocuments(sourceUri: string): AnalyzedDocument[] {
     this.ensureForcedIncludesIndexed();
-    return [sourceUri, ...this.collectVisibleUris(sourceUri)]
+    const ordinary = [sourceUri, ...this.collectVisibleUris(sourceUri)]
       .map((uri) => this.documents.get(uri)?.analysis)
       .filter((analysis): analysis is AnalyzedDocument => analysis !== undefined);
+    return [...ordinary, ...(this.loginScope(sourceUri)?.documents ?? [])];
   }
 
   public listReferenceSearchDocuments(sourceUri: string): AnalyzedDocument[] {
     void sourceUri;
     this.ensureForcedIncludesIndexed();
-    return Array.from(this.documents.values())
-      .map((document) => document.analysis);
+    return [...Array.from(this.documents.values()).map((document) => document.analysis),
+      ...(this.loginScope(sourceUri)?.documents ?? [])];
   }
 
   public findIncludePathCompletions(sourceUri: string, prefix: string, includeKind: 'quote' | 'angle'): string[] {
@@ -415,6 +477,7 @@ export class WorkspaceIndex {
   }
 
   public deleteDocument(uri: string): void {
+    this.openInputs.delete(fileIdentity(uri));
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
     this.documentationCache.clear();
@@ -429,6 +492,13 @@ export class WorkspaceIndex {
   }
 
   public invalidateUri(uri: string): void {
+    if (this.loginSnapshot && (uri.endsWith('.analysis.json')
+      || this.loginSnapshot.dependencyUris.some(dependency => fileIdentity(dependency) === fileIdentity(uri)))) {
+      this.loginGeneration++;
+      this.loginSnapshot = undefined;
+      this.clearCachedAnalysis();
+      return;
+    }
     this.documentationCache.clear();
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
     this.builtinCatalogCache = undefined;
@@ -454,6 +524,8 @@ export class WorkspaceIndex {
   private indexDiskDocumentInternal(filePath: string, visitedUris: Set<string>): AnalyzedDocument {
     const normalizedPath = path.normalize(filePath);
     const uri = pathToFileURL(normalizedPath).toString();
+    const open = this.openDocumentInput?.(uri) ?? this.openInputs.get(fileIdentity(uri));
+    if (open && !this.pendingDependencyInputs.has(uri)) { return this.indexOpenDocument({ ...open, uri, ...this.includeContexts.get(uri) }); }
     const stat = fs.statSync(normalizedPath);
     const cached = this.documents.get(uri);
 
@@ -470,7 +542,8 @@ export class WorkspaceIndex {
     }
 
     const text = fs.readFileSync(normalizedPath, 'utf8');
-    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
+    const input = { uri, version: 0, text, ...this.includeContexts.get(uri) };
+    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
@@ -479,7 +552,7 @@ export class WorkspaceIndex {
     });
     this.indexResolvedIncludes(initialAnalysis, new Set([...visitedUris, uri]));
     const analysis = this.withWorkspaceDiagnostics(
-      this.reanalyzeWithVisibleContext({ uri, version: 0, text }, initialAnalysis)
+      this.reanalyzeWithVisibleContext(input, initialAnalysis)
     );
     this.documents.set(uri, {
       analysis,
@@ -492,6 +565,7 @@ export class WorkspaceIndex {
   }
 
   private withWorkspaceDiagnostics(analysis: AnalyzedDocument): AnalyzedDocument {
+    if (this.dependencyAnalysisOnly) { return analysis; }
     const macros = this.collectPositionAwareMacroDefinitions(analysis.uri, true);
     const macrosByName = new Map<string, AnalysisMacroDefinition[]>();
     for (const macro of macros) {
@@ -504,6 +578,7 @@ export class WorkspaceIndex {
         ...this.unresolvedIncludeDiagnostics(analysis),
         ...analysis.diagnostics,
         ...collectTypeDiagnostics({analysis,
+          loginScope: this.loginScope(analysis.uri),
           resolveMacro: (name,node) => {
             const macro = macrosByName.get(name)?.filter(macro => !macro.visibilityStart || comparePositions(macro.visibilityStart,node.range.start)<=0).at(-1);
             return macro && !('_typeUndef' in macro) ? macro : undefined;
@@ -585,9 +660,9 @@ export class WorkspaceIndex {
         name: entry.guiClass.name,
         kind: entry.guiClass.kind
       }));
-    const preprocessorSymbols = this.collectVisiblePreprocessorSymbols(input.uri);
+    const preprocessorSymbols = [...input.preprocessorSymbols ?? [], ...this.collectVisiblePreprocessorSymbols(input.uri)];
     const uncertainNames = this.collectVisibleUncertainNames(input.uri);
-    const macroDefinitions = this.collectPositionAwareMacroDefinitions(input.uri)
+    const macroDefinitions = [...input.macroDefinitions ?? [], ...this.collectPositionAwareMacroDefinitions(input.uri)]
       .filter((macro) => macro.uri !== input.uri);
     if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0 && uncertainNames.length === 0) {
       return initialAnalysis.typeSnapshot ? initialAnalysis : this.analyzer.analyzeDocument({
@@ -633,6 +708,20 @@ export class WorkspaceIndex {
       resolvedUris.add(resolution.uri);
       if (!this.isUncertainRange(analysis, include.range)) { definiteUris.add(resolution.uri); }
       if (!visitedUris.has(resolution.uri)) {
+        if (this.inheritIncludeContext) {
+          const visible = new Map<string, AnalysisMacroDefinition>();
+          for (const macro of [...this.includeContexts.get(analysis.uri)?.macroDefinitions ?? [],
+            ...this.collectPositionAwareMacroDefinitions(analysis.uri, true)]) {
+            if (macro.visibilityStart && comparePositions(macro.visibilityStart, include.range.start) > 0) { continue; }
+            if ('_typeUndef' in macro) { visible.delete(macro.name); } else { visible.set(macro.name, { ...macro, visibilityStart: undefined }); }
+          }
+          const context = { macroDefinitions: [...visible.values()], preprocessorSymbols: [...visible.values()].map(macro =>
+            ({ name: macro.name, value: macro.parameters ? undefined : macro.replacementText })) };
+          if (JSON.stringify(context) !== JSON.stringify(this.includeContexts.get(resolution.uri))) {
+            this.documents.delete(resolution.uri);
+            this.includeContexts.set(resolution.uri, context);
+          }
+        }
         this.indexDiskDocumentInternal(resolution.filePath, new Set([...visitedUris, resolution.uri]));
       } else {
         // A cyclic include needs the open document's declarations, including unsaved edits.
@@ -723,6 +812,8 @@ export class WorkspaceIndex {
 
   private indexSingleBackgroundDiskDocument(uri: string, filePath: string): void {
     measureDurationMs(this.logger, 'workspace.background', { uri }, () => {
+      const open = this.openDocumentInput?.(uri) ?? this.openInputs.get(fileIdentity(uri));
+      if (open) { this.indexOpenDocument(open); return; }
       const normalizedPath = path.normalize(filePath);
       const stat = fs.statSync(normalizedPath);
       const cached = this.documents.get(uri);
@@ -831,8 +922,7 @@ export class WorkspaceIndex {
       ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
-    return Array.from(new Map(declarations.map((declaration) => [declaration.id, declaration])).values())
-      .sort(compareDeclarations);
+    return uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri, true)]);
   }
 
   private isUncertainRange(analysis: AnalyzedDocument, range: AnalysisRange): boolean {
@@ -857,7 +947,7 @@ export class WorkspaceIndex {
 
   private collectVisibleUncertainNames(sourceUri: string): string[] {
     const definite = new Set(this.collectDefiniteVisibleUris(sourceUri));
-    const names = new Set<string>();
+    const names = new Set<string>(this.loginScope(sourceUri)?.uncertainNames ?? []);
     for (const uri of this.collectVisibleUris(sourceUri)) {
       const analysis = this.documents.get(uri)?.analysis;
       if (analysis === undefined) { continue; }
@@ -1115,6 +1205,7 @@ export class WorkspaceIndex {
   }
 
   private clearCachedAnalysis(): void {
+    this.includeContexts.clear();
     this.builtinCatalogCache = undefined;
     this.forcedIncludesIndexed = false;
     for (const uri of this.documents.keys()) {
@@ -1280,4 +1371,26 @@ function getErrorMessage(error: unknown): string {
   }
 
   return String(error);
+}
+
+function uniqueDeclarations(declarations: AnalysisDeclaration[]): AnalysisDeclaration[] {
+  const unique = new Map<string, AnalysisDeclaration>();
+  for (const declaration of declarations) {
+    if (!unique.has(declaration.id)) { unique.set(declaration.id, declaration); }
+  }
+  return [...unique.values()];
+}
+
+function fileIdentity(uri: string): string {
+  try {
+    let existing = path.normalize(fileURLToPath(uri));
+    const suffix: string[] = [];
+    while (!fs.existsSync(existing) && path.dirname(existing) !== existing) {
+      suffix.unshift(path.basename(existing));
+      existing = path.dirname(existing);
+    }
+    try { existing = fs.realpathSync.native(existing); } catch { /* Preserve inaccessible path identity. */ }
+    const filename = path.join(existing, ...suffix);
+    return process.platform === 'win32' ? filename.toLowerCase() : filename;
+  } catch { return uri; }
 }

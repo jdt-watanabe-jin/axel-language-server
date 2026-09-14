@@ -11,7 +11,7 @@ import { registerHandlers } from './lsp/registerHandlers';
 export function startServer(): void {
   const connection = createConnection(ProposedFeatures.all);
   const documents = new TextDocuments(TextDocument);
-  const analyzer = new WorkspaceIndex(workspaceIndexOptionsFromEnvironment(process.env));
+  const analyzer = new WorkspaceIndex({ ...workspaceIndexOptionsFromEnvironment(process.env), logger: connection.console });
 
   registerHandlers({
     connection,

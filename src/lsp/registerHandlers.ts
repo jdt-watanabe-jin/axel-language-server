@@ -1,3 +1,4 @@
+import { sendLoginDependencies } from './loginDependencies';
 import type {
   Connection,
   CodeActionParams,
@@ -60,6 +61,7 @@ export interface AnalyzerLike extends
   configure?(options: unknown): void;
   invalidateUri?(uri: string): void;
   onBackgroundIndexingComplete?(listener: () => void): void;
+  getLoginDependencies?(): { generation: number; uris: string[] };
 }
 
 export interface HandlerRegistrationContext {
@@ -113,6 +115,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   registerDocumentLifecycleHandlers(context);
   registerWatchedFileHandlers(context);
   registerBackgroundRefreshHandlers(context);
+  context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
 
   context.connection.languages.diagnostics.on((params) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }
@@ -471,6 +474,8 @@ function registerWatchedFileHandlers(context: HandlerRegistrationContext): void 
       context.analyzer.invalidateUri?.(change.uri);
     }
     if (event.changes.length > 0) {
+      sendLoginDependencies(context);
+      context.connection.languages.semanticTokens.refresh?.();
       context.connection.languages.diagnostics.refresh();
     }
   });
@@ -484,6 +489,7 @@ function registerConfigurationChangeHandlers(context: HandlerRegistrationContext
     for (const document of context.documents.all()) {
       indexDocument(context, document);
     }
+    sendLoginDependencies(context);
     context.connection.languages.semanticTokens.refresh();
     context.connection.languages.diagnostics.refresh();
   });
@@ -500,6 +506,7 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext):
 
   context.documents.onDidClose((event) => {
     context.analyzer.deleteDocument?.(event.document.uri);
+    if (sendLoginDependencies(context)) { context.connection.languages.semanticTokens.refresh?.(); }
     context.connection.languages.diagnostics.refresh?.();
   });
 }
@@ -511,6 +518,10 @@ function indexDocument(context: HandlerRegistrationContext, document: TextDocume
       version: document.version,
       text: document.getText()
     });
+    if (sendLoginDependencies(context)) {
+      context.connection.languages.semanticTokens.refresh?.();
+      context.connection.languages.diagnostics.refresh?.();
+    }
   } catch (error: unknown) {
     context.logger.error(`Workspace indexing failed: ${getErrorMessage(error)}`);
   }

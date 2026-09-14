@@ -1,4 +1,5 @@
 import type { AnalysisDiagnostic, AnalysisMacroDefinition, AnalyzedDocument } from '../../types/analysis';
+import type { LoginScopeSnapshot } from '../loginScope';
 import { message } from '../../i18n/messages';
 import { containsSourcePosition } from '../systemMacros';
 import { type BuiltinCatalog, loadBuiltinCatalog, isBuiltinDeclarationSource } from './builtinCatalog';
@@ -9,6 +10,7 @@ import { isInteger, type ClassInfo, type TypeContext } from './model';
 import { field, descendants, type TypeNode } from './syntax';
 
 export interface TypeDiagnosticsInput {
+  loginScope?: LoginScopeSnapshot;
   analysis: AnalyzedDocument;
   documents?: readonly AnalyzedDocument[];
   catalog?: BuiltinCatalog;
