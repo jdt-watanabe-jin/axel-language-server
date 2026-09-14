@@ -18,16 +18,28 @@ export function cachedSyntaxNode(root: Parser.SyntaxNode): Parser.SyntaxNode {
       let value:unknown=original;
       if(typeof original==='function') {
         if(cachedMethods.has(String(key))) {
-          const results=new Map<string,unknown>();
-          value=(...args:unknown[])=>{
-            const cacheKey=JSON.stringify(args);
-            if(results.has(cacheKey)) { return results.get(cacheKey); }
-            const result=Reflect.apply(original,target,args) as unknown;
-            const mapped=key==='descendantsOfType' ? (result as Parser.SyntaxNode[]).map(n=>wrap(n)!)
-              : nodeMethods.has(String(key)) ? wrap(result as Parser.SyntaxNode | null) : result;
-            results.set(cacheKey,mapped);
-            return mapped;
-          };
+          if (key === 'descendantsOfType') {
+            const results = new Map<string, Parser.SyntaxNode[]>();
+            value = (...args: unknown[]) => {
+              const cacheKey = JSON.stringify(args);
+              const cached = results.get(cacheKey);
+              if (cached) { return cached; }
+              const result = (Reflect.apply(original, target, args) as Parser.SyntaxNode[]).map(child => wrap(child)!);
+              results.set(cacheKey, result);
+              return result;
+            };
+          } else {
+            // These native methods have one primitive argument. Cache hits need
+            // neither a rest-argument array nor a serialized cache key.
+            const results = new Map<unknown, unknown>();
+            value = (argument: unknown) => {
+              if (results.has(argument)) { return results.get(argument); }
+              const result = Reflect.apply(original, target, [argument]) as unknown;
+              const mapped = nodeMethods.has(String(key)) ? wrap(result as Parser.SyntaxNode | null) : result;
+              results.set(argument, mapped);
+              return mapped;
+            };
+          }
         } else { value=original.bind(target); }
       } else if(key==='children' || key==='namedChildren') {
         value=(original as Parser.SyntaxNode[]).map(n=>wrap(n)!);

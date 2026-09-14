@@ -4,7 +4,9 @@ import { registerHandlers } from '../../lsp/registerHandlers';
 import { createTestDocument, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
 
-  test('analyzes opened and changed text in the foreground and sends inactive ranges', () => {
+  test('analyzes opened and changed text in the foreground and sends inactive ranges', async () => {
+    let changed!: () => void;
+    const changedAnalysis = new Promise<void>(resolve => { changed = resolve; });
     const indexedTexts: string[] = [];
     const notifications: unknown[] = [];
     let openHandler: ((event: { document: TestDocument }) => void) | undefined;
@@ -56,6 +58,7 @@ suite('registerHandlers', () => {
       },
       analyzeForegroundDocument: (input: { uri: string; version: number; text: string }) => {
         indexedTexts.push(input.text);
+        if (input.text === 'int changed;') { changed(); }
         return emptyAnalysis({ uri: input.uri, version: input.version, inactiveRanges });
       }
     };
@@ -70,6 +73,7 @@ suite('registerHandlers', () => {
     openHandler?.({ document: createTestDocument('int opened;') });
     changeHandler?.({ document: createTestDocument('int changed;') });
 
+    await changedAnalysis;
     assert.deepStrictEqual(indexedTexts, ['int opened;', 'int changed;']);
     assert.deepStrictEqual(notifications, [
       { method: 'axel/inactiveRanges', params: { uri: 'file:///main.axl', ranges: inactiveRanges } },

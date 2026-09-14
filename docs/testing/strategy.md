@@ -15,7 +15,7 @@ src/test/
     fixtures/            # Integrationの共有AXEL入力と期待値
     fixture.ts           # 上記データのパス解決
   e2e/                   # 実server.jsをstdio起動し、JSON-RPCの入出力を検証
-  performance/           # 明示実行する実行時間ベンチマーク
+  performance/           # CIでも実行する実行時間ベンチマーク
   external/              # 外部の実データ・include環境との互換性を確認
   support/               # 入力、解析、索引、後始末、stdioクライアント
 ```
@@ -68,13 +68,13 @@ fixture変更時は全利用者を検索し、関連するテストを実行す�
 | LSPライフサイクル | `npm run test:e2e` |
 | 実行時間ベンチマーク | `npm run test:performance` |
 | コミット前の全標準テスト | `npm test` |
-| CI相当（lint＋全標準テスト） | `npm run test:ci` |
+| CI相当（lint＋全標準テスト＋性能テスト） | `npm run test:ci` |
 | 実環境groupbox | `npm run test:external` |
 | ベンチマーク・実環境も含む確認 | `npm run test:complete` |
 
 各テストコマンドは先にtscを実行する。`scripts/run-tests.mjs` はsrc側に現存する `*.test.ts` から対象を選び、Mochaを起動する。移動・削除前のoutが残っていても実行しない。reporterやgrepなどの引数はMochaへ渡す。
 
-watchはNodeの `--watch-path` を使う。利用するNodeとOSがこのオプションに対応している必要がある。高速モードはE2Eを省略する。`npm test` / `test:ci` はUnit・Integration・E2Eを実行し、実行時間ベンチマークは含めない。参照数に比例して全宣言走査を繰り返さないことはIntegrationで検証する。
+watchはNodeの `--watch-path` を使う。利用するNodeとOSがこのオプションに対応している必要がある。高速モードはE2Eを省略する。`npm test` はUnit・Integration・E2Eを実行する。`test:ci` はこれらに加えてPerformanceを実行する。参照数に比例して全宣言走査を繰り返さないことはIntegrationで検証する。
 
 性能を測るときは、Mochaの時間とビルド込みの時間を区別する。CIの負荷によって性能上限に達した場合は、実測と処理量を調査し、安易に上限を緩めない。
 
@@ -86,3 +86,13 @@ groupbox Externalは `AXEL_TEST_SAMPLE` と `AXEL_TEST_FORCED_INCLUDE` で実デ
 See the [developer guide](../developer/type-checking.md) for architecture and verification, and the [user guide](../user/type-checking.md) for analysis-header registration and diagnostic limits.
 
 `npm run test:integration -- --grep "Type checking"` exercises the actual parser and workspace diagnostics against 135 selected ordinary recorded cases, plus operator, declaration, and invalidation regressions. Compiler-crash evidence is retained separately and is not executed as an ordinary LS conformance case. Standard tests do not start AXEL.
+
+### 編集応答の性能検査
+
+`src/test/performance/editingLatency.test.ts` は実サーバーを別プロセスで起動し、stdio の LSP 通信で測定する。2,002 行の合成文書について、初回オープンからホバー応答まで、型名・変数名を１回変更してからの応答、５回続けて変更してからの応答を検査する。各編集の計測は通知送信前から開始するため、変更処理による待ち時間を含む。各編集で一意の変数名に更新し、ホバーの型名と変数名も照合することで、途中の編集や古い結果を返して速く見えることを防ぐ。
+
+初回以外は各20サンプルの p50・p95・最大値をログに出す。p95 は昇順の19番目の値。初期の劣化検出上限は初回2,000 ms、単一編集p95 500 ms、５連続編集p95 500 ms。快適さの目標値ではなく、CI環境差の余裕を持たせた上限である。Windows・LinuxのCI実測を蓄積し、変更時は根拠を確認する。
+
+この検査は宣言が多い文書の編集待ちを対象とし、キー入力間隔を再現するものではない。include更新、診断実行中の補完、マクロやGUI構文の多い実ファイルは対象外。サーバー内部の処理時間と通信・待機時間を個別に分解する計測でもない。これらのシナリオは、実際に遅い操作の調査に合わせて追加する。
+
+変更集約の回帰検査は `src/test/unit/documentChangeScheduling.test.ts` にある。途中バージョンを解析しないこと、要求時の即時反映、別文書の変更反映、要求を挟んだ順序、要求なしでの解析、close/reopen時の破棄を検証する。`src/test/e2e/loginScope.test.ts` では未保存ヘッダーの連続変更直後に別文書からホバーし、最新の型が返ることを実際のLSP通信で確認する。

@@ -112,7 +112,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     return createInitializeResult();
   });
   registerConfigurationChangeHandlers(context, updateFeatures);
-  registerDocumentLifecycleHandlers(context);
+  const flushPendingChanges = registerDocumentLifecycleHandlers(context);
+  const measureRequest = <T>(operation: string, details: LogDetails, work: () => T): T =>
+    measureLspRequest(context, operation, details, () => {
+      // Dependencies may have changed in another open document.
+      flushPendingChanges();
+      return work();
+    });
   registerWatchedFileHandlers(context);
   registerBackgroundRefreshHandlers(context);
   context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
@@ -120,7 +126,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.languages.diagnostics.on((params) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.diagnostics', documentRequestDetails(params, document), () => {
+    return measureRequest('lsp.diagnostics', documentRequestDetails(params, document), () => {
       if (document === undefined) {
         return toDocumentDiagnosticReport([]);
       }
@@ -146,7 +152,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onHover((params: HoverParams) => {
     if (featureSettings.hover === 'disabled') { return null; }
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.hover', positionRequestDetails(params, document), () => {
+    return measureRequest('lsp.hover', positionRequestDetails(params, document), () => {
       if (document === undefined) {
         return null;
       }
@@ -174,7 +180,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onCompletion((params: CompletionParams) => {
     if (featureSettings.autocomplete === 'disabled') { return []; }
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.completion', positionRequestDetails(params, document), () => {
+    return measureRequest('lsp.completion', positionRequestDetails(params, document), () => {
       if (document === undefined) {
         return [];
       }
@@ -202,7 +208,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.onDefinition((params: DefinitionParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.definition', positionRequestDetails(params, document), () => {
+    return measureRequest('lsp.definition', positionRequestDetails(params, document), () => {
       if (document === undefined) {
         return [];
       }
@@ -227,7 +233,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.onReferences((params: ReferenceParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.references', {
+    return measureRequest('lsp.references', {
       ...positionRequestDetails(params, document),
       includeDeclaration: params.context.includeDeclaration
     }, () => {
@@ -258,7 +264,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   refactorConnection.onPrepareRename?.((params: PrepareRenameParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.prepareRename', positionRequestDetails(params, document), () => {
+    return measureRequest('lsp.prepareRename', positionRequestDetails(params, document), () => {
       if (document === undefined) {
         return null;
       }
@@ -283,7 +289,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   refactorConnection.onRenameRequest?.((params: RenameParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.rename', {
+    return measureRequest('lsp.rename', {
       ...positionRequestDetails(params, document),
       newNameLength: params.newName.length
     }, () => {
@@ -313,7 +319,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   refactorConnection.onCodeAction?.((params: CodeActionParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.codeAction', rangeRequestDetails(params, document), () => {
+    return measureRequest('lsp.codeAction', rangeRequestDetails(params, document), () => {
       if (document === undefined) {
         return [];
       }
@@ -342,7 +348,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   formattingConnection.onDocumentFormatting?.((params: DocumentFormattingParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.formatting', {
+    return measureRequest('lsp.formatting', {
       ...documentRequestDetails(params, document),
       insertSpaces: Boolean(params.options.insertSpaces),
       tabSize: params.options.tabSize
@@ -368,7 +374,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   formattingConnection.onDocumentRangeFormatting?.((params: DocumentRangeFormattingParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.rangeFormatting', {
+    return measureRequest('lsp.rangeFormatting', {
       ...rangeRequestDetails(params, document),
       insertSpaces: Boolean(params.options.insertSpaces),
       tabSize: params.options.tabSize
@@ -395,7 +401,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.onSignatureHelp((params: SignatureHelpParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.signatureHelp', positionRequestDetails(params, document), () => {
+    return measureRequest('lsp.signatureHelp', positionRequestDetails(params, document), () => {
       if (document === undefined) {
         return null;
       }
@@ -424,7 +430,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.onDocumentSymbol((params: DocumentSymbolParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.documentSymbol', documentRequestDetails(params, document), () => {
+    return measureRequest('lsp.documentSymbol', documentRequestDetails(params, document), () => {
       if (document === undefined) {
         return [];
       }
@@ -445,7 +451,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureLspRequest(context, 'lsp.semanticTokens', documentRequestDetails(params, document), () => {
+    return measureRequest('lsp.semanticTokens', documentRequestDetails(params, document), () => {
       if (document === undefined) {
         return toLspSemanticTokens([]);
       }
@@ -495,20 +501,43 @@ function registerConfigurationChangeHandlers(context: HandlerRegistrationContext
   });
 }
 
-function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext): void {
+function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext): () => void {
+  const pending = new Map<string, TextDocument>();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = (): void => {
+    clearTimeout(timer);
+    timer = undefined;
+    const documents = [...pending.values()];
+    pending.clear();
+    for (const document of documents) { indexDocument(context, document); }
+  };
+
   context.documents.onDidOpen((event) => {
+    pending.delete(event.document.uri);
     indexDocument(context, event.document);
   });
 
   context.documents.onDidChangeContent((event) => {
-    indexDocument(context, event.document);
+    pending.set(event.document.uri, event.document);
+    // A fixed window bounds notification delay even during continuous typing.
+    // Requests flush immediately rather than waiting for this timer.
+    timer ??= setTimeout(flush, 20);
   });
 
   context.documents.onDidClose((event) => {
+    pending.delete(event.document.uri);
+    if (pending.size === 0) { clearTimeout(timer); timer = undefined; }
     context.analyzer.deleteDocument?.(event.document.uri);
     if (sendLoginDependencies(context)) { context.connection.languages.semanticTokens.refresh?.(); }
     context.connection.languages.diagnostics.refresh?.();
   });
+
+  context.connection.onShutdown?.(() => {
+    clearTimeout(timer);
+    timer = undefined;
+    pending.clear();
+  });
+  return flush;
 }
 
 function indexDocument(context: HandlerRegistrationContext, document: TextDocument): void {

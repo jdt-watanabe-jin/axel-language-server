@@ -30,6 +30,18 @@ suite('Login LSP', function () {
       const definitions = await server.request<{ uri: string }[]>('textDocument/definition', position);
       assert.strictEqual(definitions[0]?.uri, headerUri);
       assert.ok(notifications.some(n => n.uris.includes(headerUri)), JSON.stringify(notifications));
+      // An immediate request in the consumer must flush pending unsaved header edits.
+      await server.notify('textDocument/didOpen', { textDocument: {
+        uri: headerUri, version: 1, languageId: 'axel', text: 'int shared;'
+      } });
+      for (const [version, type] of [[2, 'double'], [3, 'string']] as const) {
+        await server.notify('textDocument/didChange', {
+          textDocument: { uri: headerUri, version }, contentChanges: [{ text: `${type} shared;` }]
+        });
+      }
+      const hover = await server.request('textDocument/hover', position);
+      assert.ok(JSON.stringify(hover).includes('string shared'), JSON.stringify(hover));
+      await server.notify('textDocument/didClose', { textDocument: { uri: headerUri } });
       fs.writeFileSync(header, 'int replaced;');
       await server.notify('workspace/didChangeWatchedFiles', { changes: [{ uri: headerUri, type: 2 }] });
       assert.deepStrictEqual(await server.request('textDocument/definition', position), []);

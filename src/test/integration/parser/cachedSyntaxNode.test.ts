@@ -13,6 +13,27 @@ suite('Parse-local syntax reads', () => {
     for(let i=0;i<20;i++) { assert.strictEqual(view.namedChildren[0].type,'function_definition'); }
     assert.strictEqual(reads,1);
   });
+  test('keeps independent method arguments and bounded descendant queries cached', () => {
+    const root = createAxelParser().parse('int first;\nstring second;').rootNode;
+    const view = cachedSyntaxNode(root);
+    for (let pass = 0; pass < 3; pass++) {
+      for (let index = 0; index <= root.childCount; index++) {
+        assert.strictEqual(view.child(index)?.id, root.child(index)?.id);
+        assert.strictEqual(view.namedChild(index)?.id, root.namedChild(index)?.id);
+        assert.strictEqual(view.fieldNameForChild(index), root.fieldNameForChild(index));
+      }
+      for (const name of ['type', 'declarator', 'missing']) {
+        assert.strictEqual(view.child(0)!.childForFieldName(name)?.id, root.child(0)!.childForFieldName(name)?.id);
+      }
+      for (const row of [0, 1]) {
+        const start = { row, column: 0 };
+        const end = { row, column: 30 };
+        assert.deepStrictEqual(view.descendantsOfType('identifier', start, end).map(node => node.text),
+          root.descendantsOfType('identifier', start, end).map(node => node.text));
+      }
+    }
+    assert.strictEqual(view.child(0), view.namedChildren[0]);
+  });
   test('preserves node fields, positions and parent identities', () => {
     const root=createAxelParser().parse('class C { int x; virtual void f(int ...); }; void g(){ C *p; p->x=1; }').rootNode;
     const view=cachedSyntaxNode(root);

@@ -10,6 +10,7 @@ const groups = {
   unit: ['unit'], integration: ['integration'], e2e: ['e2e'],
   performance: ['performance'], external: ['external'],
   fast: ['unit', 'integration'], all: ['unit', 'integration', 'e2e'],
+  ci: ['unit', 'integration', 'e2e', 'performance'],
   complete: ['unit', 'integration', 'e2e', 'performance', 'external']
 };
 const [group = 'all', ...args] = process.argv.slice(2);

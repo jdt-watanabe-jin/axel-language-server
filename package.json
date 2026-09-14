@@ -33,7 +33,7 @@
 		"test:external": "node scripts/run-tests.mjs external",
 		"test:fast": "node scripts/run-tests.mjs fast",
 		"test:complete": "node scripts/run-tests.mjs complete",
-		"test:ci": "npm run lint && npm test"
+		"test:ci": "npm run lint && node scripts/run-tests.mjs ci"
 	},
 	"devDependencies": {
 		"@eslint/js": "^9.13.0",
