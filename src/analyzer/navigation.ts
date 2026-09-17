@@ -1,3 +1,4 @@
+import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import { resolveImplicitGuiReference, findDeclarationForGuiPart, findGuiDeclarationMember as findDeclarationMember } from './guiReferenceResolution';
 import type { DocumentationBindings } from './documentation/model';
 import { systemMacroAt } from './systemMacros';
@@ -85,6 +86,11 @@ export function getDefinitions(input: NavigationInput): AnalysisLocation[] {
 }
 
 export function getReferences(input: ReferencesInput): AnalysisLocation[] {
+  return runAnalysisSteps(getReferencesSteps(input));
+}
+
+export function* getReferencesSteps(input: ReferencesInput): Generator<AnalysisStep, AnalysisLocation[], void> {
+  yield;
   if (systemMacroAt(input.analysis, input.position)) { return []; }
   const target = findNavigationTargetDeclaration(input);
   if (target === undefined) {
@@ -92,7 +98,11 @@ export function getReferences(input: ReferencesInput): AnalysisLocation[] {
   }
 
   const documents = referenceSearchDocuments(input);
-  const locations = documents.flatMap((analysis) => referencesToDeclaration(input, analysis, target));
+  const locations: AnalysisLocation[] = [];
+  for (const analysis of documents) {
+    yield;
+    locations.push(...yield* referencesToDeclaration(input, analysis, target));
+  }
   if (input.includeDeclaration) {
     locations.push(locationFromDeclaration(target));
   }
@@ -139,13 +149,15 @@ export function findNavigationTargetDeclaration(input: NavigationInput): Analysi
   return ordinaryDeclaration ?? implicitGui?.declaration;
 }
 
-function referencesToDeclaration(
+function* referencesToDeclaration(
   navigationInput: NavigationInput,
   analysis: AnalyzedDocument,
   target: AnalysisDeclaration
-): AnalysisLocation[] {
+): Generator<AnalysisStep, AnalysisLocation[], void> {
   const locations: AnalysisLocation[] = [];
+  let visited = 0;
   for (const reference of analysis.navigationReferences ?? analysis.references) {
+    if (++visited % 64 === 0) { yield; }
     const input = {analysis, position: reference.range.start, workspaceIndex: navigationInput.workspaceIndex};
     const calls = callTargetDeclarations(input);
     const matches = calls !== undefined ? calls.some(candidate => candidate.id === target.id)

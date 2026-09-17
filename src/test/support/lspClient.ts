@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
-import { createProtocolConnection, StreamMessageReader, StreamMessageWriter } from 'vscode-languageserver/node';
+import { CancellationToken, createProtocolConnection, StreamMessageReader, StreamMessageWriter } from 'vscode-languageserver/node';
 
 // Real stdio transport and production entry point; no analyzer or handler doubles.
 export function startLspServer() {
@@ -38,8 +38,8 @@ export function startLspServer() {
     onNotification<T>(method: string, handler: (params: T) => void) {
       return connection.onNotification(method, handler);
     },
-    request<T>(method: string, params?: object) {
-      return deadline(connection.sendRequest<T>(method, params), method);
+    request<T>(method: string, params?: object, token: CancellationToken = CancellationToken.None) {
+      return deadline(connection.sendRequest<T>(method, params, token), method);
     },
     notify(method: string, params?: object) {
       return connection.sendNotification(method, params);

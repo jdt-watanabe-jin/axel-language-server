@@ -3,7 +3,7 @@ import { registerHandlers } from '../../lsp/registerHandlers';
 import { createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
 
-  test('logs completion request timing when logger supports info', () => {
+  test('logs completion request timing when logger supports info', async () => {
     let completionHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const infoMessages: string[] = [];
     const connection = {
@@ -56,7 +56,7 @@ suite('registerHandlers', () => {
       }
     });
 
-    completionHandler?.({
+    await completionHandler?.({
       textDocument: { uri: 'file:///main.axl' },
       position: { line: 0, character: 4 }
     });
@@ -71,7 +71,7 @@ suite('registerHandlers', () => {
     )));
   });
 
-  test('preserves logger method receiver when logging semantic token timing', () => {
+  test('preserves logger method receiver when logging semantic token timing', async () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const sentMessages: string[] = [];
     const connection = {
@@ -123,7 +123,7 @@ suite('registerHandlers', () => {
       logger
     });
 
-    semanticTokensHandler?.({
+    await semanticTokensHandler?.({
       textDocument: { uri: 'file:///main.axl' }
     });
 

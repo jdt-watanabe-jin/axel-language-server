@@ -2,7 +2,7 @@ import * as assert from 'assert';
 import { registerHandlers } from '../../lsp/registerHandlers';
 import { createTestDocument, createHandlerConnection } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
-  test('returns empty completion list when analysis fails', () => {
+  test('returns empty completion list when analysis fails', async () => {
     let completionHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const errors: string[] = [];
     const connection = createHandlerConnection({
@@ -29,7 +29,7 @@ suite('registerHandlers', () => {
       logger: { error: (message) => errors.push(message) }
     });
 
-    const result = completionHandler?.({
+    const result = await completionHandler?.({
       textDocument: { uri: 'file:///main.axl' },
       position: { line: 0, character: 0 }
     });
@@ -39,7 +39,7 @@ suite('registerHandlers', () => {
       && message.includes('analysis exploded')));
   });
 
-  test('returns null signature help when analysis fails', () => {
+  test('returns null signature help when analysis fails', async () => {
     let signatureHelpHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const errors: string[] = [];
     const connection = createHandlerConnection({
@@ -66,7 +66,7 @@ suite('registerHandlers', () => {
       logger: { error: (message) => errors.push(message) }
     });
 
-    const result = signatureHelpHandler?.({
+    const result = await signatureHelpHandler?.({
       textDocument: { uri: 'file:///main.axl' },
       position: { line: 0, character: 0 }
     });
@@ -76,7 +76,7 @@ suite('registerHandlers', () => {
       && message.includes('analysis exploded')));
   });
 
-  test('returns empty semantic tokens when analysis fails', () => {
+  test('returns empty semantic tokens when analysis fails', async () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const errors: string[] = [];
     const connection = createHandlerConnection({
@@ -103,7 +103,7 @@ suite('registerHandlers', () => {
       logger: { error: (message) => errors.push(message) }
     });
 
-    const result = semanticTokensHandler?.({
+    const result = await semanticTokensHandler?.({
       textDocument: { uri: 'file:///main.axl' }
     });
 

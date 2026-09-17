@@ -1,3 +1,4 @@
+import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import type {
   AnalysisDeclaration,
   AnalysisRange,
@@ -6,7 +7,7 @@ import type {
 import { systemMacroAt } from './systemMacros';
 import {
   findNavigationTargetDeclaration,
-  getReferences,
+  getReferencesSteps,
   type NavigationInput,
   type WorkspaceNavigationIndex
 } from './navigation';
@@ -26,6 +27,11 @@ export function prepareRename(input: NavigationInput): AnalysisRange | null {
 }
 
 export function getRenameEdits(input: RenameInput): AnalysisWorkspaceEdit | RenameRejection {
+  return runAnalysisSteps(getRenameEditsSteps(input));
+}
+
+export function* getRenameEditsSteps(input: RenameInput): Generator<AnalysisStep, AnalysisWorkspaceEdit | RenameRejection, void> {
+  yield;
   const target = findSafeRenameTarget(input);
   if (target === undefined) {
     return { reason: 'This symbol cannot be renamed.' };
@@ -35,14 +41,16 @@ export function getRenameEdits(input: RenameInput): AnalysisWorkspaceEdit | Rena
     return { reason: `Invalid AXEL identifier '${input.newName}'.` };
   }
 
-  const references = getReferences({
+  const references = yield* getReferencesSteps({
     analysis: input.analysis,
     position: input.position,
     includeDeclaration: true,
     workspaceIndex: input.workspaceIndex
   });
   const changes: AnalysisWorkspaceEdit['changes'] = {};
+  let visited = 0;
   for (const location of references) {
+    if (++visited % 128 === 0) { yield; }
     changes[location.uri] ??= [];
     changes[location.uri].push({
       range: location.range,

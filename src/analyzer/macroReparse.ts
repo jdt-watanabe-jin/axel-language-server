@@ -1,3 +1,4 @@
+import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import { mapSourceOffset } from './sourceOffsetMap';
 import type * as Parser from 'tree-sitter';
 import type { AnalysisPosition, AnalysisRange, AnalyzedDocument } from '../types/analysis';
@@ -22,6 +23,16 @@ function positions(text: string) {
 /** Reparse a virtual source and map all analysis locations back to the user's document. */
 export function macroReparse(root: Parser.SyntaxNode, source: string, original: AnalyzedDocument,
   macros: AnalyzedDocument['macroDefinitions'], analyze: (text: string, position: (p: AnalysisPosition, end?: boolean) => AnalysisPosition) => AnalyzedDocument): AnalyzedDocument {
+  return runAnalysisSteps(macroReparseSteps(root, source, original, macros, function* (text, position) {
+    yield;
+    return analyze(text, position);
+  }));
+}
+
+export function* macroReparseSteps(root: Parser.SyntaxNode, source: string, original: AnalyzedDocument,
+  macros: AnalyzedDocument['macroDefinitions'],
+  analyze: (text: string, position: (p: AnalysisPosition, end?: boolean) => AnalysisPosition) => Generator<AnalysisStep, AnalyzedDocument, void>
+): Generator<AnalysisStep, AnalyzedDocument, void> {
   if (!macros.length) { return original; }
   const sourcePositions = positions(source);
   const excluded = [...original.inactiveRanges ?? [], ...original.uncertainRanges ?? []];
@@ -78,7 +89,8 @@ export function macroReparse(root: Parser.SyntaxNode, source: string, original: 
     const index=sourcePositions.offset(p);
     return expandedPositions.position(mapSourceOffset(toExpandedSegments,index,end));
   };
-  const expanded = analyze(text,toExpanded);
+  const expanded = yield* analyze(text,toExpanded);
+  yield;
   const result = map(expanded) as AnalyzedDocument;
   result.expandedSource = { analysis: expanded, sourceRange: mappedRange, expandedPosition: toExpanded };
   // Conditional recovery may have erased directives before this second parse.

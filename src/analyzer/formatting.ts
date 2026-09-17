@@ -1,3 +1,4 @@
+import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import { createAxelParser } from './axelParser';
 import type { AnalysisFormattingOptions, AnalysisRange, AnalysisTextEdit } from '../types/analysis';
 
@@ -14,6 +15,11 @@ interface LineBraceState {
 }
 
 export function getFormattingEdits(input: FormattingInput): AnalysisTextEdit[] {
+  return runAnalysisSteps(getFormattingEditsSteps(input));
+}
+
+export function* getFormattingEditsSteps(input: FormattingInput): Generator<AnalysisStep, AnalysisTextEdit[], void> {
+  yield;
   if (input.text.length === 0 || hasSyntaxErrors(input.text)) {
     return [];
   }
@@ -26,6 +32,7 @@ export function getFormattingEdits(input: FormattingInput): AnalysisTextEdit[] {
   let inBlockComment = false;
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    if (lineIndex % 128 === 0) { yield; }
     const line = lines[lineIndex] ?? '';
     const trimmed = line.trimStart();
     const lineIndent = Math.max(0, indentLevel - (trimmed.startsWith('}') ? 1 : 0));

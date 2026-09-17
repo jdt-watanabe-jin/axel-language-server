@@ -1,5 +1,7 @@
+import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
+import { throwIfCancelled } from '../util/cancellation';
 import { createCallResolver } from './typeChecking/callResolution';
-import { runAnalysisSteps } from '../util/analysisSteps';
+import { runAnalysisSteps, runAnalysisStepsAsync, scopedAnalysisSteps, readAnalysisFile, statAnalysisFile, type AnalysisStep } from '../util/analysisSteps';
 import { bindDocumentation } from './documentation/index';
 import { resolveLoginPath } from './loginPath';
 import { buildLoginScopeSteps, type LoginScopeSnapshot } from './loginScope';
@@ -7,7 +9,7 @@ import type { DocumentationBindings } from './documentation/model';
 import { affectedBySyntaxRecovery } from './syntaxRecovery';
 import { normalizeTargetPlatform } from './targetPlatform';
 import { descendants, field } from './typeChecking/syntax';
-import { collectTypeDiagnostics } from './typeChecking/diagnostics';
+import { collectTypeDiagnosticsSteps } from './typeChecking/diagnostics';
 import { loadBuiltinCatalog, type BuiltinCatalog } from './typeChecking/builtinCatalog';
 import * as fs from 'fs';
 import { containsSourcePosition, isSystemMacroName, normalizeInternalFeatures, normalizeTool } from './systemMacros';
@@ -61,6 +63,9 @@ interface IndexedDocument {
 }
 
 export class WorkspaceIndex {
+  private requestAnalysisActive = false;
+  private requestRevision = 0;
+  private requestTail: Promise<unknown> = Promise.resolve();
   private sxmHome: string;
   private loginSnapshot?: LoginScopeSnapshot;
   private loginGeneration = 0;
@@ -96,7 +101,7 @@ export class WorkspaceIndex {
   private backgroundGeneration = 0;
   private pendingLoginIndexing = false;
   private backgroundStepping = false;
-  private activeBackground: { uri: string; filePath: string; generation: number; login?: boolean; resolutions: Map<string, IncludeResolution>; steps: Generator<void, void, void> } | undefined;
+  private activeBackground: { uri: string; filePath: string; generation: number; login?: boolean; resolutions: Map<string, IncludeResolution>; steps: Generator<AnalysisStep, void, void> } | undefined;
   private readonly backgroundWaiters: (() => void)[] = [];
   private readonly backgroundCompleteListeners: (() => void)[] = [];
 
@@ -119,6 +124,7 @@ export class WorkspaceIndex {
   }
 
   public configure(options: unknown): void {
+    this.requestRevision++;
     this.logSystemMacroConfiguration(options);
     const merged = mergeWorkspaceIndexOptions({
       sxmHome: this.sxmHome,
@@ -147,25 +153,126 @@ export class WorkspaceIndex {
     return this.indexOpenDocument(input);
   }
 
-  public analyzeForegroundDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
-    this.rememberOpenInput(input);
-    return measureDurationMs(this.logger, 'workspace.foreground', { uri: input.uri, version: input.version }, () => {
-      const cached = this.documents.get(input.uri);
-      if (cached?.version === input.version) {
-        return cached.analysis;
-      }
+  /** Requests share caches, but yield between tree passes and dependency I/O. */
+  public async analyzeRequestDocument(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument> {
+    throwIfCancelled(token);
+    this.updateOpenDocument(input);
+    return this.analyzeCooperatively(input, token, () => this.requestDocumentSteps(input));
+  }
 
-      const analysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
-      this.documents.set(input.uri, {
-        analysis,
-        version: input.version,
-        filePath: filePathFromUri(input.uri),
-        workspaceDiagnosticsComplete: false
-      });
-      this.enqueueKnownForcedIncludeFiles();
-      this.replaceResolvedIncludeEdgesAndEnqueue(analysis);
-      return analysis;
+  private *requestDocumentSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, AnalyzedDocument, void> {
+    // Reference search spans other open files too. Restore their foreground indexes after an invalidation.
+    for (const open of this.openInputs.values()) {
+      if (open.uri !== input.uri && this.documents.get(open.uri)?.version !== open.version) {
+        yield* this.foregroundDocumentSteps(open);
+      }
+    }
+    return yield* this.indexOpenDocumentSteps(input);
+  }
+
+  public async analyzeForegroundDocumentAsync(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument> {
+    throwIfCancelled(token);
+    this.updateOpenDocument(input);
+    return this.analyzeCooperatively(input, token, () => this.foregroundDocumentSteps(input));
+  }
+
+  private async analyzeCooperatively(input: AnalyzeDocumentInput, token: CancellationToken,
+    steps: () => Generator<AnalysisStep, AnalyzedDocument, void>): Promise<AnalyzedDocument> {
+    const queuedRevision = this.requestRevision;
+    const previous = this.requestTail;
+    let release!: () => void;
+    this.requestTail = new Promise<void>(resolve => { release = resolve; });
+    await previous;
+    try {
+      throwIfCancelled(token);
+      if (queuedRevision !== this.requestRevision) {
+        throw new ResponseError(LSPErrorCodes.ContentModified, 'Workspace changed while analysis was queued.');
+      }
+      this.interruptBackgroundAnalysis();
+      this.rememberOpenInput(input);
+      const generation = this.requestRevision;
+      const rollback = this.analysisRollback(generation);
+      this.requestAnalysisActive = true;
+      const resolutions = new Map<string, IncludeResolution>();
+      try {
+        return await runAnalysisStepsAsync(steps(), token, () => {
+          if (generation !== this.requestRevision) {
+            throw new ResponseError(LSPErrorCodes.ContentModified, 'Workspace changed during analysis.');
+          }
+        }, work => this.withIncludeResolutionCache(work, resolutions));
+      } catch (error) {
+        rollback();
+        throw error;
+      } finally { this.requestAnalysisActive = false; }
+    } finally { release(); }
+  }
+
+  /** Roll back provisional writes without dropping unrelated, valid reference-search documents. */
+  private analysisRollback(revision: number): () => void {
+    const documents = new Map([...this.documents].map(([uri, document]) => [uri, { ...document }]));
+    const edges = new Map(this.includeGraph);
+    const definiteEdges = new Map(this.definiteIncludeGraph);
+    const contexts = new Map(this.includeContexts);
+    const diagnosticDependencies = new Map(this.diagnosticIncludeDependencies);
+    const forcedIndexed = this.forcedIncludesIndexed;
+    return () => {
+      const unchanged = revision === this.requestRevision;
+      // A traversal can already have rewritten dependency edges, so identity is not enough
+      // to prove a snapshot survived an external invalidation. Rebuild after any revision change.
+      const valid = unchanged ? [...documents] : [];
+      const pending = new Map(this.pendingBackgroundDocuments);
+      const active = this.activeBackground;
+      const loginPending = this.pendingLoginIndexing || active?.login === true;
+      if (active && !active.login) { pending.set(active.uri, active.filePath); }
+      this.clearCachedAnalysis();
+      for (const [uri, document] of valid) {
+        this.documents.set(uri, document);
+        this.replaceIncludeEdges(uri, edges.get(uri) ?? new Set(), definiteEdges.get(uri) ?? new Set());
+        const context = contexts.get(uri);
+        if (context) { this.includeContexts.set(uri, context); }
+        const dependencies = diagnosticDependencies.get(uri);
+        if (dependencies) { this.diagnosticIncludeDependencies.set(uri, dependencies); }
+      }
+      this.forcedIncludesIndexed = unchanged && forcedIndexed;
+      for (const [uri, filePath] of pending) { this.enqueueBackgroundDocument(uri, filePath); }
+      for (const open of this.openInputs.values()) {
+        if (!this.documents.has(open.uri)) { this.enqueueBackgroundDocument(open.uri, filePathFromUri(open.uri) ?? open.uri); }
+      }
+      if (loginPending) { this.pendingLoginIndexing = true; this.scheduleBackgroundIndexing(); }
+    };
+  }
+
+  public updateOpenDocument(input: AnalyzeDocumentInput): void {
+    const previous = this.openInputs.get(fileIdentity(input.uri));
+    if (previous?.version !== input.version || previous.text !== input.text) {
+      this.invalidateUri(input.uri);
+      this.rememberOpenInput(input);
+    }
+  }
+
+  public analyzeForegroundDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
+    this.updateOpenDocument(input);
+    return measureDurationMs(this.logger, 'workspace.foreground', { uri: input.uri, version: input.version },
+      () => runAnalysisSteps(this.foregroundDocumentSteps(input)));
+  }
+
+  private *foregroundDocumentSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, AnalyzedDocument, void> {
+    yield;
+    const cached = this.documents.get(input.uri);
+    if (cached?.version === input.version) {
+      return cached.analysis;
+    }
+
+    const analysis = yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
+    this.documents.set(input.uri, {
+      analysis,
+      version: input.version,
+      filePath: filePathFromUri(input.uri),
+      workspaceDiagnosticsComplete: false
     });
+    this.enqueueKnownForcedIncludeFiles();
+    this.replaceResolvedIncludeEdgesAndEnqueue(analysis);
+    return analysis;
   }
 
   public analyzeDiagnosticDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
@@ -221,7 +328,7 @@ export class WorkspaceIndex {
   }
 
   private *indexOpenDocumentSteps(input: AnalyzeDocumentInput, forced = this.indexingForcedIncludes,
-    pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<void, AnalyzedDocument, void> {
+    pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<AnalysisStep, AnalyzedDocument, void> {
     yield;
     this.rememberOpenInput(input);
     const cached = this.documents.get(input.uri);
@@ -230,7 +337,7 @@ export class WorkspaceIndex {
     }
 
     const initialAnalysis = cached?.version === input.version ? cached.analysis
-      : this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
+      : yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
     this.documents.set(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
@@ -244,11 +351,11 @@ export class WorkspaceIndex {
       pendingInputs.delete(input.uri);
     }
     const contextual = yield* this.reanalyzeWithVisibleContextSteps(input, initialAnalysis, forced, pendingInputs);
-    const previousForcedContext = this.indexingForcedIncludes;
-    this.indexingForcedIncludes = forced;
-    let analysis: AnalyzedDocument;
-    try { analysis = this.withWorkspaceDiagnostics(contextual); }
-    finally { this.indexingForcedIncludes = previousForcedContext; }
+    const analysis = yield* scopedAnalysisSteps(this.withWorkspaceDiagnosticsSteps(contextual), work => {
+      const previous = this.indexingForcedIncludes;
+      this.indexingForcedIncludes = forced;
+      try { return work(); } finally { this.indexingForcedIncludes = previous; }
+    });
     this.documents.set(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
       analysis,
@@ -290,7 +397,7 @@ export class WorkspaceIndex {
   }
 
   private ensureForcedIncludesIndexed(): void {
-    if (!this.forcedIncludesIndexed) {
+    if (!this.forcedIncludesIndexed && !this.indexingForcedIncludes) {
       this.indexForcedIncludes();
     }
   }
@@ -355,7 +462,7 @@ export class WorkspaceIndex {
     return runAnalysisSteps(this.loginScopeSteps(sourceUri));
   }
 
-  private *loginScopeSteps(sourceUri: string): Generator<void, LoginScopeSnapshot | undefined, void> {
+  private *loginScopeSteps(sourceUri: string): Generator<AnalysisStep, LoginScopeSnapshot | undefined, void> {
     const entry = resolveLoginPath(this.sxmHome, this.tool);
     if (!entry || fileIdentity(pathToFileURL(entry).toString()) === fileIdentity(sourceUri)) { return undefined; }
     if (this.loginSnapshot) { return this.loginSnapshot; }
@@ -393,7 +500,7 @@ export class WorkspaceIndex {
       uris: this.loginSnapshot?.dependencyUris ?? (entry ? [pathToFileURL(entry).toString()] : []) };
   }
 
-  private *backgroundLoginSteps(): Generator<void, void, void> {
+  private *backgroundLoginSteps(): Generator<AnalysisStep, void, void> {
     yield* this.loginScopeSteps('');
   }
 
@@ -569,6 +676,7 @@ export class WorkspaceIndex {
   }
 
   public invalidateUri(uri: string): void {
+    this.requestRevision++;
     this.backgroundGeneration++;
     if (this.loginSnapshot && (uri.endsWith('.analysis.json')
       || this.loginSnapshot.dependencyUris.some(dependency => fileIdentity(dependency) === fileIdentity(uri)))) {
@@ -605,18 +713,22 @@ export class WorkspaceIndex {
   }
 
   /** Internal cooperative entry point used by the separate startup index. */
-  public *indexDiskDocumentSteps(filePath: string): Generator<void, AnalyzedDocument, void> {
+  public *indexDiskDocumentSteps(filePath: string): Generator<AnalysisStep, AnalyzedDocument, void> {
     const steps = this.indexDiskDocumentStepsInternal(path.normalize(filePath), new Set());
     const resolutions = new Map<string, IncludeResolution>();
-    while (true) {
-      const next = this.withIncludeResolutionCache(() => steps.next(), resolutions);
-      if (next.done) { return this.withIncludeResolutionCache(() => this.withWorkspaceDiagnostics(next.value)); }
-      yield;
-    }
+    try {
+      let next = this.withIncludeResolutionCache(() => steps.next(), resolutions);
+      while (!next.done) {
+        try { yield next.value; }
+        catch (error) { next = this.withIncludeResolutionCache(() => steps.throw(error), resolutions); continue; }
+        next = this.withIncludeResolutionCache(() => steps.next(), resolutions);
+      }
+      return yield* this.withWorkspaceDiagnosticsSteps(next.value);
+    } finally { steps.return(undefined as never); }
   }
 
   private *indexDiskDocumentStepsInternal(filePath: string, visitedUris: Set<string>, forced = this.indexingForcedIncludes,
-    pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<void, AnalyzedDocument, void> {
+    pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<AnalysisStep, AnalyzedDocument, void> {
     yield;
     const normalizedPath = path.normalize(filePath);
     const uri = pathToFileURL(normalizedPath).toString();
@@ -624,7 +736,7 @@ export class WorkspaceIndex {
     if (open && !pendingInputs.has(uri)) {
       return yield* this.indexOpenDocumentSteps({ ...open, uri, ...this.includeContexts.get(uri) }, forced, pendingInputs);
     }
-    const stat = fs.statSync(normalizedPath);
+    const stat = yield* statAnalysisFile(normalizedPath);
     const cached = this.documents.get(uri);
 
     if (cached?.mtimeMs === stat.mtimeMs && cached.workspaceIndexComplete === true) {
@@ -639,9 +751,9 @@ export class WorkspaceIndex {
       }
     }
 
-    const text = fs.readFileSync(normalizedPath, 'utf8');
+    const text = yield* readAnalysisFile(normalizedPath);
     const input = { uri, version: 0, text, ...this.includeContexts.get(uri) };
-    const initialAnalysis = this.analyzer.analyzeDocument({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
+    const initialAnalysis = yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
@@ -662,6 +774,10 @@ export class WorkspaceIndex {
   }
 
   private withWorkspaceDiagnostics(analysis: AnalyzedDocument): AnalyzedDocument {
+    return runAnalysisSteps(this.withWorkspaceDiagnosticsSteps(analysis));
+  }
+
+  private *withWorkspaceDiagnosticsSteps(analysis: AnalyzedDocument): Generator<AnalysisStep, AnalyzedDocument, void> {
     if (this.dependencyAnalysisOnly) { return analysis; }
     const macros = this.collectPositionAwareMacroDefinitions(analysis.uri, true);
     const macrosByName = new Map<string, AnalysisMacroDefinition[]>();
@@ -674,7 +790,7 @@ export class WorkspaceIndex {
       diagnostics: limitDiagnostics([
         ...this.unresolvedIncludeDiagnostics(analysis),
         ...analysis.diagnostics,
-        ...collectTypeDiagnostics({analysis,
+        ...(yield* collectTypeDiagnosticsSteps({analysis,
           loginScope: this.loginScope(analysis.uri),
           resolveMacro: (name,node) => {
             const macro = macrosByName.get(name)?.filter(macro => !macro.visibilityStart || comparePositions(macro.visibilityStart,node.range.start)<=0).at(-1);
@@ -683,7 +799,7 @@ export class WorkspaceIndex {
           documents: this.collectDefiniteVisibleUris(analysis.uri).flatMap(uri => {
             const visible = this.documents.get(uri)?.analysis;
             return visible ? [visible] : [];
-          }), catalog: this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles)})
+          }), catalog: this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles)}))
           .filter(diagnostic => !affectedBySyntaxRecovery(analysis.syntaxRecovery, diagnostic.range)),
         ...this.unresolvedScriptExecutionDiagnostics(analysis),
         ...collectSemanticDiagnostics({
@@ -743,7 +859,7 @@ export class WorkspaceIndex {
       }));
   }
 
-  private *forcedIncludeSteps(pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<void, void, void> {
+  private *forcedIncludeSteps(pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<AnalysisStep, void, void> {
     for (const filePath of this.getForcedIncludeFiles()) {
       yield* this.indexDiskDocumentStepsInternal(filePath, new Set(), true, pendingInputs);
     }
@@ -753,7 +869,7 @@ export class WorkspaceIndex {
   private *reanalyzeWithVisibleContextSteps(
     input: AnalyzeDocumentInput, initialAnalysis: AnalyzedDocument, forced = this.indexingForcedIncludes,
     pendingInputs = new Map<string, AnalyzeDocumentInput>()
-  ): Generator<void, AnalyzedDocument, void> {
+  ): Generator<AnalysisStep, AnalyzedDocument, void> {
     if (!forced && !this.forcedIncludesIndexed) { yield* this.forcedIncludeSteps(pendingInputs); }
     yield* this.loginScopeSteps(input.uri);
     yield;
@@ -769,12 +885,12 @@ export class WorkspaceIndex {
     const macroDefinitions = [...input.macroDefinitions ?? [], ...this.collectPositionAwareMacroDefinitions(input.uri)]
       .filter((macro) => macro.uri !== input.uri);
     if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0 && uncertainNames.length === 0) {
-      return initialAnalysis.typeSnapshot ? initialAnalysis : this.analyzer.analyzeDocument({
+      return initialAnalysis.typeSnapshot ? initialAnalysis : yield* this.analyzer.analyzeDocumentSteps({
         ...input,tool:this.tool,internalFeatures:this.internalFeatures,targetPlatform:this.targetPlatform
       });
     }
 
-    const analysis = this.analyzer.analyzeDocument({
+    const analysis = yield* this.analyzer.analyzeDocumentSteps({
       ...input,
       tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform,
       knownGuiClasses,
@@ -792,7 +908,7 @@ export class WorkspaceIndex {
   }
 
   private *indexResolvedIncludesSteps(analysis: AnalyzedDocument, visitedUris: Set<string>, forced = this.indexingForcedIncludes,
-    pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<void, void, void> {
+    pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<AnalysisStep, void, void> {
     const includingFilePath = filePathFromUri(analysis.uri);
     if (includingFilePath === undefined) {
       return;
@@ -835,7 +951,7 @@ export class WorkspaceIndex {
         const pending = pendingInputs.get(resolution.uri);
         const indexed = this.documents.get(resolution.uri);
         if (pending && indexed && !indexed.analysis.typeSnapshot) {
-          indexed.analysis = this.analyzer.analyzeDocument({
+          indexed.analysis = yield* this.analyzer.analyzeDocumentSteps({
             ...pending, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform
           });
         }
@@ -897,6 +1013,10 @@ export class WorkspaceIndex {
   }
 
   private processNextBackgroundDocument(): void {
+    if (this.requestAnalysisActive) {
+      setTimeout(() => this.processNextBackgroundDocument(), 5);
+      return;
+    }
     if (this.activeBackground && this.activeBackground.generation !== this.backgroundGeneration) {
       const stale = this.activeBackground;
       stale.steps.return();
@@ -926,6 +1046,7 @@ export class WorkspaceIndex {
         const next = this.withIncludeResolutionCache(() => measureDurationMs(this.logger, 'workspace.background',
           { uri: active.uri }, () => active.steps.next()), active.resolutions);
         if (next.done) { this.activeBackground = undefined; }
+        else { next.value?.sync(); }
       } catch (error: unknown) {
         this.activeBackground = undefined;
         this.logger.error(`Background indexing failed for ${active.filePath}: ${getErrorMessage(error)}`);
@@ -936,18 +1057,18 @@ export class WorkspaceIndex {
     else { this.resolveBackgroundWaiters(); }
   }
 
-  private *indexSingleBackgroundDiskDocumentSteps(uri: string, filePath: string): Generator<void, void, void> {
+  private *indexSingleBackgroundDiskDocumentSteps(uri: string, filePath: string): Generator<AnalysisStep, void, void> {
     const open = this.openDocumentInput?.(uri) ?? this.openInputs.get(fileIdentity(uri));
     if (open) { yield* this.indexOpenDocumentSteps(open); return; }
     const normalizedPath = path.normalize(filePath);
-    const stat = fs.statSync(normalizedPath);
+    const stat = yield* statAnalysisFile(normalizedPath);
     const cached = this.documents.get(uri);
     if (cached?.mtimeMs === stat.mtimeMs && cached.workspaceIndexComplete) {
       this.replaceResolvedIncludeEdgesAndEnqueue(cached.analysis);
       return;
     }
-    const text = fs.readFileSync(normalizedPath, 'utf8');
-    const initialAnalysis = this.analyzer.analyzeDocument({ uri, version: 0, text, tool: this.tool,
+    const text = yield* readAnalysisFile(normalizedPath);
+    const initialAnalysis = yield* this.analyzer.analyzeDocumentSteps({ uri, version: 0, text, tool: this.tool,
       internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
     this.documents.set(uri, { analysis: initialAnalysis, filePath: normalizedPath,
       mtimeMs: stat.mtimeMs, workspaceDiagnosticsComplete: false });

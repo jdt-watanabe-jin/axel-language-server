@@ -1,3 +1,4 @@
+import { runAnalysisSteps, type AnalysisStep } from '../../util/analysisSteps';
 import type { AnalysisDiagnostic, AnalysisMacroDefinition, AnalyzedDocument } from '../../types/analysis';
 import type { LoginScopeSnapshot } from '../loginScope';
 import { message } from '../../i18n/messages';
@@ -64,9 +65,13 @@ export function createTypeCheckingContext(input: TypeDiagnosticsInput): TypeCont
 }
 
 export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDiagnostic[] {
+  return runAnalysisSteps(collectTypeDiagnosticsSteps(input));
+}
+
+export function* collectTypeDiagnosticsSteps(input: TypeDiagnosticsInput): Generator<AnalysisStep, AnalysisDiagnostic[], void> {
   const expanded = input.analysis.expandedSource;
   if (expanded) {
-    return collectTypeDiagnostics(expandedTypeInput(input)).map(diagnostic => ({ ...diagnostic, range: expanded.sourceRange(diagnostic.range) }));
+    return (yield* collectTypeDiagnosticsSteps(expandedTypeInput(input))).map(diagnostic => ({ ...diagnostic, range: expanded.sourceRange(diagnostic.range) }));
   }
   const {analysis} = input;
   const root = analysis.typeSnapshot?.root;
@@ -80,7 +85,9 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
     ctx.diagnostics.push({severity:'error',source:'axel',code:'axel.type.'+category,
       range:node.range,...message(template,...args)});
   };
-  function visit(node: TypeNode): void {
+  let visited = 0;
+  function* visit(node: TypeNode): Generator<AnalysisStep, void, void> {
+    if (++visited % 128 === 0) { yield; }
     if (suppressed(node) || node.kind === 'ERROR') { return; }
     const scope = scopeFor(ctx, node);
     if (node.kind === 'object_definition') {
@@ -178,10 +185,10 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
     if (isExpression(node)) { evaluateExpression(ctx,node,scope); }
     for (const child of node.children) {
       if (node.kind.startsWith('preproc_') && field(node,'condition') === child) { continue; }
-      visit(child);
+      yield* visit(child);
     }
   }
-  visit(root);
+  yield* visit(root);
   function hasInstanceData(info: ClassInfo, seen = new Set<string>()): boolean | undefined {
     if (!info.defined || isBuiltinDeclarationSource(catalog,info.uri) || seen.has(info.id)) { return undefined; }
     if (info.fields.size > 0) { return true; }
@@ -194,6 +201,7 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
     return base ? hasInstanceData(base,seen) : undefined;
   }
   for (const binding of ctx.bindings) {
+    if (++visited % 128 === 0) { yield; }
     if (binding.uri !== analysis.uri || binding.node.kind !== 'object_definition' || suppressed(binding.node)) { continue; }
     let type = binding.type;
     while (type.kind === 'array' && type.element) { type = type.element; }
@@ -203,6 +211,7 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
   }
   const definitions = ctx.functions.filter(fn => fn.uri === analysis.uri && fn.node.kind === 'function_definition');
   for (let i=0;i<definitions.length;i++) {
+    if (i % 64 === 0) { yield; }
     const fn=definitions[i];
     if (definitions.slice(0,i).some(other => other.name===fn.name && other.owner===fn.owner && other.instancePath===fn.instancePath
       && other.parameters.length===fn.parameters.length && other.scope.parent===fn.scope.parent)) {
@@ -212,6 +221,7 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
   const classes = ['class_specifier','struct_specifier','union_specifier']
     .flatMap(kind => descendants(root,kind)).filter(node => field(node,'body') && !suppressed(node));
   for (let i=1;i<classes.length;i++) {
+    if (i % 64 === 0) { yield; }
     const name = field(classes[i],'name');
     if (name && classes.slice(0,i).some(other => field(other,'name')?.text === name.text)) {
       report(name,'duplicate_class',"Class '{0}' is already defined.",name.text);

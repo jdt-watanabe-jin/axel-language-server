@@ -1,4 +1,4 @@
-import { runAnalysisSteps } from '../util/analysisSteps';
+import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { AnalysisDeclaration, AnalyzedDocument } from '../types/analysis';
@@ -23,7 +23,7 @@ export function buildLoginScope(entryPath: string, options: WorkspaceIndexOption
   return runAnalysisSteps(buildLoginScopeSteps(entryPath, options));
 }
 
-export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndexOptions): Generator<void, LoginScopeSnapshot, void> {
+export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndexOptions): Generator<AnalysisStep, LoginScopeSnapshot, void> {
   const index = new WorkspaceIndex({ ...options, sxmHome: '', inheritIncludeContext: true, dependencyAnalysisOnly: true });
   const entryUri = pathToFileURL(entryPath).toString();
   const snapshot: LoginScopeSnapshot = { entryUri, declarations: [], documents: [], dependencyUris: [entryUri] };

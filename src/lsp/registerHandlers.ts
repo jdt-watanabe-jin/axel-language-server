@@ -1,3 +1,6 @@
+import { runAnalysisStepsAsync, type AnalysisStep } from '../util/analysisSteps';
+import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
+import { createRequestHandler, isCancellationError, throwIfCancelled, rethrowCancellation, cancellationCheckpoint } from '../util/cancellation';
 import { sendLoginDependencies } from './loginDependencies';
 import type {
   Connection,
@@ -19,14 +22,13 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { AnalyzeDocumentInput, AnalyzedDocument, AnalysisRange } from '../types/analysis';
 import { getCodeActions, type WorkspaceCodeActionIndex } from '../analyzer/codeActions';
 import { getCompletions, type WorkspaceCompletionIndex } from '../analyzer/completion';
-import { getFormattingEdits } from '../analyzer/formatting';
+import { getFormattingEditsSteps } from '../analyzer/formatting';
 import { getHover, type WorkspaceDeclarationIndex } from '../analyzer/hover';
-import { getDefinitions, getReferences, type WorkspaceNavigationIndex } from '../analyzer/navigation';
-import { getRenameEdits, prepareRename } from '../analyzer/rename';
+import { getDefinitions, getReferencesSteps, type WorkspaceNavigationIndex } from '../analyzer/navigation';
+import { getRenameEditsSteps, prepareRename } from '../analyzer/rename';
 import type { WorkspaceDeclarationLookup } from '../analyzer/resolution';
 import { getSignatureHelp } from '../analyzer/signatureHelp';
 import { collectSemanticTokens } from '../analyzer/semanticTokens';
-import { measureDurationMs } from '../util/logger';
 import { createInitializeResult } from './capabilities';
 import { toLspCodeActions } from './codeActions';
 import { toLspCompletionItemForClient } from './completion';
@@ -51,9 +53,12 @@ export interface AnalyzerLike extends
   WorkspaceCompletionIndex,
   WorkspaceNavigationIndex,
   WorkspaceCodeActionIndex {
+  updateOpenDocument?(input: AnalyzeDocumentInput): void;
+  analyzeRequestDocument?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
   analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument;
   analyzeDiagnosticDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   getIncludeResolutionStatus?(analysis: AnalyzedDocument): IncludeResolutionStatus;
+  analyzeForegroundDocumentAsync?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
   analyzeForegroundDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   indexOpenDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   semanticTokenWorkspaceIndex?(sourceUri: string): WorkspaceDeclarationLookup;
@@ -79,8 +84,8 @@ interface InactiveRangesParams {
 const INACTIVE_RANGES_NOTIFICATION = 'axel/inactiveRanges';
 
 interface FormattingHandlerConnection {
-  onDocumentFormatting?(handler: (params: DocumentFormattingParams) => unknown): void;
-  onDocumentRangeFormatting?(handler: (params: DocumentRangeFormattingParams) => unknown): void;
+  onDocumentFormatting?(handler: (params: DocumentFormattingParams, token: CancellationToken) => unknown): void;
+  onDocumentRangeFormatting?(handler: (params: DocumentRangeFormattingParams, token: CancellationToken) => unknown): void;
 }
 
 interface ConfigurationHandlerConnection {
@@ -88,21 +93,47 @@ interface ConfigurationHandlerConnection {
 }
 
 interface RefactorHandlerConnection {
-  onPrepareRename?(handler: (params: PrepareRenameParams) => unknown): void;
-  onRenameRequest?(handler: (params: RenameParams) => unknown): void;
-  onCodeAction?(handler: (params: CodeActionParams) => unknown): void;
+  onPrepareRename?(handler: (params: PrepareRenameParams, token: CancellationToken) => unknown): void;
+  onRenameRequest?(handler: (params: RenameParams, token: CancellationToken) => unknown): void;
+  onCodeAction?(handler: (params: CodeActionParams, token: CancellationToken) => unknown): void;
 }
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
+  let revision = 0;
+  const invalidateRequests = () => { revision++; };
+  const queue = createRequestHandler();
+  let validateRequest = () => undefined as void;
+  const request = <P, T>(work: (params: P, token: CancellationToken) => Promise<T>) => {
+    const queued = queue(async (entry: { params: P; revision: number }, token) => {
+      validateRequest = () => {
+        throwIfCancelled(token);
+        if (revision !== entry.revision) { throw new ResponseError(LSPErrorCodes.ContentModified, 'Workspace changed during request.'); }
+      };
+      try {
+        validateRequest();
+        const result = await work(entry.params, token);
+        await cancellationCheckpoint(token);
+        validateRequest();
+        return result;
+      } finally { validateRequest = () => undefined; }
+    });
+    return (params: P, token = CancellationToken.None) => queued({ params, revision }, token);
+  };
+  const runRequestSteps = <T>(steps: Generator<AnalysisStep, T, void>, token: CancellationToken) =>
+    runAnalysisStepsAsync(steps, token, validateRequest);
+  const analyzeRequest = (context: HandlerRegistrationContext, token: CancellationToken, diagnostic: boolean, input: AnalyzeDocumentInput) =>
+    analyzeRequestDocument(context, token, diagnostic, input, validateRequest);
   let locale: string | undefined;
   let hoverMarkdown = false;
   let completionMarkdown = false;
   let signatureMarkdown = false;
   let featureSettings: Record<string, unknown> = {};
   const updateFeatures = (settings: unknown): void => {
+    invalidateRequests();
     featureSettings = settings !== null && typeof settings === 'object' ? settings as Record<string, unknown> : {};
   };
-  context.connection.onInitialize((params) => {
+  context.connection.onInitialize((params, token) => {
+    throwIfCancelled(token);
     locale = params.locale;
     hoverMarkdown = params.capabilities?.textDocument?.hover?.contentFormat?.includes('markdown') ?? false;
     completionMarkdown = params.capabilities?.textDocument?.completion?.completionItem?.documentationFormat?.includes('markdown') ?? false;
@@ -112,27 +143,37 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     return createInitializeResult();
   });
   registerConfigurationChangeHandlers(context, updateFeatures);
-  const flushPendingChanges = registerDocumentLifecycleHandlers(context);
-  const measureRequest = <T>(operation: string, details: LogDetails, work: () => T): T =>
-    measureLspRequest(context, operation, details, () => {
-      // Dependencies may have changed in another open document.
-      flushPendingChanges();
-      return work();
-    });
-  registerWatchedFileHandlers(context);
+  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests);
+  const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>): Promise<T> => {
+    const startedAt = Date.now();
+    try {
+      throwIfCancelled(token);
+      await flushPendingChanges();
+      validateRequest();
+      await cancellationCheckpoint(token);
+      const result = await work();
+      validateRequest();
+      context.logger.info?.(`[timing] operation=${operation} ${Object.entries(details).filter(([, value]) => value !== undefined).map(([key, value]) => `${key}=${value}`).join(' ')} durationMs=${Date.now() - startedAt}`);
+      return result;
+    } catch (error: unknown) {
+      rethrowCancellation(error);
+      throw error;
+    }
+  };
+  registerWatchedFileHandlers(context, invalidateRequests);
   registerBackgroundRefreshHandlers(context);
   context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
 
-  context.connection.languages.diagnostics.on((params) => {
+  context.connection.languages.diagnostics.on(request(async (params, token) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.diagnostics', documentRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.diagnostics', documentRequestDetails(params, document), async () => {
       if (document === undefined) {
         return toDocumentDiagnosticReport([]);
       }
 
       try {
-        const analysis = analyzeForDiagnosticRequest(context, {
+        const analysis = await analyzeRequest(context, token, true, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -143,22 +184,24 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         }
         return toDocumentDiagnosticReport(analysis.diagnostics, locale);
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Diagnostics failed: ${getErrorMessage(error)}`);
         return toDocumentDiagnosticReport([]);
       }
     });
-  });
+  }));
 
-  context.connection.onHover((params: HoverParams) => {
+  context.connection.onHover(request(async (params: HoverParams, token) => {
     if (featureSettings.hover === 'disabled') { return null; }
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.hover', positionRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.hover', positionRequestDetails(params, document), async () => {
       if (document === undefined) {
         return null;
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -171,23 +214,25 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         });
         return hover === null ? null : toLspHover(hover, hoverMarkdown);
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Hover failed: ${getErrorMessage(error)}`);
         return null;
       }
     });
-  });
+  }));
 
-  context.connection.onCompletion((params: CompletionParams) => {
+  context.connection.onCompletion(request(async (params: CompletionParams, token) => {
     if (featureSettings.autocomplete === 'disabled') { return []; }
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.completion', positionRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.completion', positionRequestDetails(params, document), async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
         const text = document.getText();
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text
@@ -200,21 +245,23 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           workspaceIndex: context.analyzer
         }).map(item => toLspCompletionItemForClient(item, completionMarkdown));
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Completion failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
-  context.connection.onDefinition((params: DefinitionParams) => {
+  context.connection.onDefinition(request(async (params: DefinitionParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.definition', positionRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.definition', positionRequestDetails(params, document), async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -225,52 +272,56 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           workspaceIndex: context.analyzer
         }));
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Definition failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
-  context.connection.onReferences((params: ReferenceParams) => {
+  context.connection.onReferences(request(async (params: ReferenceParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.references', {
+    return measureRequest(token, 'lsp.references', {
       ...positionRequestDetails(params, document),
       includeDeclaration: params.context.includeDeclaration
-    }, () => {
+    }, async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
         });
-        return toLspReferenceLocations(getReferences({
+        return toLspReferenceLocations(await runRequestSteps(getReferencesSteps({
           analysis,
           position: params.position,
           includeDeclaration: params.context.includeDeclaration,
           workspaceIndex: context.analyzer
-        }));
+        }), token));
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`References failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
   const refactorConnection = context.connection as RefactorHandlerConnection;
 
-  refactorConnection.onPrepareRename?.((params: PrepareRenameParams) => {
+  refactorConnection.onPrepareRename?.(request(async (params: PrepareRenameParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.prepareRename', positionRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.prepareRename', positionRequestDetails(params, document), async () => {
       if (document === undefined) {
         return null;
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -281,51 +332,55 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           workspaceIndex: context.analyzer
         });
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Prepare rename failed: ${getErrorMessage(error)}`);
         return null;
       }
     });
-  });
+  }));
 
-  refactorConnection.onRenameRequest?.((params: RenameParams) => {
+  refactorConnection.onRenameRequest?.(request(async (params: RenameParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.rename', {
+    return measureRequest(token, 'lsp.rename', {
       ...positionRequestDetails(params, document),
       newNameLength: params.newName.length
-    }, () => {
+    }, async () => {
       if (document === undefined) {
         return null;
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
         });
-        const result = getRenameEdits({
+        const result = await runRequestSteps(getRenameEditsSteps({
           analysis,
           position: params.position,
           newName: params.newName,
           workspaceIndex: context.analyzer
-        });
+        }), token);
         return 'reason' in result ? null : toLspWorkspaceEdit(result);
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Rename failed: ${getErrorMessage(error)}`);
         return null;
       }
     });
-  });
+  }));
 
-  refactorConnection.onCodeAction?.((params: CodeActionParams) => {
+  refactorConnection.onCodeAction?.(request(async (params: CodeActionParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.codeAction', rangeRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.codeAction', rangeRequestDetails(params, document), async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -338,77 +393,83 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           workspaceIndex: context.analyzer
         }), locale);
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Code action failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
   const formattingConnection = context.connection as FormattingHandlerConnection;
 
-  formattingConnection.onDocumentFormatting?.((params: DocumentFormattingParams) => {
+  formattingConnection.onDocumentFormatting?.(request(async (params: DocumentFormattingParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.formatting', {
+    return measureRequest(token, 'lsp.formatting', {
       ...documentRequestDetails(params, document),
       insertSpaces: Boolean(params.options.insertSpaces),
       tabSize: params.options.tabSize
-    }, () => {
+    }, async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
-        return toLspTextEdits(getFormattingEdits({
+        return toLspTextEdits(await runRequestSteps(getFormattingEditsSteps({
           text: document.getText(),
           options: {
             insertSpaces: Boolean(params.options.insertSpaces),
             tabSize: params.options.tabSize
           }
-        }));
+        }), token));
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Formatting failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
-  formattingConnection.onDocumentRangeFormatting?.((params: DocumentRangeFormattingParams) => {
+  formattingConnection.onDocumentRangeFormatting?.(request(async (params: DocumentRangeFormattingParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.rangeFormatting', {
+    return measureRequest(token, 'lsp.rangeFormatting', {
       ...rangeRequestDetails(params, document),
       insertSpaces: Boolean(params.options.insertSpaces),
       tabSize: params.options.tabSize
-    }, () => {
+    }, async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
-        return toLspTextEdits(getFormattingEdits({
+        return toLspTextEdits(await runRequestSteps(getFormattingEditsSteps({
           text: document.getText(),
           options: {
             insertSpaces: Boolean(params.options.insertSpaces),
             tabSize: params.options.tabSize
           },
           range: params.range
-        }));
+        }), token));
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Range formatting failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
-  context.connection.onSignatureHelp((params: SignatureHelpParams) => {
+  context.connection.onSignatureHelp(request(async (params: SignatureHelpParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.signatureHelp', positionRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.signatureHelp', positionRequestDetails(params, document), async () => {
       if (document === undefined) {
         return null;
       }
 
       try {
         const text = document.getText();
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text
@@ -422,42 +483,46 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         });
         return signatureHelp === null ? null : toLspSignatureHelp(signatureHelp, signatureMarkdown);
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Signature help failed: ${getErrorMessage(error)}`);
         return null;
       }
     });
-  });
+  }));
 
-  context.connection.onDocumentSymbol((params: DocumentSymbolParams) => {
+  context.connection.onDocumentSymbol(request(async (params: DocumentSymbolParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.documentSymbol', documentRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.documentSymbol', documentRequestDetails(params, document), async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
         });
         return analysis.symbols.map(toLspDocumentSymbol);
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Document symbols failed: ${getErrorMessage(error)}`);
         return [];
       }
     });
-  });
+  }));
 
-  context.connection.languages.semanticTokens.on((params: SemanticTokensParams) => {
+  context.connection.languages.semanticTokens.on(request(async (params: SemanticTokensParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
-    return measureRequest('lsp.semanticTokens', documentRequestDetails(params, document), () => {
+    return measureRequest(token, 'lsp.semanticTokens', documentRequestDetails(params, document), async () => {
       if (document === undefined) {
         return toLspSemanticTokens([]);
       }
 
       try {
-        const analysis = analyzeForInteractiveRequest(context, {
+        const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -467,15 +532,18 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           context.analyzer.semanticTokenWorkspaceIndex?.(document.uri) ?? context.analyzer
         ));
       } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
         context.logger.error(`Semantic tokens failed: ${getErrorMessage(error)}`);
         return toLspSemanticTokens([]);
       }
     });
-  });
+  }));
 }
 
-function registerWatchedFileHandlers(context: HandlerRegistrationContext): void {
+function registerWatchedFileHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void): void {
   context.connection.onDidChangeWatchedFiles((event) => {
+    if (event.changes.length > 0) { invalidateRequests(); }
     for (const change of event.changes) {
       context.analyzer.invalidateUri?.(change.uri);
     }
@@ -501,30 +569,36 @@ function registerConfigurationChangeHandlers(context: HandlerRegistrationContext
   });
 }
 
-function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext): () => void {
+function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void): () => Promise<void> {
   const pending = new Map<string, TextDocument>();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const flush = (): void => {
+  const flush = async (): Promise<void> => {
     clearTimeout(timer);
     timer = undefined;
     const documents = [...pending.values()];
     pending.clear();
-    for (const document of documents) { indexDocument(context, document); }
+    // These updates belong to document notifications, not to the request that flushes them.
+    // Cancelling that request must not discard another document's pending update.
+    for (const document of documents) { await indexDocument(context, document); }
   };
 
   context.documents.onDidOpen((event) => {
+    invalidateRequests();
     pending.delete(event.document.uri);
     indexDocument(context, event.document);
   });
 
   context.documents.onDidChangeContent((event) => {
+    invalidateRequests();
+    context.analyzer.updateOpenDocument?.({ uri: event.document.uri, version: event.document.version, text: event.document.getText() });
     pending.set(event.document.uri, event.document);
     // A fixed window bounds notification delay even during continuous typing.
     // Requests flush immediately rather than waiting for this timer.
-    timer ??= setTimeout(flush, 20);
+    timer ??= setTimeout(() => { void flush(); }, 20);
   });
 
   context.documents.onDidClose((event) => {
+    invalidateRequests();
     pending.delete(event.document.uri);
     if (pending.size === 0) { clearTimeout(timer); timer = undefined; }
     context.analyzer.deleteDocument?.(event.document.uri);
@@ -532,7 +606,9 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext):
     context.connection.languages.diagnostics.refresh?.();
   });
 
-  context.connection.onShutdown?.(() => {
+  context.connection.onShutdown?.(token => {
+    throwIfCancelled(token);
+    invalidateRequests();
     clearTimeout(timer);
     timer = undefined;
     pending.clear();
@@ -540,18 +616,30 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext):
   return flush;
 }
 
-function indexDocument(context: HandlerRegistrationContext, document: TextDocument): void {
+async function indexDocument(context: HandlerRegistrationContext, document: TextDocument, token: CancellationToken = CancellationToken.None): Promise<void> {
   try {
-    analyzeForInteractiveRequest(context, {
-      uri: document.uri,
-      version: document.version,
-      text: document.getText()
-    });
+    const input = { uri: document.uri, version: document.version, text: document.getText() };
+    if (context.analyzer.analyzeForegroundDocumentAsync) {
+      const analysis = await context.analyzer.analyzeForegroundDocumentAsync(input, token);
+      throwIfCancelled(token);
+      if (context.documents.get(input.uri)?.version !== input.version) { return; }
+      sendInactiveRanges(context, analysis);
+    } else { analyzeForInteractiveRequest(context, input); }
     if (sendLoginDependencies(context)) {
       context.connection.languages.semanticTokens.refresh?.();
       context.connection.languages.diagnostics.refresh?.();
     }
   } catch (error: unknown) {
+    if (isCancellationError(error)) {
+      if (error instanceof ResponseError && error.code === LSPErrorCodes.ContentModified && token === CancellationToken.None) {
+        // A notification has no requester to retry it. Keep open documents indexed after overlapping changes.
+        setImmediate(() => {
+          const latest = context.documents.get(document.uri);
+          if (latest) { void indexDocument(context, latest); }
+        });
+      }
+      return;
+    }
     context.logger.error(`Workspace indexing failed: ${getErrorMessage(error)}`);
   }
 }
@@ -590,27 +678,23 @@ function analyzeForInteractiveRequest(
   return analysis;
 }
 
-function analyzeForDiagnosticRequest(
-  context: HandlerRegistrationContext,
-  input: AnalyzeDocumentInput
-): AnalyzedDocument {
-  const analysis = context.analyzer.analyzeDiagnosticDocument?.(input)
-    ?? context.analyzer.analyzeForegroundDocument?.(input)
-    ?? context.analyzer.analyzeDocument(input);
+async function analyzeRequestDocument(
+  context: HandlerRegistrationContext, token: CancellationToken, diagnostic: boolean, input: AnalyzeDocumentInput, validate: () => void
+): Promise<AnalyzedDocument> {
+  await cancellationCheckpoint(token);
+  validate();
+  const analysis = context.analyzer.analyzeRequestDocument
+    ? await context.analyzer.analyzeRequestDocument(input, token)
+    : diagnostic ? (context.analyzer.analyzeDiagnosticDocument?.(input)
+      ?? context.analyzer.analyzeForegroundDocument?.(input) ?? context.analyzer.analyzeDocument(input))
+      : (context.analyzer.analyzeForegroundDocument?.(input) ?? context.analyzer.analyzeDocument(input));
+  await cancellationCheckpoint(token);
+  validate();
   sendInactiveRanges(context, analysis);
   return analysis;
 }
 
 type LogDetails = Record<string, string | number | boolean | undefined>;
-
-function measureLspRequest<T>(
-  context: HandlerRegistrationContext,
-  operation: string,
-  details: LogDetails,
-  work: () => T
-): T {
-  return measureDurationMs(toAnalysisLogger(context.logger), operation, details, work);
-}
 
 function documentRequestDetails(
   params: { textDocument: { uri: string } },
@@ -650,12 +734,5 @@ function rangeRequestDetails(
     startCharacter: params.range.start.character,
     endLine: params.range.end.line,
     endCharacter: params.range.end.character
-  };
-}
-
-function toAnalysisLogger(logger: ServerLogger): { info(message: string): void; error(message: string): void } {
-  return {
-    info: logger.info?.bind(logger) ?? (() => undefined),
-    error: logger.error.bind(logger)
   };
 }

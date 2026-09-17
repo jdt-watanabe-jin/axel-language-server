@@ -81,7 +81,7 @@ suite('registerHandlers', () => {
     ]);
   });
 
-  test('sends inactive ranges after hover reanalyzes a document', () => {
+  test('sends inactive ranges after hover reanalyzes a document', async () => {
     let hoverHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const inactiveRanges = [{
       start: { line: 3, character: 0 },
@@ -138,7 +138,7 @@ suite('registerHandlers', () => {
       logger: { error: () => undefined }
     });
 
-    hoverHandler?.({
+    await hoverHandler?.({
       textDocument: { uri: 'file:///main.axl' },
       position: { line: 1, character: 4 }
     });
@@ -152,7 +152,7 @@ suite('registerHandlers', () => {
     }]);
   });
 
-  test('uses foreground analysis for document diagnostic requests', () => {
+  test('uses foreground analysis for document diagnostic requests', async () => {
     let diagnosticsHandler: ((params: { textDocument: { uri: string } }) => unknown) | undefined;
     let fullAnalysisCalls = 0;
     let foregroundAnalysisCalls = 0;
@@ -215,7 +215,7 @@ suite('registerHandlers', () => {
       logger: { error: () => undefined }
     });
 
-    const result = diagnosticsHandler?.({
+    const result = await diagnosticsHandler?.({
       textDocument: { uri: 'file:///main.axl' }
     });
 
@@ -232,7 +232,7 @@ suite('registerHandlers', () => {
     assert.strictEqual(fullAnalysisCalls, 0);
   });
 
-  test('uses cached workspace lookup for semantic token resolution', () => {
+  test('uses cached workspace lookup for semantic token resolution', async () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const connection = {
       onInitialize: () => undefined,
@@ -301,7 +301,7 @@ suite('registerHandlers', () => {
       logger: { error: () => undefined }
     });
 
-    const result = semanticTokensHandler?.({
+    const result = await semanticTokensHandler?.({
       textDocument: { uri: 'file:///main.axl' }
     });
 
@@ -312,7 +312,7 @@ suite('registerHandlers', () => {
     assert.strictEqual(result.data[classTokenIndex - 1], 'Widget'.length);
   });
 
-  test('refreshes semantic tokens and diagnostics after background indexing completes', () => {
+  test('refreshes semantic tokens and diagnostics after background indexing completes', async () => {
     let backgroundComplete: (() => void) | undefined;
     let semanticTokensRefreshCount = 0;
     let diagnosticsRefreshCount = 0;

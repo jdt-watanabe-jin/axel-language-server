@@ -3,7 +3,7 @@ import { registerHandlers } from '../../../lsp/registerHandlers';
 import { createTestDocument, emptyAnalysis } from '../../support/handlerFixtures';
 
 suite('registerHandlers', () => {
-test('returns formatting edits for document and range formatting requests', () => {
+test('returns formatting edits for document and range formatting requests', async () => {
     let documentFormattingHandler: ((params: {
       textDocument: { uri: string };
       options: { insertSpaces: boolean; tabSize: number };
@@ -65,14 +65,14 @@ test('returns formatting edits for document and range formatting requests', () =
       logger: { error: () => undefined }
     });
 
-    assert.deepStrictEqual(documentFormattingHandler?.({
+    assert.deepStrictEqual(await documentFormattingHandler?.({
       textDocument: { uri: 'file:///main.axl' },
       options: { insertSpaces: true, tabSize: 2 }
     }), [{
       range: { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } },
       newText: '  '
     }]);
-    assert.deepStrictEqual(rangeFormattingHandler?.({
+    assert.deepStrictEqual(await rangeFormattingHandler?.({
       textDocument: { uri: 'file:///main.axl' },
       options: { insertSpaces: true, tabSize: 2 },
       range: { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } }
