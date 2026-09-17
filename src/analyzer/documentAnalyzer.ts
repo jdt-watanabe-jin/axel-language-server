@@ -128,6 +128,11 @@ export class DocumentAnalyzer {
         includes:collectIncludes(root, originalRoot).filter(i=>!startsInInactiveRange(i.range,inactiveRanges)),
         scriptExecutions:collectScriptExecutions(root).filter(e=>!startsInInactiveRange(e.selectionRange,inactiveRanges)),
         macroDefinitions:activeMacroDefinitions, macroInvocations:[],
+        macroUndefinitions: root.descendantsOfType('preproc_call').flatMap(node => {
+          const name = node.childForFieldName('argument')?.text.trim();
+          return name && node.childForFieldName('directive')?.text.replace(/\s/g, '') === '#undef'
+            ? [{ name, range: nodeToAnalysisRange(node) }] : [];
+        }),
         guiClasses:filterGuiClassesForInactiveRanges(guiClasses,[...inactiveRanges,...uncertainRanges]),
         guiMethods:[],inactiveRanges,uncertainRanges,uncertainNames,
         uncertainMacroDefinitions:macroDefinitions.filter(m=>startsInInactiveRange(m.selectionRange,uncertainRanges)

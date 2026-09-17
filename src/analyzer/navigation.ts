@@ -158,6 +158,7 @@ function* referencesToDeclaration(
   let visited = 0;
   for (const reference of analysis.navigationReferences ?? analysis.references) {
     if (++visited % 64 === 0) { yield; }
+    if (reference.name !== target.name) { continue; }
     const input = {analysis, position: reference.range.start, workspaceIndex: navigationInput.workspaceIndex};
     const calls = callTargetDeclarations(input);
     const matches = calls !== undefined ? calls.some(candidate => candidate.id === target.id)

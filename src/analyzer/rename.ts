@@ -22,6 +22,7 @@ export interface RenameRejection {
 }
 
 export function prepareRename(input: NavigationInput): AnalysisRange | null {
+  input = normalizeRenamePosition(input);
   const target = findSafeRenameTarget(input);
   return target === undefined ? null : rangeAtPosition(input, target);
 }
@@ -32,6 +33,7 @@ export function getRenameEdits(input: RenameInput): AnalysisWorkspaceEdit | Rena
 
 export function* getRenameEditsSteps(input: RenameInput): Generator<AnalysisStep, AnalysisWorkspaceEdit | RenameRejection, void> {
   yield;
+  input = { ...input, position: normalizeRenamePosition(input).position };
   const target = findSafeRenameTarget(input);
   if (target === undefined) {
     return { reason: 'This symbol cannot be renamed.' };
@@ -63,6 +65,26 @@ export function* getRenameEditsSteps(input: RenameInput): Generator<AnalysisStep
   };
 }
 
+// An editor caret may sit immediately after a name. Normalize only exact
+// symbol ends, keeping navigation's half-open ranges and rename safety checks.
+function normalizeRenamePosition(input: NavigationInput): NavigationInput {
+  const ranges = [
+    ...input.analysis.declarations.map(declaration => declaration.selectionRange),
+    ...(input.analysis.navigationReferences ?? input.analysis.references).map(reference => reference.range),
+    ...(input.analysis.expandedMacroReferences ?? []).map(reference => reference.range),
+    ...(input.analysis.systemMacroReferences ?? []).map(reference => reference.range)
+  ];
+  if (ranges.some(range => contains(range, input.position))) { return input; }
+  const range = ranges.find(candidate => (
+    comparePositions(candidate.end, input.position) === 0
+    && candidate.start.line === candidate.end.line
+    && candidate.start.character < candidate.end.character
+  ));
+  return range === undefined ? input : {
+    ...input,
+    position: { line: range.end.line, character: range.end.character - 1 }
+  };
+}
 function findSafeRenameTarget(input: NavigationInput): AnalysisDeclaration | undefined {
   if (systemMacroAt(input.analysis, input.position)) { return undefined; }
   const target = findNavigationTargetDeclaration(input);

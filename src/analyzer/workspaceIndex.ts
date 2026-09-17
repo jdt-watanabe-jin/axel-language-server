@@ -105,7 +105,7 @@ export class WorkspaceIndex {
   private readonly backgroundWaiters: (() => void)[] = [];
   private readonly backgroundCompleteListeners: (() => void)[] = [];
 
-  public constructor(options: WorkspaceIndexOptions = {}) {
+  public constructor(options: WorkspaceIndexOptions = {}, forcedIncludesSource?: WorkspaceIndex) {
     this.sxmHome = options.sxmHome ?? '';
     this.openDocumentInput = options.openDocumentInput;
     this.inheritIncludeContext = options.inheritIncludeContext ?? false;
@@ -121,8 +121,27 @@ export class WorkspaceIndex {
     this.targetPlatform = normalizeTargetPlatform(options.targetPlatform);
     this.logSystemMacroConfiguration(options);
     this.maxNumberOfProblems = options.maxNumberOfProblems;
+    if (forcedIncludesSource?.forcedIncludesIndexed) { this.reuseForcedIncludes(forcedIncludesSource); }
   }
 
+  /** Clone index containers; only completed immutable analysis generations are shared. */
+  private reuseForcedIncludes(source: WorkspaceIndex): void {
+    const pending = [...source.knownForcedIncludeUris()];
+    const visited = new Set<string>();
+    while (pending.length) {
+      const uri = pending.pop()!;
+      if (visited.has(uri)) { continue; }
+      visited.add(uri);
+      const document = source.documents.get(uri);
+      if (!document) { continue; }
+      this.documents.set(uri, { ...document });
+      const includes = new Set(source.includeGraph.get(uri));
+      this.replaceIncludeEdges(uri, includes, new Set(source.definiteIncludeGraph.get(uri)));
+      pending.push(...includes);
+    }
+    this.forcedIncludeFileCache = [...source.getForcedIncludeFiles()];
+    this.forcedIncludesIndexed = true;
+  }
   public configure(options: unknown): void {
     this.requestRevision++;
     this.logSystemMacroConfiguration(options);
@@ -463,13 +482,15 @@ export class WorkspaceIndex {
   }
 
   private *loginScopeSteps(sourceUri: string): Generator<AnalysisStep, LoginScopeSnapshot | undefined, void> {
+    if (this.indexingForcedIncludes) { return undefined; }
     const entry = resolveLoginPath(this.sxmHome, this.tool);
     if (!entry || fileIdentity(pathToFileURL(entry).toString()) === fileIdentity(sourceUri)) { return undefined; }
     if (this.loginSnapshot) { return this.loginSnapshot; }
+    if (!this.forcedIncludesIndexed) { yield* this.forcedIncludeSteps(); }
     this.loginSnapshot = yield* buildLoginScopeSteps(entry, { includeRoots: this.includeRoots,
       forcedIncludeFiles: this.forcedIncludeFiles, forcedIncludeRoots: this.forcedIncludeRoots,
       tool: this.tool, targetPlatform: this.targetPlatform, internalFeatures: this.internalFeatures,
-      defines: this.defines, logger: this.logger, openDocumentInput: uri => this.openInputs.get(fileIdentity(uri)) });
+      defines: this.defines, logger: this.logger, openDocumentInput: uri => this.openInputs.get(fileIdentity(uri)) }, this);
     return this.loginSnapshot;
   }
 
@@ -753,7 +774,7 @@ export class WorkspaceIndex {
 
     const text = yield* readAnalysisFile(normalizedPath);
     const input = { uri, version: 0, text, ...this.includeContexts.get(uri) };
-    const initialAnalysis = yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
+    const initialAnalysis = yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
     this.documents.set(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
@@ -861,7 +882,11 @@ export class WorkspaceIndex {
 
   private *forcedIncludeSteps(pendingInputs = new Map<string, AnalyzeDocumentInput>()): Generator<AnalysisStep, void, void> {
     for (const filePath of this.getForcedIncludeFiles()) {
-      yield* this.indexDiskDocumentStepsInternal(filePath, new Set(), true, pendingInputs);
+      yield* scopedAnalysisSteps(this.indexDiskDocumentStepsInternal(filePath, new Set(), true, pendingInputs), work => {
+        const previous = this.indexingForcedIncludes;
+        this.indexingForcedIncludes = true;
+        try { return work(); } finally { this.indexingForcedIncludes = previous; }
+      });
     }
     this.forcedIncludesIndexed = true;
   }
@@ -1220,7 +1245,19 @@ export class WorkspaceIndex {
     }
 
     this.appendDocumentMacroDefinitions(sourceUri, undefined, new Set(), definitions, recordUndef, resolutions);
-    return definitions;
+    // Nested includes expose their final macro state at one source position.
+    // Keep the last event (including #undef) there, but preserve distinct positions.
+    const seen = new Set<string>();
+    const compact: AnalysisMacroDefinition[] = [];
+    for (let i = definitions.length - 1; i >= 0; i--) {
+      const macro = definitions[i];
+      const start = macro.visibilityStart!;
+      const key = `${macro.name}:${start.line}:${start.character}`;
+      if (seen.has(key)) { continue; }
+      seen.add(key);
+      compact.push(macro);
+    }
+    return compact.reverse();
   }
 
   private appendDocumentMacroDefinitions(
@@ -1243,15 +1280,14 @@ export class WorkspaceIndex {
 
     const visited = new Set([...visitedUris, uri]);
     const events = [
-      ...(recordUndef && analysis.typeSnapshot ? descendants(analysis.typeSnapshot.root,'preproc_call') : [])
-        .filter(node => field(node,'directive')?.text.replace(/\s/g,'') === '#undef'
-          && ![...analysis.inactiveRanges ?? [], ...analysis.uncertainRanges ?? []]
-            .some(range => containsSourcePosition(range,node.range.start)))
-        .map(node => ({range:node.range, run:() => {
-          const name=field(node,'argument')?.text.trim();
-          if (!name) { return; }
-          const removed: AnalysisMacroDefinition & {_typeUndef:true} = {name,uri,range:node.range,
-            selectionRange:node.range,visibilityStart:visibilityStart ?? node.range.end,
+      ...(recordUndef ? analysis.macroUndefinitions ?? (analysis.typeSnapshot
+        ? descendants(analysis.typeSnapshot.root, 'preproc_call').filter(node => field(node, 'directive')?.text.replace(/\s/g, '') === '#undef')
+          .map(node => ({ name: field(node, 'argument')?.text.trim() ?? '', range: node.range })) : []) : [])
+        .filter(event => event.name && ![...analysis.inactiveRanges ?? [], ...analysis.uncertainRanges ?? []]
+          .some(range => containsSourcePosition(range, event.range.start)))
+        .map(event => ({ range: event.range, run: () => {
+          const removed: AnalysisMacroDefinition & {_typeUndef:true} = {name:event.name,uri,range:event.range,
+            selectionRange:event.range,visibilityStart:visibilityStart ?? event.range.end,
             detail:'',replacementText:'',_typeUndef:true};
           definitions.push(removed);
         }})),

@@ -3,7 +3,7 @@ import * as path from 'path';
 import { CancellationToken, createProtocolConnection, StreamMessageReader, StreamMessageWriter } from 'vscode-languageserver/node';
 
 // Real stdio transport and production entry point; no analyzer or handler doubles.
-export function startLspServer() {
+export function startLspServer(requestTimeoutMs = 5_000) {
   const child = spawn(process.execPath, [path.resolve(__dirname, '../../server.js'), '--stdio'], {
     windowsHide: true,
     env: { ...process.env, APP_AXELPATH: '', SXM_FORCED_INCLUDE_FILES: '' },
@@ -25,7 +25,7 @@ export function startLspServer() {
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([work, new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(operation + ' timed out. ' + stderr)), 5_000);
+        timer = setTimeout(() => reject(new Error(operation + ' timed out. ' + stderr)), requestTimeoutMs);
       })]);
     } finally {
       clearTimeout(timer);

@@ -454,6 +454,7 @@ function addDeclaratorNameKeys(node: Parser.SyntaxNode, exclusionKeys: Set<strin
 }
 
 function declaratorNodes(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
+  if (node.childForFieldName('declarator') === null) { return []; }
   const nodes: Parser.SyntaxNode[] = [];
 
   for (let index = 0; index < node.childCount; index += 1) {

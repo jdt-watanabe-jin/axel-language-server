@@ -2,8 +2,20 @@ import * as assert from 'assert';
 import type * as Parser from 'tree-sitter';
 import { createAxelParser } from '../../../analyzer/axelParser';
 import { cachedSyntaxNode } from '../../../analyzer/cachedSyntaxNode';
+import { buildSymbolIndex } from '../../../analyzer/symbolIndex';
 
 suite('Parse-local syntax reads', () => {
+  test('does not scan every child of a translation unit for nonexistent declarators', () => {
+    const root = createAxelParser().parse('int first; int second; void f(){ first = second; }').rootNode;
+    const child = root.child.bind(root);
+    let childReads = 0;
+    Object.defineProperty(root, 'child', { value: (index: number) => { childReads++; return child(index); }, configurable: true });
+    const symbols = buildSymbolIndex(cachedSyntaxNode(root), 'file:///main.axl');
+    assert.deepStrictEqual(symbols.declarations.map(d => d.name), ['first', 'second', 'f']);
+    assert.ok(symbols.references.some(r => r.name === 'first'));
+    assert.strictEqual(childReads, 0, 'Translation units have no declarator field; indexed child lookup is unnecessary');
+  });
+
   test('does not enumerate native child arrays when their count is zero', () => {
     const root = createAxelParser().parse('int value; string empty = "";').rootNode;
     const leaf = root.descendantsOfType('identifier')[0];

@@ -140,3 +140,43 @@ function edit(line: number, start: number, end: number, newText: string) {
 }
 
 const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();
+
+suite('rename cursor boundaries', () => {
+  for (const markedText of [
+    'main() { GCFileDialog fdlg|; fdlg.DoModal(); }',
+    'main() { GCFileDialog fdlg; fdlg|.DoModal(); }'
+  ]) {
+    test('accepts the identifier end: ' + markedText, () => {
+      const { analysis, position } = analyzeMarked(markedText);
+      const workspaceIndex = createWorkspaceIndex();
+      const input = { analysis, position, workspaceIndex };
+      assert.deepStrictEqual(prepareRename(input), {
+        start: { line: 0, character: position.character - 4 },
+        end: position
+      });
+      assert.deepStrictEqual(getRenameEdits({ ...input, newName: 'fileDialog' }), {
+        changes: { 'file:///main.axl': [edit(0, 22, 26, 'fileDialog'), edit(0, 28, 32, 'fileDialog')] }
+      });
+    });
+  }
+
+  test('does not reach backwards across whitespace or punctuation', () => {
+    for (const markedText of [
+      'main() { int value; value | = 1; }',
+      'main() { GCFileDialog fdlg; fdlg.|DoModal(); }',
+      'main() { int value;\n|}'
+    ]) {
+      const { analysis, position } = analyzeMarked(markedText);
+      const input = { analysis, position, workspaceIndex: createWorkspaceIndex() };
+      assert.strictEqual(prepareRename(input), null);
+      assert.ok('reason' in getRenameEdits({ ...input, newName: 'renamed' }));
+    }
+  });
+
+  test('still rejects macros at their end', () => {
+    const { analysis, position } = analyzeMarked('#define VALUE 1\nmain() { int value = VALUE|; }');
+    const input = { analysis, position, workspaceIndex: createWorkspaceIndex() };
+    assert.strictEqual(prepareRename(input), null);
+    assert.ok('reason' in getRenameEdits({ ...input, newName: 'renamed' }));
+  });
+});

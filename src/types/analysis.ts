@@ -309,6 +309,8 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  /** Undef events retained by the lightweight dependency pass. */
+  macroUndefinitions?: { name: string; range: AnalysisRange }[];
   /** Keep virtual positions until semantic checks finish; only published ranges use source positions. */
   expandedSource?: {
     analysis: AnalyzedDocument;

@@ -10,6 +10,34 @@ import { getSignatureHelp } from '../../../analyzer/signatureHelp';
 
 suite('Login scope', () => {
   const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();
+  test('reuses completed forced-header analysis in the isolated startup index', () => {
+    const root = createTempDir();
+    fs.mkdirSync(path.join(root, 'bin'));
+    const forced = path.join(root, 'forced.h');
+    fs.writeFileSync(forced, '#define TYPE int\nclass Forced { int field; };');
+    fs.writeFileSync(path.join(root, 'bin/_login.axl'), '#define TYPE string\nForced shared;');
+    let parses = 0;
+    const index = createWorkspaceIndex({ sxmHome: root, forcedIncludeFiles: [forced], logger: {
+      info(message) { if (message.includes('operation=document.analyze') && message.includes('/forced.h ')) { parses++; } },
+      error(message) { assert.fail(message); }
+    } });
+    const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
+    const result = index.indexOpenDocument({ uri, version: 1, text: 'void main(){ shared.field = 1; TYPE local = 1; }' });
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.strictEqual(index.findVisibleMacroDefinitions(uri, 'TYPE').at(-1)?.replacementText, 'int');
+    assert.ok(parses <= 2, `Forced header was analyzed ${parses} times instead of once per phase`);
+  });
+  test('preserves undef before a nested startup include', () => {
+    const root = createTempDir();
+    fs.mkdirSync(path.join(root, 'bin'));
+    fs.writeFileSync(path.join(root, 'bin/_login.axl'), '#define VALUE 1\n#undef VALUE\n#include "state.h"');
+    fs.writeFileSync(path.join(root, 'bin/state.h'), '#ifdef VALUE\nint wrong;\n#else\nint correct;\n#endif');
+    const index = createWorkspaceIndex({ sxmHome: root });
+    const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
+    index.indexOpenDocument({ uri, version: 1, text: 'void main(){ correct = 1; }' });
+    assert.strictEqual(index.findVisibleDeclarations(uri, 'correct').length, 1);
+    assert.deepStrictEqual(index.findVisibleDeclarations(uri, 'wrong'), []);
+  });
   function fixture(tool = 'axel') {
     const root = createTempDir();
     const bin = path.join(root, 'bin');

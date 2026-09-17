@@ -603,3 +603,15 @@ suite('navigation', () => {
 });
 
 const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();
+
+suite('reference search candidate filtering', () => {
+  test('does not resolve unrelated calls when finding local references', () => {
+    const { analysis, position } = analyzeMarked('void main() { int value; |value = 1; unrelated(); }');
+    let resolutions = 0;
+    const references = getReferences({ analysis, position, includeDeclaration: true, workspaceIndex: {
+      resolveCallDeclarations: () => { resolutions++; return undefined; }
+    } });
+    assert.strictEqual(references.length, 2);
+    assert.strictEqual(resolutions, 0, 'Unrelated calls must not build a type context during reference search');
+  });
+});

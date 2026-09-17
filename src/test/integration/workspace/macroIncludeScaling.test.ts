@@ -8,6 +8,41 @@ import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('Macro include lookup scaling', () => {
   const fixtures=useWorkspaceFixtures();
+  test('compacts nested macro imports at the same visibility point and preserves the last definition', () => {
+    const root = fixtures.createTempDir();
+    fs.writeFileSync(path.join(root, 'one.h'), '#define VALUE 1');
+    fs.writeFileSync(path.join(root, 'two.h'), '#define VALUE 2');
+    fs.writeFileSync(path.join(root, 'wrapper.h'), '#include "one.h"\n#include "two.h"\n#include "one.h"');
+    const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
+    const index = fixtures.createWorkspaceIndex();
+    index.indexOpenDocument({ uri, version: 1, text: '#include "wrapper.h"\nint value = VALUE;' });
+    const macros = index.findVisibleMacroDefinitions(uri, 'VALUE');
+    assert.strictEqual(macros.length, 1, 'Nested definitions become visible at the same include endpoint');
+    assert.strictEqual(macros[0].replacementText, '1');
+    assert.deepStrictEqual(macros[0].visibilityStart, { line: 0, character: 20 });
+  });
+
+  test('builds full header symbols only after its include context is available', () => {
+    const root = fixtures.createTempDir();
+    const header = path.join(root, 'api.h');
+    fs.writeFileSync(path.join(root, 'config.h'), '#define FIELD int');
+    fs.writeFileSync(header, '#include "config.h"\nclass Api { FIELD value; };');
+    const headerUri = pathToFileURL(header).toString();
+    let fullPasses = 0;
+    class CountingAnalyzer extends DocumentAnalyzer {
+      public override *analyzeDocumentSteps(...args: Parameters<DocumentAnalyzer['analyzeDocumentSteps']>): ReturnType<DocumentAnalyzer['analyzeDocumentSteps']> {
+        if (args[0].uri === headerUri && args[1] !== false && args[2] !== true) { fullPasses++; }
+        return yield* super.analyzeDocumentSteps(...args);
+      }
+    }
+    const index = fixtures.createWorkspaceIndex({ analyzer: new CountingAnalyzer() });
+    const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
+    const result = index.indexOpenDocument({ uri, version: 1, text: '#include "api.h"\nvoid main(){ Api api; api.value = 1; }' });
+    assert.deepStrictEqual(result.diagnostics, []);
+    assert.ok(index.findDeclarations('value').some(d => d.typeName === 'int'));
+    assert.strictEqual(fullPasses, 1, 'Do not build full symbols before resolving a header context');
+  });
+
   test('releases syntax views for background includes as well as the open document', async () => {
     const root = fixtures.createTempDir();
     const header = path.join(root, 'background.h');

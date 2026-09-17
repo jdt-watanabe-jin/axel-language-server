@@ -23,8 +23,8 @@ export function buildLoginScope(entryPath: string, options: WorkspaceIndexOption
   return runAnalysisSteps(buildLoginScopeSteps(entryPath, options));
 }
 
-export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndexOptions): Generator<AnalysisStep, LoginScopeSnapshot, void> {
-  const index = new WorkspaceIndex({ ...options, sxmHome: '', inheritIncludeContext: true, dependencyAnalysisOnly: true });
+export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndexOptions, forcedIncludesSource?: WorkspaceIndex): Generator<AnalysisStep, LoginScopeSnapshot, void> {
+  const index = new WorkspaceIndex({ ...options, sxmHome: '', inheritIncludeContext: true, dependencyAnalysisOnly: true }, forcedIncludesSource);
   const entryUri = pathToFileURL(entryPath).toString();
   const snapshot: LoginScopeSnapshot = { entryUri, declarations: [], documents: [], dependencyUris: [entryUri] };
   try {
