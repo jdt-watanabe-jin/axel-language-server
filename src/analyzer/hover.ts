@@ -5,6 +5,7 @@ import type { DocumentationBindings } from './documentation/model';
 import { withDeclarationOrigin } from './declarationOrigin';
 import { describeSystemMacro, resolveSystemMacro, systemMacroAt } from './systemMacros';
 import { translate } from '../i18n/messages';
+import { createMacroLookup } from './diagnostics';
 import type {
   AnalysisDeclaration,
   AnalyzedDocument,
@@ -61,8 +62,8 @@ export interface WorkspaceDeclarationIndex {
 export function getHover(input: HoverInput): AnalysisHover | null {
   const writtenMacro = input.analysis.expandedMacroReferences?.find(ref => contains(ref.range, input.position));
   if (writtenMacro) {
-    const invocation = findMacroInvocationAtPosition(input);
-    if (invocation) { const hover = hoverForMacroInvocation(input, invocation); if (hover) { return hover; } }
+    const hover = hoverForMacroReference(input, writtenMacro);
+    if (hover) { return hover; }
   }
   const systemReference = systemMacroAt(input.analysis, input.position);
   if (systemReference !== undefined) {
@@ -104,10 +105,7 @@ export function getHover(input: HoverInput): AnalysisHover | null {
   const referenceDeclaration = findDeclarationForReference(input);
   if (referenceDeclaration !== undefined) {
     if (referenceDeclaration.kind === 'macro') {
-      const invocation = findMacroInvocationAtPosition(input);
-      if (invocation !== undefined) {
-        return hoverForMacroInvocation(input, invocation) ?? null;
-      }
+      return hoverForMacroReference(input, reference) ?? null;
     }
 
     return withDeclarationOrigin(
@@ -145,26 +143,43 @@ function findMacroInvocationAtPosition(input: HoverInput): AnalysisMacroInvocati
     ))[0];
 }
 
+function hoverForMacroReference(input: HoverInput, reference: Pick<AnalysisReference, 'name' | 'range'>): AnalysisHover | undefined {
+  const invocation = findMacroInvocationAtPosition(input);
+  return hoverForMacroInvocation(input, invocation?.name === reference.name
+    && contains(invocation.selectionRange, input.position) ? invocation
+      : { name: reference.name, range: reference.range, rawText: reference.name });
+}
+
 function hoverForMacroInvocation(
   input: HoverInput,
-  invocation: AnalysisMacroInvocation
+  invocation: Pick<AnalysisMacroInvocation, 'name' | 'range' | 'rawText'>
 ): AnalysisHover | undefined {
-  const macro = input.workspaceIndex.findBestVisibleMacroDefinition?.(
-    input.analysis.uri,
-    invocation.name,
-    invocation.range.start
-  );
+  const localLookup = createMacroLookup(input.analysis.macroDefinitions, input.analysis.uri, invocation.range.start);
+  const cache = new Map<string, AnalysisMacroDefinition | undefined>();
+  const lookup: MacroLookup = {
+    findMacro: (name) => {
+      if (!cache.has(name)) {
+        cache.set(name, input.workspaceIndex.findBestVisibleMacroDefinition?.(input.analysis.uri, name, invocation.range.start)
+          ?? localLookup.findMacro(name));
+      }
+      return cache.get(name);
+    }
+  };
+  const macro = lookup.findMacro(invocation.name);
   if (macro === undefined) {
     return undefined;
   }
 
-  const lookup: MacroLookup = {
-    findMacro: (name) => input.workspaceIndex.findBestVisibleMacroDefinition?.(
-      input.analysis.uri,
-      name,
-      invocation.range.start
-    )
-  };
+  const macroDeclaration = [...input.analysis.declarations,
+    ...(input.workspaceIndex.findVisibleDeclarations?.(input.analysis.uri, macro.name) ?? [])]
+    .find(d => d.kind === 'macro' && d.uri === macro.uri && comparePositions(d.selectionRange.start, macro.selectionRange.start) === 0);
+  const macroDocumentation = macroDeclaration
+    ? renderedDocumentationFor(input.analysis, input.workspaceIndex, macroDeclaration, input.locale) : undefined;
+  if (macro.parameters !== undefined && invocation.rawText === invocation.name) {
+    return withDeclarationOrigin(hoverForDeclarationText(macro.detail, macroDocumentation ?? macro.documentation),
+      input.analysis.uri, macro.uri, input.locale);
+  }
+
   const expansion = expandMacroInvocationText(invocation.rawText, lookup, {
     systemContext: { uri: input.analysis.uri, position: invocation.range.start, tool: input.analysis.tool, targetPlatform: input.analysis.targetPlatform, internalFeatures: input.analysis.internalFeatures }
   });
@@ -175,11 +190,6 @@ function hoverForMacroInvocation(
   const expandedText = formatMacroExpansionForHover(expansion.expandedText);
   const expansionNote = (expansion.truncated ? '\n' + translate(input.locale, 'Expansion truncated at depth 8.') : '')
     + ((expansion.runtimeMacros?.length ?? 0) > 0 ? '\n' + translate(input.locale, 'Runtime values remain symbolic: {0}.', expansion.runtimeMacros!.join(', ')) : '');
-  const macroDeclaration = [...input.analysis.declarations,
-    ...(input.workspaceIndex.findVisibleDeclarations?.(input.analysis.uri, macro.name) ?? [])]
-    .find(d => d.kind === 'macro' && d.uri === macro.uri && comparePositions(d.selectionRange.start, macro.selectionRange.start) === 0);
-  const macroDocumentation = macroDeclaration
-    ? renderedDocumentationFor(input.analysis, input.workspaceIndex, macroDeclaration, input.locale) : undefined;
   const plainText = [
     macro.detail,
     ...((macroDocumentation?.plainText ?? macro.documentation) === undefined ? [] : [macroDocumentation?.plainText ?? macro.documentation]),

@@ -161,8 +161,8 @@ suite('getHover', () => {
     });
 
     assert.deepStrictEqual(hover, {
-      markdown: '```axel\n#define Lctgen_DUMP_DEBUG 1\n```\n\ndebug log flag',
-      plainText: '#define Lctgen_DUMP_DEBUG 1\ndebug log flag'
+      markdown: '```axel\n#define Lctgen_DUMP_DEBUG 1\n```\n\ndebug log flag\n\nExpansion:\n\n```axel\n1\n```',
+      plainText: '#define Lctgen_DUMP_DEBUG 1\ndebug log flag\nExpansion:\n1'
     });
   });
 

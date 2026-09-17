@@ -63,7 +63,10 @@ export function expandMacroInvocationText(
     maxDepth: options.maxDepth ?? 8, depth: 0, stack: [],
     systemContext: options.systemContext, runtimeMacros: new Set()
   };
-  const invocation = parseMacroInvocationText(text);
+  const name = text.trim();
+  const objectMacro = /^[A-Za-z_$][0-9A-Za-z_$]*$/.test(name) ? visibleMacros.findMacro(name) : undefined;
+  const invocation = parseMacroInvocationText(text)
+    ?? (objectMacro && objectMacro.parameters === undefined ? { name, arguments: [] } : undefined);
   if (invocation === undefined) {
     return {
       expandedText: text,
