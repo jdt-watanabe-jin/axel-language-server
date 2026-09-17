@@ -7,7 +7,7 @@ import type {
   AnalysisSignatureHelp
 } from '../types/analysis';
 import { createAxelParser } from './axelParser';
-import { findNavigationTargetDeclaration, type WorkspaceNavigationIndex } from './navigation';
+import { callTargetDeclarations, findNavigationTargetDeclaration, type WorkspaceNavigationIndex } from './navigation';
 import { findSmallestNamedNodeAtPosition, nodeToAnalysisRange } from './syntaxTree';
 import { comparePositions, contains, positionBeforeOrEqual } from './resolution';
 
@@ -30,30 +30,31 @@ export function getSignatureHelp(input: SignatureHelpInput): AnalysisSignatureHe
     return null;
   }
 
-  const declaration = findNavigationTargetDeclaration({
-    analysis: input.analysis,
-    position: nodeToAnalysisRange(target).start,
-    workspaceIndex: input.workspaceIndex
-  });
-  if (declaration?.signature === undefined) {
-    return null;
-  }
+  const navigationInput = {analysis: input.analysis, position: nodeToAnalysisRange(target).start, workspaceIndex: input.workspaceIndex};
+  const calls = callTargetDeclarations(navigationInput, true);
+  const fallback = calls === undefined ? findNavigationTargetDeclaration(navigationInput) : undefined;
+  const declarations = calls ?? (fallback ? [fallback] : []);
+  const signatures = declarations.flatMap(declaration => {
+    if (!declaration.signature) { return []; }
 
-  const bound = boundDocumentationFor(input.analysis, input.workspaceIndex, declaration);
-  const rendered = bound ? renderDocumentation(bound, input.locale) : undefined;
-  const signature = rendered ? {
-    ...declaration.signature,
-    documentation: rendered.plainText,
-    documentationMarkdown: rendered.markdown,
-    parameters: declaration.signature.parameters.map((parameter, i) => {
-      const description = renderParameterDocumentation(bound!, i, input.locale);
-      return description ? { ...parameter, documentation: description.plainText, documentationMarkdown: description.markdown } : parameter;
-    })
-  } : declaration.signature;
-  const variadic = signature.parameters.findIndex(parameter => parameter.variadic);
+    const bound = boundDocumentationFor(input.analysis, input.workspaceIndex, declaration);
+    const rendered = bound ? renderDocumentation(bound, input.locale) : undefined;
+    const signature = rendered ? {
+      ...declaration.signature,
+      documentation: rendered.plainText,
+      documentationMarkdown: rendered.markdown,
+      parameters: declaration.signature.parameters.map((parameter, i) => {
+        const description = renderParameterDocumentation(bound!, i, input.locale);
+        return description ? { ...parameter, documentation: description.plainText, documentationMarkdown: description.markdown } : parameter;
+      })
+    } : declaration.signature;
+    return [signature];
+  });
+  if (!signatures.length) { return null; }
+  const variadic = signatures[0].parameters.findIndex(parameter => parameter.variadic);
   const active = activeParameterIndex(call, input.position);
   return {
-    signatures: [signature],
+    signatures,
     activeSignature: 0,
     activeParameter: variadic >= 0 && active >= variadic ? variadic : active
   };

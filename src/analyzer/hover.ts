@@ -1,3 +1,4 @@
+import { callTargetDeclarations } from './navigation';
 import { resolveImplicitGuiReference, findGuiDeclarationMember as findDeclarationMember, type ResolvedImplicitGuiReference } from './guiReferenceResolution';
 import { renderedDocumentationFor } from './documentation/access';
 import type { RenderedDocumentation } from './documentation/model';
@@ -46,6 +47,7 @@ export interface HoverInput {
 }
 
 export interface WorkspaceDeclarationIndex {
+  resolveCallDeclarations?(analysis: AnalyzedDocument, position: AnalysisPosition, allowPartialArguments?: boolean): AnalysisDeclaration[] | undefined;
   documentationBindings?(sourceUri: string): DocumentationBindings;
   listVisibleDocuments?(sourceUri: string): AnalyzedDocument[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
@@ -94,6 +96,14 @@ export function getHover(input: HoverInput): AnalysisHover | null {
   const reference = findReferenceAtPosition(input.analysis, input.position);
   if (reference === undefined) {
     return null;
+  }
+
+  const calls = callTargetDeclarations(input);
+  if (calls !== undefined) {
+    const hovers = calls.map(declaration => withDeclarationOrigin(
+      hoverForReferenceDeclaration(input, declaration, reference), input.analysis.uri, declaration.uri, input.locale));
+    return hovers.length ? {plainText: hovers.map(hover => hover.plainText).join('\n\n'),
+      markdown: hovers.map(hover => hover.markdown).join('\n\n')} : null;
   }
 
   const implicitGui = resolveImplicitGuiReference(input, reference);

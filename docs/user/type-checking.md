@@ -28,6 +28,14 @@ The server uses definite declarations visible through the document, resolved inc
 
 Class subscripts use declared `operator[]` signatures, including inherited declarations. Registered `VARRAY` uses an integer index and returns a pointer to an unspecified element type, consistent with `GetAt`. An explicit cast such as `*(int*)values[i]` supplies the element type; the subscript result itself is not assignable. Each VARRAY manages one element type at runtime. Mixing element types in `Add` is a runtime error, not a compile-time diagnostic, so the checker does not infer a permanent element type from an earlier `Add` call.
 
+## Overloaded call navigation
+
+For registered builtin APIs, hover, go to definition, signature help and references use the same argument type compatibility as diagnostics. For example, a string layer name and `NULL` select the `InitGetFigureWP(void*, string, int, int, int, VARRAY*)` declaration, rather than the first six-parameter declaration.
+
+Ordinary user functions remain distinguished by argument count. Defining two functions with the same owner, name and argument count but different parameter types still produces a definition diagnostic. Merely putting a header in forced includes does not register its functions as builtin APIs.
+
+When several builtin declarations remain compatible, or argument types are unknown, hover and signature help show the remaining candidates and go to definition returns their locations. Numeric conversion ranking is not guessed, even if one candidate is an exact match or all return types agree. References searched from a declaration include calls for which it remains a possible target; searching from an ambiguous call has no unique target. Rename continues to reject ambiguous overloads. If every candidate is incompatible, call hover, definition and signature help do not select an unrelated declaration. While arguments are being entered, signature help retains candidates compatible with the supplied argument prefix, including those still requiring more arguments.
+
 ## Registering analysis declarations
 
 Use the existing `forcedIncludeFiles` configuration to select an analysis header. Place a companion JSON file beside the entry, replacing its last extension with `.analysis.json`: `builtins.h` uses `builtins.analysis.json`. There is no separate type-checking configuration switch. For a generic LSP client, initialization options can contain:

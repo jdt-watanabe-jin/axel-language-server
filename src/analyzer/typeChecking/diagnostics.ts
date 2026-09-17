@@ -18,10 +18,10 @@ export interface TypeDiagnosticsInput {
   resolveMacro?: (name: string, node: TypeNode) => AnalysisMacroDefinition | undefined;
 }
 
-export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDiagnostic[] {
+export function expandedTypeInput(input: TypeDiagnosticsInput): TypeDiagnosticsInput {
   const expanded = input.analysis.expandedSource;
-  if (expanded) {
-    return collectTypeDiagnostics({ ...input, analysis: expanded.analysis,
+  if (!expanded) { return input; }
+  return { ...input, analysis: expanded.analysis,
       sourcePosition: position => expanded.sourceRange({ start: position, end: position }).start,
       documents: input.documents?.map(document => document.expandedSource?.analysis ?? document),
       resolveMacro: input.resolveMacro && ((name, node) => {
@@ -33,12 +33,14 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
           } : macro.range
         };
       })
-    }).map(diagnostic => ({ ...diagnostic, range: expanded.sourceRange(diagnostic.range) }));
-  }
+    };
+}
+
+export function createTypeCheckingContext(input: TypeDiagnosticsInput): TypeContext {
+  if (input.analysis.expandedSource) { return createTypeCheckingContext(expandedTypeInput(input)); }
   const {analysis} = input;
-  const root = analysis.typeSnapshot?.root;
+  const root = analysis.typeSnapshot!.root;
   const catalog = input.catalog ?? loadBuiltinCatalog([]);
-  if (!root || isBuiltinDeclarationSource(catalog, analysis.uri)) { return []; }
   const ctx = buildTypeContext({...input, catalog});
   ctx.sourcePosition = input.sourcePosition;
   const undefCalls = descendants(root,'preproc_call').filter(call => field(call,'directive')?.text.replace(/\s/g,'') === '#undef');
@@ -55,6 +57,22 @@ export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDia
         || call.range.start.line === origin.line && call.range.start.character >= origin.character));
     return removed ? undefined : macro;
   };
+  const suppressed = (node: TypeNode): boolean =>
+    [...analysis.inactiveRanges ?? [], ...analysis.uncertainRanges ?? []]
+      .some(range => containsSourcePosition(range, node.range.start));
+  return ctx;
+}
+
+export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDiagnostic[] {
+  const expanded = input.analysis.expandedSource;
+  if (expanded) {
+    return collectTypeDiagnostics(expandedTypeInput(input)).map(diagnostic => ({ ...diagnostic, range: expanded.sourceRange(diagnostic.range) }));
+  }
+  const {analysis} = input;
+  const root = analysis.typeSnapshot?.root;
+  const catalog = input.catalog ?? loadBuiltinCatalog([]);
+  if (!root || isBuiltinDeclarationSource(catalog, analysis.uri)) { return []; }
+  const ctx = createTypeCheckingContext(input);
   const suppressed = (node: TypeNode): boolean =>
     [...analysis.inactiveRanges ?? [], ...analysis.uncertainRanges ?? []]
       .some(range => containsSourcePosition(range, node.range.start));

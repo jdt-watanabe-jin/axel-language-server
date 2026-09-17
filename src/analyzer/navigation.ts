@@ -43,6 +43,7 @@ export interface ReferencesInput extends NavigationInput {
 }
 
 export interface WorkspaceNavigationIndex {
+  resolveCallDeclarations?(analysis: AnalyzedDocument, position: AnalysisPosition, allowPartialArguments?: boolean): AnalysisDeclaration[] | undefined;
   documentationBindings?(sourceUri: string): DocumentationBindings;
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   listVisibleDeclarations?(sourceUri: string): AnalysisDeclaration[];
@@ -77,6 +78,8 @@ export function getDefinitions(input: NavigationInput): AnalysisLocation[] {
     }];
   }
 
+  const calls = callTargetDeclarations(input);
+  if (calls !== undefined) { return calls.map(locationFromDeclaration); }
   const declaration = findNavigationTargetDeclaration(input);
   return declaration === undefined ? [] : [locationFromDeclaration(declaration)];
 }
@@ -97,6 +100,14 @@ export function getReferences(input: ReferencesInput): AnalysisLocation[] {
   return uniqueLocations(locations).sort(compareLocations);
 }
 
+export function callTargetDeclarations(input: NavigationInput, allowPartialArguments = false): AnalysisDeclaration[] | undefined {
+  if (input.analysis.expandedMacroReferences?.some(ref => contains(ref.range, input.position))
+    || input.analysis.declarations.some(declaration => contains(declaration.selectionRange, input.position))) { return undefined; }
+  const reference = findReferenceAtPosition(input.analysis, input.position);
+  if (!reference?.call) { return undefined; }
+  return input.workspaceIndex.resolveCallDeclarations?.(input.analysis, input.position, allowPartialArguments);
+}
+
 export function findNavigationTargetDeclaration(input: NavigationInput): AnalysisDeclaration | undefined {
   const writtenMacro = input.analysis.expandedMacroReferences?.find(ref => contains(ref.range, input.position));
   if (writtenMacro) { return findDeclarationForReference(input, writtenMacro); }
@@ -115,6 +126,9 @@ export function findNavigationTargetDeclaration(input: NavigationInput): Analysi
     return undefined;
   }
 
+  const calls = callTargetDeclarations(input);
+  if (calls !== undefined) { return calls.length === 1 ? calls[0] : undefined; }
+
   const implicitGui = resolveImplicitGuiReference(input, reference);
   const preferredImplicitGuiDeclaration = implicitGui?.preferred ? implicitGui.declaration : undefined;
   if (preferredImplicitGuiDeclaration !== undefined) {
@@ -132,12 +146,11 @@ function referencesToDeclaration(
 ): AnalysisLocation[] {
   const locations: AnalysisLocation[] = [];
   for (const reference of analysis.navigationReferences ?? analysis.references) {
-    const declaration = findNavigationTargetDeclaration({
-      analysis,
-      position: reference.range.start,
-      workspaceIndex: navigationInput.workspaceIndex
-    });
-    if (declaration?.id === target.id) {
+    const input = {analysis, position: reference.range.start, workspaceIndex: navigationInput.workspaceIndex};
+    const calls = callTargetDeclarations(input);
+    const matches = calls !== undefined ? calls.some(candidate => candidate.id === target.id)
+      : findNavigationTargetDeclaration(input)?.id === target.id;
+    if (matches) {
       locations.push(locationFromReference(reference));
     }
   }

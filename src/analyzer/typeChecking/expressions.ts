@@ -132,21 +132,25 @@ export function checkBinaryExpression(ctx: TypeContext, node: TypeNode, operator
   return unknown();
 }
 
-function selectOverload(ctx: TypeContext, candidates: FunctionInfo[], values: ExpressionResult[], site: 'argument' | 'operator'):
-  { fn?: FunctionInfo; uncertain?: boolean } {
-  const viable: FunctionInfo[] = [];
-  let uncertain = false;
+/** Keep every viable declaration: runtime conversion ranking is deliberately unspecified. */
+export function compatibleOverloads(ctx: TypeContext, candidates: FunctionInfo[], values: ExpressionResult[], site: 'argument' | 'operator', allowPartialArguments = false):
+  { viable: FunctionInfo[]; uncertain: FunctionInfo[] } {
+  const viable: FunctionInfo[] = [], uncertain: FunctionInfo[] = [];
   for (const fn of candidates) {
-    if (values.length < fn.required || (!fn.variadic && values.length > fn.parameters.length)) { continue; }
+    if ((!allowPartialArguments && values.length < fn.required) || (!fn.variadic && values.length > fn.parameters.length)) { continue; }
     const relations = values.map((value,index) => fn.parameters[index]
       ? checkCompatibility(ctx,dereference(value.type),fn.parameters[index],site) : 'accepted');
     if (relations.includes('rejected')) { continue; }
-    if (relations.includes('unknown')) { uncertain = true; continue; }
-    viable.push(fn);
+    (relations.includes('unknown') ? uncertain : viable).push(fn);
   }
-  if (uncertain) { return {uncertain:true}; }
-  // Runtime ranking is not established. A shared result is useful without
-  // choosing a speculative promotion winner or inventing an ambiguity error.
+  return {viable, uncertain};
+}
+
+function selectOverload(ctx: TypeContext, candidates: FunctionInfo[], values: ExpressionResult[], site: 'argument' | 'operator'):
+  { fn?: FunctionInfo; uncertain?: boolean } {
+  const {viable, uncertain} = compatibleOverloads(ctx, candidates, values, site);
+  if (uncertain.length) { return {uncertain:true}; }
+  // A shared result type does not establish a unique declaration for navigation.
   if (viable.length && viable.every(fn => sameType(fn.result,viable[0].result))) { return {fn:viable[0]}; }
   return viable.length ? {uncertain:true} : {};
 }
@@ -300,7 +304,13 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
       const owner = current?.owner;
       return owner ? temporary(pointer({ kind: 'class', name: owner.name, classInfo: owner })) : unknown();
     }
-    case 'identifier': case 'field_identifier': case 'qualified_identifier': {
+    case 'qualified_identifier': {
+      const owner = field(node, 'scope');
+      const name = field(node, 'name');
+      const info = owner && lookupClass(ctx, owner.text, scope);
+      return info && name ? member(ctx, {kind:'class', name:info.name, classInfo:info}, name.text) ?? unknown() : unknown();
+    }
+    case 'identifier': case 'field_identifier': {
       const binding = lookupBinding(ctx, node.text, scope, node.start);
       const local = binding?.scope.parent && binding.scope !== binding.scope.owner?.scope;
       if (!local) {

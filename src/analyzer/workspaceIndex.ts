@@ -1,3 +1,4 @@
+import { createCallResolver } from './typeChecking/callResolution';
 import { runAnalysisSteps } from '../util/analysisSteps';
 import { bindDocumentation } from './documentation/index';
 import { resolveLoginPath } from './loginPath';
@@ -68,6 +69,7 @@ export class WorkspaceIndex {
   private readonly inheritIncludeContext: boolean;
   private readonly dependencyAnalysisOnly: boolean;
   private readonly includeContexts = new Map<string, Pick<AnalyzeDocumentInput, 'macroDefinitions' | 'preprocessorSymbols'>>();
+  private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
   private readonly analyzer: DocumentAnalyzer;
   private includeRoots: string[];
@@ -395,6 +397,29 @@ export class WorkspaceIndex {
     yield* this.loginScopeSteps('');
   }
 
+  public resolveCallDeclarations(analysis: AnalyzedDocument, position: AnalysisPosition, allowPartialArguments = false): AnalysisDeclaration[] | undefined {
+    if (!analysis.typeSnapshot) { return undefined; }
+    this.ensureForcedIncludesIndexed();
+    const loginScope = this.loginScope(analysis.uri);
+    const ordinaryDocuments = [analysis, ...this.collectDefiniteVisibleUris(analysis.uri).flatMap(uri => {
+      const document = this.documents.get(uri)?.analysis;
+      return document ? [document] : [];
+    })];
+    const documents = [...ordinaryDocuments, ...loginScope?.documents ?? []];
+    const catalog = this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles);
+    const cached = this.callResolutionCache.get(analysis.uri);
+    if (cached && cached.catalog === catalog && cached.documents.length === documents.length
+      && documents.every((document, i) => document === cached.documents[i])) { return cached.resolve(position, allowPartialArguments); }
+    const macros = this.collectPositionAwareMacroDefinitions(analysis.uri, true);
+    const resolve = createCallResolver({analysis, documents: ordinaryDocuments, loginScope, catalog, resolveMacro: (name, node) => {
+      const macro = macros.filter(macro => macro.name === name
+        && (!macro.visibilityStart || comparePositions(macro.visibilityStart, node.range.start) <= 0)).at(-1);
+      return macro && !('_typeUndef' in macro) ? macro : undefined;
+    }});
+    this.callResolutionCache.set(analysis.uri, {documents, catalog, resolve});
+    return resolve(position, allowPartialArguments);
+  }
+
   public documentationBindings(sourceUri: string): DocumentationBindings {
     this.ensureForcedIncludesIndexed();
     const source = this.documents.get(sourceUri)?.analysis;
@@ -532,6 +557,7 @@ export class WorkspaceIndex {
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
     this.documentationCache.clear();
+    this.callResolutionCache.clear();
     this.documents.delete(uri);
     this.replaceIncludeEdges(uri, new Set());
     this.analyzer.clear(uri);
@@ -552,6 +578,7 @@ export class WorkspaceIndex {
       return;
     }
     this.documentationCache.clear();
+    this.callResolutionCache.clear();
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
     this.builtinCatalogCache = undefined;
     if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().includes(uri)) {
@@ -1324,6 +1351,7 @@ export class WorkspaceIndex {
     }
 
     this.documentationCache.clear();
+    this.callResolutionCache.clear();
     this.documents.clear();
     this.diagnosticIncludeDependencies.clear();
     this.includeGraph.clear();
