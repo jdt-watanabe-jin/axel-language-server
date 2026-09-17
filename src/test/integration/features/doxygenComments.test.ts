@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { createAxelParser } from '../../../analyzer/axelParser';
+import { collectSyntaxDiagnostics } from '../../../analyzer/diagnostics';
 import { extractDocumentationComments } from '../../../analyzer/documentation/comments';
 
 suite('Doxygen comments', () => {
@@ -97,10 +98,11 @@ suite('Doxygen comments', () => {
     ]);
   });
 
-  test('does not invent a comment node or following declaration for an unclosed block', () => {
+  test('reports an unclosed block without exposing documentation or following declarations', () => {
     const text = '/** unclosed\n * @brief search\nint Find();';
     const tree = createAxelParser().parse(text);
-    assert.strictEqual(tree.rootNode.hasError, true);
+    assert.deepStrictEqual(collectSyntaxDiagnostics(tree.rootNode).map(item => item.message), ['Missing */.']);
+    assert.strictEqual(tree.rootNode.descendantsOfType('function_declarator').length, 0);
     assert.deepStrictEqual(extractDocumentationComments(tree.rootNode, text, 'file:///main.axl'), []);
   });
 

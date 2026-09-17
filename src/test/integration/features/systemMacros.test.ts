@@ -145,7 +145,8 @@ suite('system macros', () => {
     assert.strictEqual(prepareRename(at('__DATE__')), null);
   });
   test('completes only enabled names and excludes comments and strings', () => {
-    for (const text of ['void f(){ __ }', 'void f(){ "__"; }', 'void f(){ /* __ */ }', 'void f(){ // __', 'void f(){ "__']) {
+    for (const text of ['void f(){ __ }', 'void f(){ "__"; }', 'void f(){ /* __ */ }', 'void f(){ // __',
+      'void f(){ "__', 'void f(){ /* __']) {
       const { analysis, index } = fixture(text, 'asca');
       const items = getCompletions({ analysis, workspaceIndex: index, text, position: positionFromOffset(text, text.indexOf('__') + 2) });
       const names = items.filter(i => i.name.startsWith('__')).map(i => i.name);

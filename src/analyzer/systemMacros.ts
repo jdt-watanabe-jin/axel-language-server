@@ -90,10 +90,11 @@ export function collectSystemMacroSyntax(root: Parser.SyntaxNode): {
     end: { line: node.endPosition.row, character: node.endPosition.column }
   });
   const visit = (node: Parser.SyntaxNode): void => {
-    if (['comment', 'string_literal', 'char_literal', 'string_content'].includes(node.type)) {
+    if (['comment', 'unterminated_comment', 'string_literal', 'char_literal', 'string_content'].includes(node.type)) {
       const excluded = range(node);
-      // Cursor positions at an unfinished string or the end of // still belong to that token.
-      if (node.type === 'string_content' || (node.type === 'comment' && node.text.startsWith('//'))) {
+      // Cursor positions at unfinished tokens or the end of // still belong to that token.
+      if (node.type === 'string_content' || node.type === 'unterminated_comment'
+        || (node.type === 'comment' && node.text.startsWith('//'))) {
         excluded.end.character += 1;
       }
       excludedRanges.push(excluded);

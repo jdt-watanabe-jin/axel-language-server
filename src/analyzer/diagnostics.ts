@@ -17,7 +17,7 @@ export function collectSyntaxDiagnostics(
 ): AnalysisDiagnostic[] {
   const errorNodes = findNamedNodes(
     rootNode,
-    (node) => node.type === 'ERROR' || node.isMissing
+    isSyntaxErrorNode
   );
 
   return errorNodes.flatMap((node) => diagnosticsForSyntaxNode(node, options));
@@ -30,7 +30,8 @@ function diagnosticsForSyntaxNode(
   const defaultDiagnostic: AnalysisDiagnostic = {
     severity: 'error',
     source: 'axel',
-    ...(node.isMissing ? message('Missing {0}.', node.type) : message('Syntax error.')),
+    ...(node.type === 'unterminated_comment' ? message('Missing {0}.', '*/')
+      : node.isMissing ? message('Missing {0}.', node.type) : message('Syntax error.')),
     range: nodeToAnalysisRange(node)
   };
   if (node.isMissing || options.parseText === undefined || options.macroDefinitions === undefined) {
@@ -123,7 +124,11 @@ function expansionParsesInContext(
   }
 
   const rootNode = parseText(probeText);
-  return findNamedNodes(rootNode, (node) => node.type === 'ERROR' || node.isMissing).length === 0;
+  return findNamedNodes(rootNode, isSyntaxErrorNode).length === 0;
+}
+
+function isSyntaxErrorNode(node: Parser.SyntaxNode): boolean {
+  return node.type === 'ERROR' || node.type === 'unterminated_comment' || node.isMissing;
 }
 
 function probeTextForContext(text: string, context: MacroInvocationCandidate['context']): string | undefined {

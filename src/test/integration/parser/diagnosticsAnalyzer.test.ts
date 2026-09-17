@@ -23,6 +23,13 @@ suite('collectSyntaxDiagnostics', () => {
     assert.strictEqual(diagnostics[0].message, 'Syntax error.');
   });
 
+  test('reports a missing terminator for an unterminated block comment', () => {
+    const tree = createAxelParser().parse('/* unclosed\nvoid fake() {}');
+    const diagnostics = collectSyntaxDiagnostics(tree.rootNode);
+
+    assert.deepStrictEqual(diagnostics.map(diagnostic => diagnostic.message), ['Missing */.']);
+  });
+
   test('suppresses syntax error for valid class body macro expansion', () => {
     const parser = createAxelParser();
     const tree = parser.parse('class C { DEFINE_FIELD(int) };');

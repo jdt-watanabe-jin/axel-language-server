@@ -41,6 +41,7 @@ export function createInitializeResult(): InitializeResult {
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
       documentSymbolProvider: true,
+      foldingRangeProvider: true,
       semanticTokensProvider: {
         legend: SEMANTIC_TOKEN_LEGEND,
         full: true

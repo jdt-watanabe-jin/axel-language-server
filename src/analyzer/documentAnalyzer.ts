@@ -1,3 +1,4 @@
+import { collectFoldingRangesSteps, type FoldingRangeCandidate } from './foldingRanges';
 import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import { buildDocumentationBlocks } from './documentation/index';
 import { nodeToAnalysisRange } from './syntaxTree';
@@ -69,6 +70,16 @@ export class DocumentAnalyzer {
   public constructor(parser = createAxelParser(), logger: AnalysisLogger = NullLogger) {
     this.parser = parser;
     this.logger = logger;
+  }
+
+  /** Original-source syntax only: no dependency loading, macro expansion or semantic analysis. */
+  public *getFoldingRangesSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void> {
+    yield;
+    try {
+      return yield* collectFoldingRangesSteps(this.syntaxRoot(input), input.text);
+    } finally {
+      this.releaseSyntax(input.uri);
+    }
   }
 
   public analyzeDocument(input: AnalyzeDocumentInput, expandMacros = true, dependenciesOnly = false): AnalyzedDocument {

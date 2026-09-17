@@ -1,3 +1,5 @@
+import type { FoldingRangeCandidate } from '../analyzer/foldingRanges';
+import { registerFoldingRangeHandler } from './foldingRanges';
 import { runAnalysisStepsAsync, type AnalysisStep } from '../util/analysisSteps';
 import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import { createRequestHandler, isCancellationError, throwIfCancelled, rethrowCancellation, cancellationCheckpoint } from '../util/cancellation';
@@ -8,6 +10,7 @@ import type {
   CompletionParams,
   DefinitionParams,
   DocumentSymbolParams,
+  FoldingRangeClientCapabilities,
   DocumentFormattingParams,
   DocumentRangeFormattingParams,
   HoverParams,
@@ -53,6 +56,7 @@ export interface AnalyzerLike extends
   WorkspaceCompletionIndex,
   WorkspaceNavigationIndex,
   WorkspaceCodeActionIndex {
+  getFoldingRangesSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void>;
   updateOpenDocument?(input: AnalyzeDocumentInput): void;
   analyzeRequestDocument?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
   analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument;
@@ -127,6 +131,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   let hoverMarkdown = false;
   let completionMarkdown = false;
   let signatureMarkdown = false;
+  let foldingCapabilities: FoldingRangeClientCapabilities | undefined;
   let featureSettings: Record<string, unknown> = {};
   const updateFeatures = (settings: unknown): void => {
     invalidateRequests();
@@ -135,6 +140,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onInitialize((params, token) => {
     throwIfCancelled(token);
     locale = params.locale;
+    foldingCapabilities = params.capabilities?.textDocument?.foldingRange;
     hoverMarkdown = params.capabilities?.textDocument?.hover?.contentFormat?.includes('markdown') ?? false;
     completionMarkdown = params.capabilities?.textDocument?.completion?.completionItem?.documentationFormat?.includes('markdown') ?? false;
     signatureMarkdown = params.capabilities?.textDocument?.signatureHelp?.signatureInformation?.documentationFormat?.includes('markdown') ?? false;
@@ -490,6 +496,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       }
     });
   }));
+
+  registerFoldingRangeHandler(context, () => revision, () => foldingCapabilities);
 
   context.connection.onDocumentSymbol(request(async (params: DocumentSymbolParams, token) => {
     const document = context.documents.get(params.textDocument.uri);

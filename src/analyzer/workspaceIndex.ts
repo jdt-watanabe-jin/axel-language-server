@@ -1,3 +1,4 @@
+import type { FoldingRangeCandidate } from './foldingRanges';
 import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import { throwIfCancelled } from '../util/cancellation';
 import { createCallResolver } from './typeChecking/callResolution';
@@ -339,6 +340,10 @@ export class WorkspaceIndex {
 
   public onBackgroundIndexingComplete(listener: () => void): void {
     this.backgroundCompleteListeners.push(listener);
+  }
+
+  public *getFoldingRangesSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void> {
+    return yield* this.analyzer.getFoldingRangesSteps(input);
   }
 
   public indexOpenDocument(input: AnalyzeDocumentInput): AnalyzedDocument {

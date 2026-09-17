@@ -29,6 +29,7 @@ The server currently supports these Language Server Protocol features:
 - Signature help for functions, methods, inherited member calls, `this->` member calls, forced-include functions, function-like macros, dialog-owner methods, and GUI part member calls.
 - Semantic tokens for declarations and references, including functions, variables, parameters, types, enum members, macros, member access, method calls, GUI receiver paths, GUI event declarations, and AXEL execution file names.
 - Document and range formatting for conservative leading indentation based on structural braces.
+- Syntax-based folding ranges for AXEL bodies, block comments, preprocessor branches and macros, and regions. See the [folding ranges guide](docs/user/folding-ranges.md) for boundaries and exclusions.
 
 Functions and methods can be resolved before their declaration or definition within their owning scope. Hover, definition navigation, references, completion, and signature help use this lookup; variables retain their declaration-order visibility and normal scope shadowing.
 
