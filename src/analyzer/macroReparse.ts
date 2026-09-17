@@ -78,7 +78,9 @@ export function macroReparse(root: Parser.SyntaxNode, source: string, original: 
     const index=sourcePositions.offset(p);
     return expandedPositions.position(mapSourceOffset(toExpandedSegments,index,end));
   };
-  const result = map(analyze(text,toExpanded)) as AnalyzedDocument;
+  const expanded = analyze(text,toExpanded);
+  const result = map(expanded) as AnalyzedDocument;
+  result.expandedSource = { analysis: expanded, sourceRange: mappedRange, expandedPosition: toExpanded };
   // Conditional recovery may have erased directives before this second parse.
   const writtenIncludes = new Map(original.includes.map(include =>
     [`${include.range.start.line}:${include.range.start.character}`, include]));

@@ -268,7 +268,8 @@ function macroExpression(ctx: TypeContext, node: TypeNode, scope: Scope): Expres
 
 function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionResult {
   if (node.kind === 'identifier') {
-    const macro = resolveSystemMacro(node.text, scope.uri, node.range.start, ctx.analysis.tool, ctx.analysis.targetPlatform, ctx.analysis.internalFeatures);
+    const position = scope.uri === ctx.analysis.uri ? ctx.sourcePosition?.(node.range.start) ?? node.range.start : node.range.start;
+    const macro = resolveSystemMacro(node.text, scope.uri, position, ctx.analysis.tool, ctx.analysis.targetPlatform, ctx.analysis.internalFeatures);
     if (macro) {
       return macro.defined
         ? temporary(macro.typeName === 'int' ? basic('int') : builtin(ctx, 'string'), macro.value)
@@ -293,6 +294,7 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
     case 'char_literal': return temporary(basic('int'));
     case 'null': return temporary({ kind: 'null', name: 'NULL' });
     case 'this': {
+      if (scope.thisType) { return temporary(pointer(scope.thisType)); }
       let current: Scope | undefined = scope;
       while (current && !current.owner) { current = current.parent; }
       const owner = current?.owner;
@@ -300,6 +302,12 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
     }
     case 'identifier': case 'field_identifier': case 'qualified_identifier': {
       const binding = lookupBinding(ctx, node.text, scope, node.start);
+      const local = binding?.scope.parent && binding.scope !== binding.scope.owner?.scope;
+      if (!local) {
+        const receiver = scope.thisType ?? (scope.owner ? { kind: 'class' as const, name: scope.owner.name, classInfo: scope.owner } : undefined);
+        const implicit = receiver && member(ctx, receiver, node.text);
+        if (implicit) { return implicit; }
+      }
       if (binding) {
         if (binding.type.call) {
           const fn = binding.type.call;

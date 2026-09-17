@@ -5,10 +5,10 @@ import type {
   AnalysisPosition,
   AnalyzedDocument
 } from '../types/analysis';
-import { contains } from './resolution';
+import { containsSourcePosition as contains } from './systemMacros';
 
 export interface GuiResolutionInput {
-  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses' | 'guiMethods'>;
+  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses' | 'guiMethods'> & Partial<Pick<AnalyzedDocument, 'declarations'>>;
   position: AnalysisPosition;
   workspaceIndex?: {
     findGuiClass?(sourceUri: string, name: string): AnalysisGuiClass | undefined;
@@ -47,18 +47,26 @@ export function findEnclosingGuiMethodContext(input: GuiResolutionInput): GuiMet
   for (const guiClass of input.analysis.guiClasses) {
     const context = findEnclosingGuiMethodContextInClass(input, guiClass);
     if (context !== undefined) {
-      return context;
+      return insideLocalClass(input, context) ? undefined : context;
     }
   }
 
   for (const method of input.analysis.guiMethods) {
+    if (!contains(method.range, input.position)) { continue; }
     const context = guiMethodContextFromReceiverPath(input, method);
-    if (context !== undefined && contains(method.range, input.position)) {
-      return context;
+    if (context !== undefined) {
+      return insideLocalClass(input, context) ? undefined : context;
     }
   }
 
   return undefined;
+}
+
+function insideLocalClass(input: GuiResolutionInput, context: GuiMethodContext): boolean {
+  return input.analysis.declarations?.some(declaration =>
+    ['class', 'struct', 'union'].includes(declaration.kind)
+    && contains(context.method.range, declaration.range.start)
+    && contains(declaration.range, input.position)) ?? false;
 }
 
 export function resolveGuiPartPath(
@@ -198,11 +206,9 @@ export function findVisibleGuiClassEntry(input: GuiResolutionInput, name: string
   return guiClass === undefined ? undefined : { guiClass };
 }
 
-function visibleDocuments(input: GuiResolutionInput): AnalyzedDocument[] {
-  return [
-    input.analysis as AnalyzedDocument,
-    ...(input.workspaceIndex?.listVisibleDocuments?.(input.analysis.uri) ?? [])
-  ];
+function* visibleDocuments(input: GuiResolutionInput): Iterable<AnalyzedDocument> {
+  yield input.analysis as AnalyzedDocument;
+  yield* input.workspaceIndex?.listVisibleDocuments?.(input.analysis.uri) ?? [];
 }
 
 function findPartByPath(parts: AnalysisGuiPart[], path: string[]): AnalysisGuiPart | undefined {

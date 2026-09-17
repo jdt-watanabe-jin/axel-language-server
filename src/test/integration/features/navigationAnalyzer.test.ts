@@ -303,7 +303,7 @@ suite('navigation', () => {
     ]);
   });
 
-  test('definition on a static qualified method jumps to a malformed forced include class member', () => {
+  test('definition does not infer static member ownership from a preceding class', () => {
     const fixture = recoveredStaticMemberFixture();
 
     const definitions = getDefinitions({
@@ -312,13 +312,7 @@ suite('navigation', () => {
       workspaceIndex: fixture.workspaceIndex
     });
 
-    assert.deepStrictEqual(definitions, [{
-      uri: 'file:///file.h',
-      range: {
-        start: { line: 5, character: 13 },
-        end: { line: 5, character: 24 }
-      }
-    }]);
+    assert.deepStrictEqual(definitions, []);
   });
 
   test('references collect matching cross-file method calls only from visible files', () => {

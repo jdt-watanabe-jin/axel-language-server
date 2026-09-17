@@ -331,7 +331,7 @@ suite('collectSemanticDiagnostics', () => {
       uri,
       version: 1,
       text: [
-        'class MyDialog : public GCDialog {',
+        'class GCDialog { void DoModal() {} }; class MyDialog : public GCDialog {',
         '  void OnCreate() {',
         '    DoModal();',
         '  }',
@@ -359,7 +359,7 @@ suite('collectSemanticDiagnostics', () => {
       uri,
       version: 1,
       text: [
-        'class MyDialog : public GCDialog {};',
+        'class GCDialog { void DoModal() {} }; class MyDialog : public GCDialog {};',
         'void MyDialog::OnCreate() {',
         '  DoModal();',
         '}'
@@ -386,7 +386,7 @@ suite('collectSemanticDiagnostics', () => {
       uri,
       version: 1,
       text: [
-        'class MyDialog : public GCDialog {',
+        'class GCDialog { void DoModal() {} }; class MyDialog : public GCDialog {',
         '  void open() {',
         '    DoModal();',
         '  }',
@@ -600,7 +600,7 @@ suite('WorkspaceIndex semantic diagnostics', () => {
       uri,
       version: 1,
       text: [
-        'class GCWidget { string text; };',
+        'class GCWidget { string text; }; class GCText : public GCWidget {};',
         'class MyDialog : public GCDialog {',
         '  GCText input;',
         '};',

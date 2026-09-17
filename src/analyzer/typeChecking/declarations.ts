@@ -1,6 +1,7 @@
 import type { AnalyzedDocument } from '../../types/analysis';
 import type { LoginScopeSnapshot } from '../loginScope';
 import { containsSourcePosition } from '../systemMacros';
+import { findEnclosingGuiMethodContext } from '../guiResolution';
 import { builtinRole, type BuiltinCatalog } from './builtinCatalog';
 import { basic, pointer, unknownType, numericNames, type Binding, type ClassInfo, type FunctionInfo, type Scope, type Type, type TypeContext } from './model';
 import { descendants, field, type TypeNode, type TypeSnapshot } from './syntax';
@@ -255,6 +256,13 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
   for (const root of roots) { collect(root); }
   for (const scope of ctx.scopes) {
     if (scope.parent) { scope.fn ??= scope.parent.fn; scope.owner ??= scope.parent.owner; }
+    const analysis = documents.find(document => document.uri === scope.uri);
+    const gui = analysis && findEnclosingGuiMethodContext({ analysis, position: scope.node.range.start,
+      workspaceIndex: { listVisibleDocuments: () => [...ctx.documents] } });
+    if (gui) {
+      const receiver = lookupClass(ctx, gui.receiverTypeName, scope);
+      scope.thisType = receiver ? { kind: 'class', name: receiver.name, classInfo: receiver } : unknownType;
+    }
   }
   // Ordinary source/include overloads precede startup-only overloads.
   ctx.functions.sort((left, right) => Number(ctx.scopes.includes(right.scope)) - Number(ctx.scopes.includes(left.scope)));

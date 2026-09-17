@@ -1,4 +1,4 @@
-import type { AnalysisDiagnostic, AnalysisMacroDefinition, AnalyzedDocument } from '../../types/analysis';
+import type { AnalysisDiagnostic, AnalysisMacroDefinition, AnalysisPosition, AnalyzedDocument } from '../../types/analysis';
 import type { BuiltinCatalog } from './builtinCatalog';
 import type { TypeNode } from './syntax';
 export type CheckSite = 'initialize' | 'assign' | 'argument' | 'return' | 'operator' | 'condition' | 'cast';
@@ -18,7 +18,7 @@ export interface FunctionInfo {
   instancePath?: string;
 }
 export interface Binding { name: string; type: Type; node: TypeNode; scope: Scope; uri: string }
-export interface Scope { parent?: Scope; uri: string; node: TypeNode; owner?: ClassInfo; fn?: FunctionInfo; bindings: Binding[] }
+export interface Scope { parent?: Scope; uri: string; node: TypeNode; owner?: ClassInfo; thisType?: Type; fn?: FunctionInfo; bindings: Binding[] }
 export interface ClassInfo {
   id: string; name: string; uri: string; node: TypeNode; role?: string;
   baseName?: string; fields: Map<string, Binding>; methods: Map<string, FunctionInfo[]>;
@@ -26,6 +26,7 @@ export interface ClassInfo {
 }
 export interface ExpressionResult { guiReceiver?: { owner: ClassInfo; path: string[] }; type: Type; category: ValueCategory; constant?: number | string | boolean; constantExpression?: boolean; unknown?: boolean }
 export interface TypeContext {
+  sourcePosition?: (position: AnalysisPosition) => AnalysisPosition;
   resolveMacro?: (name: string, node: TypeNode) => AnalysisMacroDefinition | undefined;
   analysis: AnalyzedDocument; documents: readonly AnalyzedDocument[]; catalog: BuiltinCatalog;
   classes: ClassInfo[]; scopes: Scope[]; functions: FunctionInfo[]; bindings: Binding[];

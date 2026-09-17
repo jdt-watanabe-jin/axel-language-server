@@ -1,3 +1,4 @@
+import { implicitGuiMemberDeclarations, resolveImplicitGuiReference } from './guiReferenceResolution';
 import { renderedDocumentationFor } from './documentation/access';
 import type { DocumentationBindings } from './documentation/model';
 import { declarationOrigin } from './declarationOrigin';
@@ -14,6 +15,7 @@ import type {
 import { DIRECT_GUI_BASE_NAMES } from './guiClassKinds';
 import {
   contains,
+  findLocalDeclaration,
   declarationsInTypeHierarchy as sharedDeclarationsInTypeHierarchy,
   isTypeDeclaration as sharedIsTypeDeclaration,
   isVisibleAt as sharedIsVisibleAt,
@@ -191,8 +193,8 @@ export function getCompletions(input: CompletionInput): AnalysisCompletionItem[]
   if (context.kind === 'expression') {
     items.push(...typeCompletionItems(input));
     items.push(...keywordItems(EXPRESSION_KEYWORDS));
-    items.push(...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)));
     items.push(...implicitGuiContextCompletions(input));
+    items.push(...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)));
   }
 
   if (context.kind === 'type') {
@@ -432,10 +434,15 @@ function implicitGuiContextCompletions(input: CompletionInput): AnalysisCompleti
 
   const entry = findVisibleGuiClassEntry(input, context.rootClassName);
   return uniqueCompletions([
-    ...visibleDeclarationCompletions(input, (declaration) => !isTypeDeclaration(declaration)),
-    ...guiPartChildCompletions(input, entry?.guiClass.parts ?? [], entry?.uri),
-    ...typeMemberCompletions(input, context.rootClassName),
-    ...typeMemberCompletions(input, context.receiverTypeName)
+    ...guiPartChildCompletions(input, entry?.guiClass.parts ?? [], entry?.uri).filter(item =>
+      resolveImplicitGuiReference(input, { name: item.name, uri: input.analysis.uri,
+        range: { start: input.position, end: input.position } })?.preferred !== false),
+    ...implicitGuiMemberDeclarations(input).map(declaration => ({
+      name: declaration.name,
+      kind: declaration.kind === 'function' || declaration.kind === 'method' ? 'method' as const : 'property' as const,
+      detail: memberDetail(declaration),
+      ...completionDocumentation(input, declaration)
+    }))
   ]);
 }
 
@@ -489,7 +496,8 @@ function visibleDeclarationCompletions(
   const memberIds = new Set<string>();
   if (receiverType !== undefined) {
     for (const declaration of declarationsInTypeHierarchy(input, receiverType)) {
-      if (declaration.kind !== 'parameter') {
+      const local = findLocalDeclaration(input.analysis, declaration.name, input.position);
+      if (declaration.kind !== 'parameter' && (!local || local.id === declaration.id)) {
         visibleIds.add(declaration.id);
         memberIds.add(declaration.id);
       }

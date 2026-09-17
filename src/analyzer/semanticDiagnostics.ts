@@ -1,4 +1,5 @@
 import { affectedBySyntaxRecovery } from './syntaxRecovery';
+import { resolveImplicitGuiReference, type GuiReferenceInput } from './guiReferenceResolution';
 import { message, type MessageDescriptor } from '../i18n/messages';
 import { containsSourcePosition, isSystemMacroName, resolveSystemMacro } from './systemMacros';
 import type {
@@ -7,7 +8,6 @@ import type {
   AnalysisDiagnostic,
   AnalysisGuiClass,
   AnalysisGuiMethod,
-  AnalysisGuiPart,
   AnalysisReference,
   AnalysisScope,
   AnalyzedDocument
@@ -15,7 +15,6 @@ import type {
 import { isGuiPartTypeName } from './guiClassKinds';
 import {
   allGuiMethods,
-  findEnclosingGuiMethodContext,
   findVisibleGuiClass,
   resolveGuiPartPath,
   type GuiResolutionInput
@@ -35,7 +34,7 @@ import {
 } from './resolution';
 
 export interface SemanticDiagnosticsInput {
-  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool' | 'syntaxRecovery' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations'>;
+  analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'includes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool' | 'syntaxRecovery' | 'uncertainNames' | 'uncertainRanges' | 'uncertainDeclarations' | 'expandedSource'>;
   workspaceIndex?: WorkspaceSemanticDiagnosticsIndex;
 }
 
@@ -46,6 +45,24 @@ export interface WorkspaceSemanticDiagnosticsIndex {
 }
 
 export function collectSemanticDiagnostics(input: SemanticDiagnosticsInput): AnalysisDiagnostic[] {
+  const expanded = input.analysis.expandedSource;
+  if (expanded) {
+    const workspace = input.workspaceIndex;
+    const localDeclarations = new Map(expanded.analysis.declarations.map(declaration => [declaration.id, declaration]));
+    const declarations = (items: AnalysisDeclaration[]) => items.map(declaration =>
+      declaration.uri === expanded.analysis.uri
+        ? localDeclarations.get(declaration.id) ?? declaration : declaration);
+    return collectSemanticDiagnostics({ analysis: expanded.analysis,
+      workspaceIndex: workspace && {
+        findVisibleGuiClasses: (uri, name) => uri === expanded.analysis.uri
+          ? [...expanded.analysis.guiClasses.filter(c => c.name === name),
+            ...(workspace.findVisibleGuiClasses?.(uri, name) ?? []).filter(c => !expanded.analysis.guiClasses.some(local => local.name === c.name))]
+          : workspace.findVisibleGuiClasses?.(uri, name) ?? [],
+        ...(workspace.findVisibleDeclarations && { findVisibleDeclarations: (uri: string, name: string) => declarations(workspace.findVisibleDeclarations!(uri, name)) }),
+        ...(workspace.listVisibleDeclarations && { listVisibleDeclarations: (uri: string) => declarations(workspace.listVisibleDeclarations!(uri)) })
+      }
+    }).map(diagnostic => ({ ...diagnostic, range: expanded.sourceRange(diagnostic.range) }));
+  }
   input = {...input, analysis: {...input.analysis,
     references: input.analysis.references.filter(reference => !reference.preprocessor && !affectedBySyntaxRecovery(input.analysis.syntaxRecovery, reference.range))}};
   // Potential declarations cannot prove a duplicate, missing name or signature.
@@ -290,8 +307,12 @@ function unresolvedIdentifierDiagnostics(
   analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'declarations' | 'references' | 'scopes' | 'guiClasses' | 'guiMethods' | 'targetPlatform' | 'internalFeatures' | 'tool'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDiagnostic[] {
+  // Event declaration names remain references for override navigation, but are not uses.
+  const guiDeclarations = new Set(allGuiMethods(analysis).flatMap(method => method.selectionRange
+    ? [`${method.selectionRange.start.line}:${method.selectionRange.start.character}:${method.name}`] : []));
   return analysis.references
     .filter((reference) => reference.typeReference !== true)
+    .filter(reference => !guiDeclarations.has(`${reference.range.start.line}:${reference.range.start.character}:${reference.name}`))
     .filter((reference) => !isKnownIdentifierReference(reference, analysis, workspaceIndex))
     .map((reference): AnalysisDiagnostic => {
       const ownerType = memberReferenceOwnerType(reference, analysis, workspaceIndex);
@@ -321,10 +342,6 @@ function isKnownIdentifierReference(
     return true;
   }
 
-  if (isKnownDirectGuiDialogCall(reference, analysis)) {
-    return true;
-  }
-
   if (reference.memberAccess !== undefined) {
     return isKnownMemberReference(reference, analysis, workspaceIndex);
   }
@@ -334,7 +351,9 @@ function isKnownIdentifierReference(
     return true;
   }
 
-  if (visibleDeclarationsByName(input, reference.name).length > 0) {
+  const owner = thisReceiverType(input);
+  if (visibleDeclarationsByName(input, reference.name).some(declaration => declaration.containerName === undefined || declaration.kind === 'enumMember')
+    || (owner !== undefined && findDeclarationMember(input, owner, reference.name) !== undefined)) {
     return true;
   }
 
@@ -347,7 +366,7 @@ function isKnownMemberReference(
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): boolean {
   const ownerType = memberReferenceOwnerType(reference, analysis, workspaceIndex);
-  if (ownerType === undefined || isGuiPartTypeName(ownerType)) { return true; }
+  if (ownerType === undefined) { return true; }
   const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
   return findDeclarationMember(input, ownerType, reference.name) !== undefined;
 }
@@ -378,15 +397,6 @@ function memberReferenceOwnerType(
   return ownerType;
 }
 
-function isKnownDirectGuiDialogCall(
-  reference: AnalysisReference,
-  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses' | 'guiMethods'>
-): boolean {
-  return reference.call === true
-    && (reference.name === 'DoModal' || reference.name === 'DoModless')
-    && findEnclosingGuiMethodContext(guiResolutionInput(analysis, undefined, reference.range.start))?.rootClassName !== undefined;
-}
-
 function typeDeclarationName(
   input: {
     analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>;
@@ -404,16 +414,7 @@ function isKnownImplicitGuiReference(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): boolean {
-  const context = findEnclosingGuiMethodContext(guiResolutionInput(analysis, workspaceIndex, reference.range.start));
-  if (context === undefined) {
-    return false;
-  }
-
-  const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
-  return findGuiPartByName(analysis, workspaceIndex, context.rootClassName, reference.name) !== undefined
-    || findDeclarationMember(input, context.receiverTypeName, reference.name) !== undefined
-    || findDeclarationMember(input, context.rootClassName, reference.name) !== undefined
-    || isGuiPartTypeName(context.receiverTypeName);
+  return resolveImplicitGuiReference(implicitGuiResolutionInput(analysis, workspaceIndex, reference), reference) !== undefined;
 }
 
 function callArgumentCountDiagnostics(
@@ -456,10 +457,18 @@ function callableDeclarationsForReference(
   }
 
   const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
-  return [
-    ...visibleDeclarationsByName(input, reference.name),
-    ...implicitGuiCallableDeclarations(reference, analysis, workspaceIndex)
-  ];
+  const implicitGui = implicitGuiCallableDeclarations(reference, analysis, workspaceIndex);
+  if (implicitGui.length > 0) { return implicitGui; }
+  const local = findLocalDeclaration(analysis, reference.name, reference.range.start);
+  if (local && local.kind !== 'function' && local.kind !== 'method') { return [local]; }
+  if (!local) {
+    const owner = thisReceiverType(input);
+    const members = owner === undefined ? [] : declarationsInTypeHierarchy(input, owner)
+      .filter(declaration => declaration.name === reference.name);
+    if (members.length) { return members; }
+  }
+  return visibleDeclarationsByName(input, reference.name)
+    .filter(declaration => declaration.containerName === local?.containerName);
 }
 
 function callableMemberDeclarationsForReference(
@@ -496,16 +505,21 @@ function implicitGuiCallableDeclarations(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
 ): AnalysisDeclaration[] {
-  const context = findEnclosingGuiMethodContext(guiResolutionInput(analysis, workspaceIndex, reference.range.start));
-  if (context === undefined) {
-    return [];
-  }
+  const resolved = resolveImplicitGuiReference(implicitGuiResolutionInput(analysis, workspaceIndex, reference), reference);
+  return resolved?.preferred && resolved.declaration ? [resolved.declaration] : [];
+}
 
-  const input = { analysis, position: reference.range.start, workspaceIndex: workspaceIndex ?? {} };
-  return [
-    findDeclarationMember(input, context.receiverTypeName, reference.name),
-    findDeclarationMember(input, context.rootClassName, reference.name)
-  ].filter((declaration): declaration is AnalysisDeclaration => declaration !== undefined);
+function implicitGuiResolutionInput(
+  analysis: GuiReferenceInput['analysis'],
+  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined,
+  reference: AnalysisReference
+): GuiReferenceInput {
+  const gui = guiResolutionInput(analysis, workspaceIndex, reference.range.start);
+  return { analysis, position: reference.range.start, workspaceIndex: {
+    ...gui.workspaceIndex,
+    findVisibleDeclarations: workspaceIndex?.findVisibleDeclarations?.bind(workspaceIndex),
+    listVisibleDeclarations: workspaceIndex?.listVisibleDeclarations?.bind(workspaceIndex)
+  } };
 }
 
 function expectedArgumentDescriptor(argumentCounts: ReturnType<typeof acceptedArgumentCounts>[]): MessageDescriptor {
@@ -558,17 +572,6 @@ function joinAlternatives(values: (number | MessageDescriptor)[]): MessageDescri
   return { key: '{0} or {1}', args: [prefix, values[values.length - 1]] };
 }
 
-function findGuiPartByName(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'guiClasses'>,
-  workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined,
-  rootClassName: string,
-  name: string
-): AnalysisGuiPart | undefined {
-  const input = guiResolutionInput(analysis, workspaceIndex, { line: 0, character: 0 });
-  const rootClass = findVisibleGuiClass(input, rootClassName);
-  return rootClass === undefined ? undefined : findPart(rootClass.parts, (part) => part.name === name);
-}
-
 function guiReceiverPathDiagnostics(
   analysis: Pick<AnalyzedDocument, 'uri' | 'diagnostics' | 'syntaxRecovery' | 'guiClasses' | 'guiMethods'>,
   workspaceIndex: WorkspaceSemanticDiagnosticsIndex | undefined
@@ -612,24 +615,6 @@ function guiReceiverPathDiagnostic(
         ...message("Unknown GUI receiver path segment '{0}'.", segment),
         range: method.receiverPathSegmentRanges[index]
       };
-    }
-  }
-
-  return undefined;
-}
-
-function findPart(
-  parts: AnalysisGuiPart[],
-  predicate: (part: AnalysisGuiPart) => boolean
-): AnalysisGuiPart | undefined {
-  for (const part of parts) {
-    if (predicate(part)) {
-      return part;
-    }
-
-    const child = findPart(part.parts, predicate);
-    if (child !== undefined) {
-      return child;
     }
   }
 

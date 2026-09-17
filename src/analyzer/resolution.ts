@@ -1,4 +1,6 @@
+import { findEnclosingGuiMethodContext, type GuiResolutionInput } from './guiResolution';
 import type {
+  AnalysisGuiClass,
   AnalysisDeclaration,
   AnalyzedDocument,
   AnalysisPosition,
@@ -6,13 +8,14 @@ import type {
   AnalysisScope
 } from '../types/analysis';
 
-export interface WorkspaceDeclarationLookup {
+export interface WorkspaceDeclarationLookup extends NonNullable<GuiResolutionInput['workspaceIndex']> {
+  findVisibleGuiClasses?(sourceUri: string, name: string): AnalysisGuiClass[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   listVisibleDeclarations?(sourceUri: string): AnalysisDeclaration[];
 }
 
 export interface DeclarationResolutionInput {
-  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>;
+  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'> & Partial<Pick<AnalyzedDocument, 'guiClasses' | 'guiMethods'>>;
   position: AnalysisPosition;
   workspaceIndex: WorkspaceDeclarationLookup;
 }
@@ -156,7 +159,6 @@ export function declarationsInTypeHierarchy(
     if (visited.has(currentTypeName)) { return; }
     visited.add(currentTypeName);
     declarations.push(...index.byContainer.get(currentTypeName) ?? []);
-    declarations.push(...recoveredStaticMemberDeclarations(index.declarations, currentTypeName));
     const baseName = index.byName.get(currentTypeName)?.find(isTypeDeclaration)?.baseName;
     if (baseName !== undefined) { visit(baseName); }
   }
@@ -258,29 +260,18 @@ function requiredParameterCount(parameters: NonNullable<AnalysisDeclaration['sig
   return firstOptionalIndex < 0 ? parameters.length : firstOptionalIndex;
 }
 
-function recoveredStaticMemberDeclarations(
-  declarations: AnalysisDeclaration[],
-  containerName: string
-): AnalysisDeclaration[] {
-  return declarations
-    .filter((declaration) => declaration.containerName === undefined)
-    .filter((declaration) => declaration.detail.startsWith('static '))
-    .filter((declaration) => recoveredStaticMemberOwner(declarations, declaration)?.name === containerName)
-    .map((declaration) => ({ ...declaration, containerName }));
-}
-
-function recoveredStaticMemberOwner(
-  declarations: AnalysisDeclaration[],
-  member: AnalysisDeclaration
-): AnalysisDeclaration | undefined {
-  return declarations
-    .filter(isTypeDeclaration)
-    .filter((declaration) => declaration.uri === member.uri)
-    .filter((declaration) => positionBefore(declaration.selectionRange.start, member.selectionRange.start))
-    .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start))[0];
-}
-
 export function thisReceiverType(input: DeclarationResolutionInput): string | undefined {
+  const { guiClasses, guiMethods } = input.analysis;
+  if (guiClasses && guiMethods) {
+    const context = findEnclosingGuiMethodContext({ ...input, analysis: { ...input.analysis, guiClasses, guiMethods },
+      workspaceIndex: {
+        findGuiClass: (uri, name) => input.workspaceIndex.findGuiClass?.(uri, name)
+          ?? input.workspaceIndex.findVisibleGuiClasses?.(uri, name)?.[0],
+        listVisibleDocuments: input.workspaceIndex.listVisibleDocuments?.bind(input.workspaceIndex)
+      }
+    });
+    if (context) { return context.receiverTypeName; }
+  }
   const containingDeclarations = input.analysis.declarations
     .filter((declaration) => contains(declaration.range, input.position))
     .sort((left, right) => rangeSize(left.range) - rangeSize(right.range));

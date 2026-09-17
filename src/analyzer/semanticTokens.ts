@@ -1,3 +1,4 @@
+import { resolveImplicitGuiReference, type GuiReferenceInput } from './guiReferenceResolution';
 import { resolveSystemMacro } from './systemMacros';
 import type {
   AnalysisDeclaration,
@@ -10,21 +11,18 @@ import type {
 } from '../types/analysis';
 import {
   compareDeclarations,
-  findDeclarationMember as findDeclarationMemberUncached,
   findLocalDeclaration,
-  isTypeDeclaration,
   visibleDeclarationsByName,
   type DeclarationResolutionInput,
   type WorkspaceDeclarationLookup
 } from './resolution';
 import {
   allGuiMethods,
-  findEnclosingGuiMethodContext
 } from './guiResolution';
 
 export function collectSemanticTokens(
   analysis: AnalyzedDocument,
-  workspaceIndex: WorkspaceDeclarationLookup = {}
+  workspaceIndex: GuiReferenceInput['workspaceIndex'] = {}
 ): AnalysisSemanticToken[] {
   const cachedWorkspaceIndex = createCachedWorkspaceDeclarationLookup(workspaceIndex);
   const guiMethods = allGuiMethods(analysis);
@@ -66,9 +64,10 @@ export function collectSemanticTokens(
 }
 
 function createCachedWorkspaceDeclarationLookup(
-  workspaceIndex: WorkspaceDeclarationLookup
-): WorkspaceDeclarationLookup {
+  workspaceIndex: GuiReferenceInput['workspaceIndex']
+): GuiReferenceInput['workspaceIndex'] {
   const visibleDeclarationsByUri = new Map<string, AnalysisDeclaration[]>();
+  const visibleDocumentsByUri = new Map<string, AnalyzedDocument[]>();
   const declarationsByUriAndName = new Map<string, Map<string, AnalysisDeclaration[]>>();
   const lookupCache = new Map<string, AnalysisDeclaration[]>();
 
@@ -95,6 +94,15 @@ function createCachedWorkspaceDeclarationLookup(
   }
 
   return {
+    findGuiClass: workspaceIndex.findGuiClass?.bind(workspaceIndex),
+    listVisibleDocuments: uri => {
+      let documents = visibleDocumentsByUri.get(uri);
+      if (documents === undefined) {
+        documents = workspaceIndex.listVisibleDocuments?.(uri) ?? [];
+        visibleDocumentsByUri.set(uri, documents);
+      }
+      return documents;
+    },
     findVisibleDeclarations: (uri, name) => {
       if (workspaceIndex.listVisibleDeclarations !== undefined) {
         return declarationsByName(uri).get(name) ?? [];
@@ -208,7 +216,7 @@ function tokenTypeFromReference(
     return tokenTypeFromReferenceDeclaration(reference, localDeclaration);
   }
 
-  const implicitGuiMember = findImplicitGuiMemberDeclaration(resolutionInput, reference, resolutionCache);
+  const implicitGuiMember = resolveImplicitGuiReference(resolutionInput, reference)?.declaration;
   if (implicitGuiMember !== undefined) {
     return tokenTypeFromReferenceDeclaration(reference, implicitGuiMember);
   }
@@ -269,61 +277,10 @@ function isOperatorName(name: string): boolean {
   return name.startsWith('operator');
 }
 
-function findImplicitGuiMemberDeclaration(
-  input: DeclarationResolutionInput & { analysis: AnalyzedDocument },
-  reference: AnalysisReference,
-  resolutionCache: SemanticTokenResolutionCache
-): AnalysisDeclaration | undefined {
-  const context = findEnclosingGuiMethodContext({
-    analysis: input.analysis,
-    position: reference.range.start
-  });
-  if (context === undefined) {
-    return undefined;
-  }
-
-  return resolutionCache.findDeclarationMember(input, context.receiverTypeName, reference.name)
-    ?? findRecoveredGuiDeclarationMember(input, context.receiverTypeName, reference, resolutionCache)
-    ?? resolutionCache.findDeclarationMember(input, context.rootClassName, reference.name)
-    ?? findRecoveredGuiDeclarationMember(input, context.rootClassName, reference, resolutionCache);
-}
-
-function findRecoveredGuiDeclarationMember(
-  input: DeclarationResolutionInput,
-  containerName: string,
-  reference: AnalysisReference,
-  resolutionCache: SemanticTokenResolutionCache
-): AnalysisDeclaration | undefined {
-  if (!/^GC[A-Za-z_$][0-9A-Za-z_$]*$/.test(containerName)) {
-    return undefined;
-  }
-
-  const declaration = resolutionCache.visibleDeclarationsByName(input, reference.name)
-    .filter((item) => item.containerName === undefined && isRecoveredGuiMember(item, reference.name))
-    .sort(compareDeclarations)[0];
-  if (declaration === undefined) {
-    return undefined;
-  }
-
-  return {
-    ...declaration,
-    containerName,
-    kind: reference.call === true ? 'method' : 'field'
-  };
-}
-
-function isRecoveredGuiMember(declaration: AnalysisDeclaration, memberName: string): boolean {
-  return declaration.detail.includes(`${memberName}(`) || declaration.detail.endsWith(memberName);
-}
-
 interface SemanticTokenResolutionCache {
   isGuiMethodSelectionReference(reference: AnalysisReference): boolean;
   visibleDeclarationsByName(input: DeclarationResolutionInput, name: string): AnalysisDeclaration[];
-  findDeclarationMember(
-    input: DeclarationResolutionInput,
-    containerName: string,
-    memberName: string
-  ): AnalysisDeclaration | undefined;
+
 }
 
 function createSemanticTokenResolutionCache(
@@ -333,8 +290,6 @@ function createSemanticTokenResolutionCache(
 ): SemanticTokenResolutionCache {
   let visibleDeclarations: AnalysisDeclaration[] | undefined;
   let visibleDeclarationIndex: Map<string, AnalysisDeclaration[]> | undefined;
-  let allVisibleDeclarations: AnalysisDeclaration[] | undefined;
-  const typeHierarchyDeclarationsByContainerName = new Map<string, Map<string, AnalysisDeclaration[]>>();
   const declarationsByName = new Map<string, AnalysisDeclaration[]>();
 
   function listVisibleDeclarations(): AnalysisDeclaration[] | undefined {
@@ -372,40 +327,8 @@ function createSemanticTokenResolutionCache(
         : visibleDeclarationIndex.get(name) ?? [];
       declarationsByName.set(name, declarations);
       return declarations;
-    },
-    findDeclarationMember: (input, containerName, memberName) => {
-      if (input.analysis.uri !== analysis.uri) {
-        return findDeclarationMemberUncached(input, containerName, memberName);
-      }
-
-      let declarationsByMemberName = typeHierarchyDeclarationsByContainerName.get(containerName);
-      if (declarationsByMemberName === undefined) {
-        declarationsByMemberName = createTypeHierarchyDeclarationsByName(
-          visibleDeclarationsForInput(input),
-          containerName
-        );
-        typeHierarchyDeclarationsByContainerName.set(containerName, declarationsByMemberName);
-      }
-
-      return declarationsByMemberName.get(memberName)?.[0];
     }
   };
-
-  function visibleDeclarationsForInput(input: DeclarationResolutionInput): AnalysisDeclaration[] {
-    if (input.analysis.uri !== analysis.uri) {
-      return [
-        ...input.analysis.declarations,
-        ...(input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri) ?? [])
-      ].sort(compareDeclarations);
-    }
-
-    allVisibleDeclarations ??= Array.from(new Map([
-      ...analysis.declarations,
-      ...(listVisibleDeclarations() ?? [])
-    ].map((declaration) => [declaration.id, declaration])).values())
-      .sort(compareDeclarations);
-    return allVisibleDeclarations;
-  }
 }
 
 function createDeclarationsByName(
@@ -427,70 +350,6 @@ function createDeclarationsByName(
     declarations.sort(compareDeclarations);
   }
   return declarationsByName;
-}
-
-function createTypeHierarchyDeclarationsByName(
-  visibleDeclarations: readonly AnalysisDeclaration[],
-  typeName: string
-): Map<string, AnalysisDeclaration[]> {
-  const declarations: AnalysisDeclaration[] = [];
-  const visited = new Set<string>();
-
-  function visit(currentTypeName: string): void {
-    if (visited.has(currentTypeName)) {
-      return;
-    }
-
-    visited.add(currentTypeName);
-    declarations.push(...visibleDeclarations.filter((declaration) => declaration.containerName === currentTypeName));
-    declarations.push(...recoveredStaticMemberDeclarations(visibleDeclarations, currentTypeName));
-
-    const baseName = visibleDeclarations
-      .find((declaration) => isTypeDeclaration(declaration) && declaration.name === currentTypeName)
-      ?.baseName;
-    if (baseName !== undefined) {
-      visit(baseName);
-    }
-  }
-
-  visit(typeName);
-  return createDeclarationsByName([], declarations);
-}
-
-function recoveredStaticMemberDeclarations(
-  declarations: readonly AnalysisDeclaration[],
-  containerName: string
-): AnalysisDeclaration[] {
-  return declarations
-    .filter((declaration) => declaration.containerName === undefined)
-    .filter((declaration) => declaration.detail.startsWith('static '))
-    .filter((declaration) => recoveredStaticMemberOwner(declarations, declaration)?.name === containerName)
-    .map((declaration) => ({ ...declaration, containerName }));
-}
-
-function recoveredStaticMemberOwner(
-  declarations: readonly AnalysisDeclaration[],
-  member: AnalysisDeclaration
-): AnalysisDeclaration | undefined {
-  return declarations
-    .filter(isTypeDeclaration)
-    .filter((declaration) => declaration.uri === member.uri)
-    .filter((declaration) => positionBefore(declaration.selectionRange.start, member.selectionRange.start))
-    .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start))[0];
-}
-
-function positionBefore(
-  left: AnalysisDeclaration['selectionRange']['start'],
-  right: AnalysisDeclaration['selectionRange']['start']
-): boolean {
-  return left.line < right.line || (left.line === right.line && left.character < right.character);
-}
-
-function comparePositions(
-  left: AnalysisDeclaration['selectionRange']['start'],
-  right: AnalysisDeclaration['selectionRange']['start']
-): number {
-  return left.line - right.line || left.character - right.character;
 }
 
 function tokenFromGuiMethodDeclaration(method: AnalysisGuiMethod): AnalysisSemanticToken[] {

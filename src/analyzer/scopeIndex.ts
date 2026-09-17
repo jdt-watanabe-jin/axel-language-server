@@ -11,6 +11,7 @@ import { nodeToAnalysisRange } from './syntaxTree';
 const SCOPE_NODE_TYPES = new Set([
   'field_declaration_list',
   'function_definition',
+  'gins_attributes_definition',
   'compound_statement',
   'gins_definition'
 ]);
@@ -58,7 +59,7 @@ function isPrototypeParameterList(node: Parser.SyntaxNode): boolean {
   while (declarator.parent?.childForFieldName('declarator')?.id === declarator.id) {
     declarator = declarator.parent;
   }
-  return declarator.type !== 'function_definition';
+  return declarator.type !== 'function_definition' && declarator.type !== 'gins_attributes_definition';
 }
 
 function createScope(

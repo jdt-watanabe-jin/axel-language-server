@@ -7,7 +7,7 @@ import { assertExternalHover } from '../../support/hoverAssertions';
 import { analyze, analyzeMarked, positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 suite('getHover', () => {
-  test('resolves inherited GUI methods when a recovered base header loses member containers', () => {
+  test('does not treat a class-external function as an inherited GUI method', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');
     const forcedPath = path.join(tempDir, 'forced.h');
@@ -33,7 +33,7 @@ suite('getHover', () => {
       workspaceIndex: index
     });
 
-    assertExternalHover(hover, 'void GCWidget::SetCaption(string caption)', forcedPath);
+    assert.strictEqual(hover, null);
   });
 
   test('resolves chained widget member access through each field type', () => {

@@ -502,6 +502,11 @@ function nestedContainerNames(
   containerNames: string[],
   nodeDeclarations: AnalysisDeclaration[]
 ): string[] {
+  if (node.type === 'gins_attributes_definition') {
+    const declarator = node.childForFieldName('declarator');
+    const name = declarator && getDeclaratorName(declarator);
+    if (name) { return [...containerNames, name.text]; }
+  }
   if (isContainerDeclarationNode(node)) {
     return [...containerNames, ...nodeDeclarations.map((declaration) => declaration.name)];
   }

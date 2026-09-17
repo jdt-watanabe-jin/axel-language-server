@@ -8,7 +8,7 @@ import { recoveredStaticMemberFixture } from '../../support/recoveredStaticMembe
 import { analyze, positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 suite('getHover', () => {
-  test('resolves a static qualified method from a malformed forced include class', () => {
+  test('does not infer static member ownership from a preceding class', () => {
     const fixture = recoveredStaticMemberFixture();
 
     const hover = getHover({
@@ -17,8 +17,7 @@ suite('getHover', () => {
       workspaceIndex: fixture.workspaceIndex
     });
 
-    assertExternalHover(hover, 'static int FILE::IsDirectory(string fname)',
-      process.platform === 'win32' ? 'file:///file.h' : '/file.h');
+    assert.strictEqual(hover, null);
   });
 
   test('hovers the first visible declaration from multiple includes', () => {

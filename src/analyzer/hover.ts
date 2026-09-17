@@ -1,3 +1,4 @@
+import { resolveImplicitGuiReference, findGuiDeclarationMember as findDeclarationMember, type ResolvedImplicitGuiReference } from './guiReferenceResolution';
 import { renderedDocumentationFor } from './documentation/access';
 import type { RenderedDocumentation } from './documentation/model';
 import type { DocumentationBindings } from './documentation/model';
@@ -22,20 +23,16 @@ import type {
 } from '../types/analysis';
 import { expandMacroInvocationText, type MacroLookup } from './macroExpansion';
 import {
-  findLocalDeclaration as resolveLocalDeclaration,
   findVisibleDeclaration,
-  selectBestDeclarationForCall,
   receiverTypeName,
   thisReceiverType,
   visibleDeclarationsByName
 } from './resolution';
 import {
   allGuiMethods,
-  findEnclosingGuiMethodContext,
   findVisibleGuiClass,
   findVisibleGuiClassEntry,
   resolveGuiPartPath,
-  resolveLongestGuiPartPath,
   type GuiMethodContext,
   type ResolvedGuiPart
 } from './guiResolution';
@@ -98,7 +95,8 @@ export function getHover(input: HoverInput): AnalysisHover | null {
     return null;
   }
 
-  const preferredImplicitGuiHover = findPreferredImplicitGuiReferenceHover(input, reference);
+  const implicitGui = resolveImplicitGuiReference(input, reference);
+  const preferredImplicitGuiHover = implicitGui?.preferred ? hoverForImplicitGuiReference(input, implicitGui) : undefined;
   if (preferredImplicitGuiHover !== undefined) {
     return preferredImplicitGuiHover;
   }
@@ -117,7 +115,7 @@ export function getHover(input: HoverInput): AnalysisHover | null {
     );
   }
 
-  const implicitGuiHover = findImplicitGuiReferenceHover(input, reference);
+  const implicitGuiHover = implicitGui === undefined ? undefined : hoverForImplicitGuiReference(input, implicitGui);
   if (implicitGuiHover !== undefined) {
     return implicitGuiHover;
   }
@@ -199,19 +197,6 @@ function formatMacroExpansionForHover(expandedText: string): string {
   return expandedText.replace(/;[ \t]+(?=[^}\s])/g, ';\n');
 }
 
-function findPreferredImplicitGuiReferenceHover(input: HoverInput, reference: AnalysisReference): AnalysisHover | undefined {
-  const memberAccess = reference.memberAccess;
-  if (memberAccess === undefined) {
-    const localDeclaration = findLocalDeclaration(input.analysis, reference.name, input.position);
-    return localDeclaration === undefined ? findImplicitGuiReferenceHover(input, reference) : undefined;
-  }
-
-  const localReceiver = findLocalDeclaration(input.analysis, memberAccess.receiverName, input.position);
-  return localReceiver === undefined && typeDeclarationName(input, memberAccess.receiverName) === undefined
-    ? findImplicitGuiReferenceHover(input, reference)
-    : undefined;
-}
-
 function findDeclarationAtPosition(
   analysis: AnalyzedDocument,
   position: AnalysisPosition
@@ -291,94 +276,15 @@ function findGuiReferenceHover(input: HoverInput): AnalysisHover | null | undefi
   );
 }
 
-function findImplicitGuiReferenceHover(
-  input: HoverInput,
-  reference: AnalysisReference
-): AnalysisHover | undefined {
-  const context = findEnclosingGuiMethodContext(input);
-  if (context === undefined) {
-    return undefined;
+function hoverForImplicitGuiReference(input: HoverInput, resolved: ResolvedImplicitGuiReference): AnalysisHover | undefined {
+  const { context, part, declaration } = resolved;
+  if (part) {
+    return withDeclarationOrigin(hoverFromText(implicitGuiPartText(context.rootClassName, part.part)),
+      input.analysis.uri, part.ownerUri, input.locale);
   }
-
-  if (reference.memberAccess !== undefined) {
-    return hoverForImplicitGuiMemberAccess(input, context, reference);
-  }
-
-  const part = resolveGuiPartPath(input, context.rootClassName, [reference.name]);
-  if (part !== undefined) {
-    return withDeclarationOrigin(
-      hoverFromText(implicitGuiPartText(context.rootClassName, part.part)), input.analysis.uri, part.ownerUri, input.locale
-    );
-  }
-
-  const member = findImplicitGuiContextMember(input, context, reference);
-  const ownerMember = member
-    ?? findDeclarationMemberWithoutRecovery(input, context.rootClassName, reference.name, new Set<string>(), reference);
-  const shouldUseReceiverType = (member !== undefined && member.containerName === context.receiverTypeName)
-    || ownerMember?.containerName === undefined;
-  return ownerMember === undefined ? undefined : withDeclarationOrigin(hoverForDeclarationText(
-    shouldUseReceiverType
-      ? hoverTextForGuiContextMemberDeclaration(ownerMember, context)
-      : hoverTextForMemberDeclaration(ownerMember),
-    hoverDocumentation(input, ownerMember)
-  ), input.analysis.uri, ownerMember.uri, input.locale);
-}
-
-function findImplicitGuiContextMember(
-  input: HoverInput,
-  context: GuiMethodContext,
-  reference: AnalysisReference
-): AnalysisDeclaration | undefined {
-  const recoveredMember = findRecoveredGuiDeclarationMember(input, context.receiverTypeName, reference.name, reference);
-  return findDirectDeclarationMember(input, context.receiverTypeName, reference.name, reference)
-    ?? (isImplicitGuiRecoveredMember(recoveredMember, reference.name) ? recoveredMember : undefined)
-    ?? findDeclarationMemberWithoutRecovery(input, context.receiverTypeName, reference.name, new Set<string>(), reference);
-}
-
-function isImplicitGuiRecoveredMember(
-  declaration: AnalysisDeclaration | undefined,
-  memberName: string
-): declaration is AnalysisDeclaration {
-  if (declaration === undefined) {
-    return false;
-  }
-
-  return !declaration.detail.includes(`${memberName}(`) || /^On[A-Za-z_$][0-9A-Za-z_$]*$/.test(memberName);
-}
-
-function hoverForImplicitGuiMemberAccess(
-  input: HoverInput,
-  context: GuiMethodContext,
-  reference: AnalysisReference
-): AnalysisHover | undefined {
-  const memberAccess = reference.memberAccess;
-  if (memberAccess === undefined) {
-    return undefined;
-  }
-
-  const path = [memberAccess.receiverName, ...memberAccess.memberNames];
-  const partPrefix = resolveLongestGuiPartPath(input, context.rootClassName, path);
-  if (partPrefix === undefined) {
-    return undefined;
-  }
-
-  if (partPrefix.length === path.length) {
-    return withDeclarationOrigin(
-      hoverFromText(implicitGuiPartText(context.rootClassName, partPrefix.part.part)),
-      input.analysis.uri, partPrefix.part.ownerUri, input.locale
-    );
-  }
-
-  const memberName = path.at(-1);
-  if (memberName === undefined) {
-    return undefined;
-  }
-
-  const member = findDeclarationMember(input, partPrefix.part.part.typeName, memberName, reference);
-  return member === undefined ? undefined : withDeclarationOrigin(hoverForDeclarationText(
-    hoverTextForMemberDeclaration(member),
-    hoverDocumentation(input, member)
-  ), input.analysis.uri, member.uri, input.locale);
+  return declaration === undefined ? undefined : withDeclarationOrigin(hoverForDeclarationText(
+    resolved.useReceiverType ? hoverTextForGuiContextMemberDeclaration(declaration, context) : hoverTextForMemberDeclaration(declaration),
+    hoverDocumentation(input, declaration)), input.analysis.uri, declaration.uri, input.locale);
 }
 
 function findGuiTypeReferenceHover(input: HoverInput): AnalysisHover | undefined {
@@ -520,139 +426,6 @@ function resolveGuiMemberAccess(
   return resolveGuiPartPath(input, typeName, memberAccess.memberNames);
 }
 
-function findDeclarationMember(
-  input: HoverInput,
-  containerName: string,
-  memberName: string,
-  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
-): AnalysisDeclaration | undefined {
-  return findDeclarationMemberInHierarchy(input, containerName, memberName, new Set<string>(), reference);
-}
-
-function findDeclarationMemberInHierarchy(
-  input: HoverInput,
-  containerName: string,
-  memberName: string,
-  visitedContainerNames: Set<string>,
-  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
-): AnalysisDeclaration | undefined {
-  if (visitedContainerNames.has(containerName)) {
-    return undefined;
-  }
-
-  visitedContainerNames.add(containerName);
-  const member = findDirectDeclarationMember(input, containerName, memberName, reference);
-  if (member !== undefined) {
-    return member;
-  }
-
-  const baseName = findTypeBaseName(input, containerName);
-  if (baseName !== undefined) {
-    const baseMember = findDeclarationMemberInHierarchy(input, baseName, memberName, visitedContainerNames, reference);
-    if (baseMember !== undefined) {
-      return baseMember;
-    }
-  }
-
-  return findRecoveredGuiDeclarationMember(input, containerName, memberName, reference)
-    ?? findRecoveredStaticMember(input, containerName, memberName, reference);
-}
-
-function findDirectDeclarationMember(
-  input: HoverInput,
-  containerName: string,
-  memberName: string,
-  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
-): AnalysisDeclaration | undefined {
-  return selectBestDeclarationForCall(
-    visibleDeclarations(input, memberName)
-      .filter((declaration) => declaration.containerName === containerName)
-      .sort(compareDeclarations),
-    reference
-  );
-}
-
-function findDeclarationMemberWithoutRecovery(
-  input: HoverInput,
-  containerName: string,
-  memberName: string,
-  visitedContainerNames: Set<string>,
-  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
-): AnalysisDeclaration | undefined {
-  if (visitedContainerNames.has(containerName)) {
-    return undefined;
-  }
-
-  visitedContainerNames.add(containerName);
-  const member = findDirectDeclarationMember(input, containerName, memberName, reference);
-  if (member !== undefined) {
-    return member;
-  }
-
-  const baseName = findTypeBaseName(input, containerName);
-  return baseName === undefined
-    ? undefined
-    : findDeclarationMemberWithoutRecovery(input, baseName, memberName, visitedContainerNames, reference);
-}
-
-function findRecoveredGuiDeclarationMember(
-  input: HoverInput,
-  containerName: string,
-  memberName: string,
-  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
-): AnalysisDeclaration | undefined {
-  if (!/^GC[A-Za-z_$][0-9A-Za-z_$]*$/.test(containerName)) {
-    return undefined;
-  }
-
-  const declaration = selectBestDeclarationForCall(
-    visibleDeclarations(input, memberName)
-      .filter((item) => item.containerName === undefined && isRecoveredGuiMember(item, memberName))
-      .sort(compareDeclarations),
-    reference
-  );
-  return declaration === undefined ? undefined : { ...declaration, containerName };
-}
-
-function isRecoveredGuiMember(declaration: AnalysisDeclaration, memberName: string): boolean {
-  return declaration.detail.includes(`${memberName}(`) || declaration.detail.endsWith(memberName);
-}
-
-function findRecoveredStaticMember(
-  input: HoverInput,
-  containerName: string,
-  memberName: string,
-  reference?: Pick<AnalysisReference, 'call' | 'argumentCount'>
-): AnalysisDeclaration | undefined {
-  return selectBestDeclarationForCall(
-    visibleDeclarations(input, memberName)
-      .filter((declaration) => declaration.containerName === undefined)
-      .filter((declaration) => declaration.detail.startsWith('static '))
-      .filter((declaration) => recoveredStaticMemberOwner(input, containerName, declaration)?.name === containerName)
-      .map((declaration) => ({ ...declaration, containerName }))
-      .sort(compareDeclarations),
-    reference
-  );
-}
-
-function recoveredStaticMemberOwner(
-  input: HoverInput,
-  containerName: string,
-  member: AnalysisDeclaration
-): AnalysisDeclaration | undefined {
-  return visibleDeclarations(input, containerName)
-    .filter((declaration) => declaration.kind === 'class' || declaration.kind === 'struct' || declaration.kind === 'union')
-    .filter((declaration) => declaration.uri === member.uri)
-    .filter((declaration) => positionBefore(declaration.selectionRange.start, member.selectionRange.start))
-    .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start))[0];
-}
-
-function findTypeBaseName(input: HoverInput, typeName: string): string | undefined {
-  return visibleDeclarations(input, typeName)
-    .filter((declaration) => declaration.kind === 'class' || declaration.kind === 'struct' || declaration.kind === 'union')
-    .sort(compareDeclarations)[0]?.baseName;
-}
-
 function typeDeclarationName(input: HoverInput, name: string): string | undefined {
   return visibleDeclarations(input, name)
     .find((declaration) => declaration.kind === 'class' || declaration.kind === 'struct' || declaration.kind === 'union')
@@ -661,14 +434,6 @@ function typeDeclarationName(input: HoverInput, name: string): string | undefine
 
 function visibleDeclarations(input: HoverInput, name: string): AnalysisDeclaration[] {
   return visibleDeclarationsByName(input, name);
-}
-
-function findLocalDeclaration(
-  analysis: AnalyzedDocument,
-  name: string,
-  position: AnalysisPosition
-): AnalysisDeclaration | undefined {
-  return resolveLocalDeclaration(analysis, name, position);
 }
 
 function hoverForDeclaration(input: HoverInput, declaration: AnalysisDeclaration): AnalysisHover {
@@ -897,12 +662,6 @@ function positionBefore(left: AnalysisPosition, right: AnalysisPosition): boolea
 
 function comparePositions(left: AnalysisPosition, right: AnalysisPosition): number {
   return left.line - right.line || left.character - right.character;
-}
-
-function compareDeclarations(left: AnalysisDeclaration, right: AnalysisDeclaration): number {
-  return left.uri.localeCompare(right.uri)
-    || comparePositions(left.selectionRange.start, right.selectionRange.start)
-    || comparePositions(left.selectionRange.end, right.selectionRange.end);
 }
 
 function hoverDocumentation(input: HoverInput, declaration: AnalysisDeclaration): string | RenderedDocumentation | undefined {

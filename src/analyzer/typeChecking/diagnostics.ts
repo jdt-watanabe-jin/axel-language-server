@@ -10,6 +10,7 @@ import { isInteger, type ClassInfo, type TypeContext } from './model';
 import { field, descendants, type TypeNode } from './syntax';
 
 export interface TypeDiagnosticsInput {
+  sourcePosition?: TypeContext['sourcePosition'];
   loginScope?: LoginScopeSnapshot;
   analysis: AnalyzedDocument;
   documents?: readonly AnalyzedDocument[];
@@ -18,11 +19,28 @@ export interface TypeDiagnosticsInput {
 }
 
 export function collectTypeDiagnostics(input: TypeDiagnosticsInput): AnalysisDiagnostic[] {
+  const expanded = input.analysis.expandedSource;
+  if (expanded) {
+    return collectTypeDiagnostics({ ...input, analysis: expanded.analysis,
+      sourcePosition: position => expanded.sourceRange({ start: position, end: position }).start,
+      documents: input.documents?.map(document => document.expandedSource?.analysis ?? document),
+      resolveMacro: input.resolveMacro && ((name, node) => {
+        const macro = input.resolveMacro!(name, { ...node, range: expanded.sourceRange(node.range) });
+        return macro && { ...macro,
+          visibilityStart: macro.visibilityStart && expanded.expandedPosition(macro.visibilityStart),
+          range: macro.uri === input.analysis.uri ? {
+            start: expanded.expandedPosition(macro.range.start), end: expanded.expandedPosition(macro.range.end, true)
+          } : macro.range
+        };
+      })
+    }).map(diagnostic => ({ ...diagnostic, range: expanded.sourceRange(diagnostic.range) }));
+  }
   const {analysis} = input;
   const root = analysis.typeSnapshot?.root;
   const catalog = input.catalog ?? loadBuiltinCatalog([]);
   if (!root || isBuiltinDeclarationSource(catalog, analysis.uri)) { return []; }
   const ctx = buildTypeContext({...input, catalog});
+  ctx.sourcePosition = input.sourcePosition;
   const undefCalls = descendants(root,'preproc_call').filter(call => field(call,'directive')?.text.replace(/\s/g,'') === '#undef');
   ctx.resolveMacro = (name, node) => {
     const candidates = analysis.macroDefinitions.filter(macro => macro.name === name

@@ -309,6 +309,12 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  /** Keep virtual positions until semantic checks finish; only published ranges use source positions. */
+  expandedSource?: {
+    analysis: AnalyzedDocument;
+    sourceRange(range: AnalysisRange): AnalysisRange;
+    expandedPosition(position: AnalysisPosition, end?: boolean): AnalysisPosition;
+  };
   documentationBlocks?: readonly import('../analyzer/documentation/model').DocumentationBlock[];
   expandedMacroReferences?: AnalysisReference[];
   navigationReferences?: AnalysisReference[];

@@ -5,10 +5,50 @@ import * as documentSymbols from '../../../analyzer/documentSymbols';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { getDefinitions, getReferences } from '../../../analyzer/navigation';
 import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('General macro reparsing', () => {
   const fixtures = useWorkspaceFixtures();
+  for (const newline of ['\n', '\r\n']) {
+    test(`resolves GUI receivers and local scopes inside included macros ${JSON.stringify(newline)}`, async () => {
+      const directory = fixtures.createTempDir();
+      fs.writeFileSync(path.join(directory, 'parts.h'), [
+        'class GCWidget { int value; void SetValue(int n) {} };',
+        'class GCLabel : public GCWidget { int text; };',
+        'class GCPushButton : public GCWidget { int pixmap; };',
+        '#define PARTS GCLabel { OnCreate() { text=1; int local; local=2; } }; \\',
+        'GCPushButton { OnCreate() { pixmap=1; int local; local=2; SetValue(local); } OnPush(int command) { SetValue(command); } };'
+      ].join(newline));
+      const index = fixtures.createWorkspaceIndex();
+      const input = {uri:pathToFileURL(path.join(directory,'main.axl')).toString(),version:1,
+        text:'#include "parts.h"\nclass Dialog : public GCDialog {\n PARTS\n};'};
+      index.indexOpenDocument(input);
+      await index.waitForBackgroundIndexing();
+      assert.deepStrictEqual(index.indexOpenDocument(input).diagnostics, []);
+    });
+  }
+  test('checks expanded scopes before mapping real errors to the macro invocation', () => {
+    const analysis = check([
+      'class GCText { int value; void SetValue(int n) {} };',
+      '#define PARTS GCText { OnCreate() { int local; local=1; } }; GCText { OnCreate() { local=1; value=this; SetValue(this); Missing(); } };',
+      'class Dialog : public GCDialog {',
+      ' PARTS',
+      '};'
+    ].join('\n'));
+    assert.deepStrictEqual(analysis.diagnostics.map(d=>d.message).filter(m=>m.startsWith('Unknown')).sort(),
+      ["Unknown identifier 'Missing'.", "Unknown identifier 'local'."]);
+    assert.deepStrictEqual(analysis.diagnostics.filter(d=>d.code).map(d=>d.code).sort(),
+      ['axel.type.argument_type','axel.type.assignment']);
+    assert.ok(analysis.diagnostics.every(d=>d.range.start.line===3 && d.range.start.character===1 && d.range.end.character===6));
+  });
+  test('evaluates __LINE__ at the written position after a multiline macro call', () => {
+    const analysis = check('#define ID(x) x\nint x = ID(\n 1\n);\nint a[1 / (__LINE__ - 5)];');
+    assert.ok(analysis.diagnostics.some(d => d.code === 'axel.type.constant_expression'), JSON.stringify(analysis.diagnostics));
+    assert.deepStrictEqual(check('#define ID(x) x\nint x = ID(\n 1\n);\nint a[2 / (__LINE__ - 3)];').diagnostics, []);
+  });
   for (const expand of [true, false]) {
     test(`builds final metadata once with macro expansion ${expand}`, () => {
       const spies = [mock.method(diagnostics, 'collectSyntaxDiagnostics'),
