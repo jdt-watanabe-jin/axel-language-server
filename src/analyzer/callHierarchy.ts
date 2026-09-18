@@ -25,8 +25,9 @@ interface Graph {
   bases: Map<string, Set<string>>;
   contextualAliases: Map<string, Map<string, string>>;
 }
-interface DocumentData { dependencies: AnalyzedDocument[]; catalog: unknown; semantic: SemanticCallData; symbols: HierarchySymbol[] }
+interface DocumentData { dependencies: AnalyzedDocument[]; catalog: unknown; semantic?: SemanticCallData; symbols: HierarchySymbol[] }
 interface WorkspaceCache { graphs: Map<string, Graph>; documents: WeakMap<AnalyzedDocument, DocumentData> }
+type GraphQuery = {direction:'prepare';position:AnalysisPosition} | {direction:'incoming'|'outgoing';item:AnalysisCallHierarchyItem};
 const caches = new WeakMap<WorkspaceNavigationIndex, WorkspaceCache>();
 
 function uniqueDocuments(documents: AnalyzedDocument[]): AnalyzedDocument[] {
@@ -53,35 +54,35 @@ function valueTarget(input: NavigationInput, graph: Graph): AnalysisDeclaration 
   return keys.size <= 1 ? target : undefined;
 }
 
-function* graphSteps(analysis: AnalyzedDocument, workspaceIndex: HierarchyWorkspace): Generator<AnalysisStep, Graph, void> {
+function* graphSteps(analysis: AnalyzedDocument, workspaceIndex: HierarchyWorkspace, query: GraphQuery): Generator<AnalysisStep, Graph, void> {
   yield;
   const documents = uniqueDocuments([...(workspaceIndex.listReferenceSearchDocuments?.(analysis.uri)
     ?? workspaceIndex.listVisibleDocuments?.(analysis.uri) ?? []), analysis]);
   let cache = caches.get(workspaceIndex);
   if (!cache) { cache = {graphs:new Map(),documents:new WeakMap()}; caches.set(workspaceIndex,cache); }
-  const cached = cache.graphs.get(analysis.uri);
+  const cacheKey = JSON.stringify([analysis.uri,query.direction,query.direction === 'prepare' ? query.position : query.item.data.key]);
+  const cached = cache.graphs.get(cacheKey);
   if (cached && sameDocuments(cached.documents, documents)) { return cached; }
   const graph: Graph = {documents,symbols:new Map(),aliases:new Map(),byDocument:new Map(),calls:new Map(),references:new Map(),
     incoming:new Map(),outgoing:new Map(),bases:new Map(),contextualAliases:new Map()};
   const data = new Map<string, DocumentData>();
+  const inputs = new Map<string,TypeDiagnosticsInput>();
   const visibility = new Map<string, Set<string>>();
   for (const document of documents) {
     yield;
     const input = workspaceIndex.callHierarchyTypeInput?.(document) ?? {analysis:document,
       documents:workspaceIndex.listVisibleDocuments?.(document.uri) ?? []};
+    inputs.set(document.uri,input);
     const dependencies = uniqueDocuments([document, ...input.documents ?? [], ...input.loginScope?.documents ?? []]);
     visibility.set(document.uri, new Set(dependencies.map(d => d.uri)));
     let item = cache.documents.get(document);
     if (!item || !sameDocuments(item.dependencies, dependencies) || item.catalog !== input.catalog) {
       const symbols = yield* collectHierarchySymbols(document, analysis.uri);
-      const semantic = document.typeSnapshot ? yield* collectSemanticCallData(input) : {calls:[],references:[],overrides:[]};
-      item = {dependencies,catalog:input.catalog,symbols,semantic};
+      item = {dependencies,catalog:input.catalog,symbols};
       cache.documents.set(document, item);
     }
     data.set(document.uri,item);
     graph.byDocument.set(document.uri,item.symbols);
-    graph.calls.set(document.uri,item.semantic.calls);
-    graph.references.set(document.uri,item.semantic.references);
   }
   // Link declarations only through actual visibility, never merely by a workspace-wide name match.
   const groups = new Map<string, HierarchySymbol[]>();
@@ -143,45 +144,86 @@ function* graphSteps(analysis: AnalyzedDocument, workspaceIndex: HierarchyWorksp
   }
   const targetKey = (target: AnalysisDeclaration, uri: string): string | undefined =>
     graph.contextualAliases.get(uri)?.get(target.id) ?? graph.aliases.get(target.id);
+  // Navigation scans the source to locate its reference before resolving it. Most references
+  // are ordinary variables/fields, so reject names that cannot produce a callable edge first.
+  const callableNames = new Set([...graph.symbols.values()].flatMap(symbol =>
+    symbol.declaration?.signature ? [symbol.declaration.name,symbol.item.name] : []));
+  const selectedKey = query.direction === 'prepare' ? undefined : graph.aliases.get(query.item.data.key) ?? query.item.data.key;
+  const selected = selectedKey && graph.symbols.get(selectedKey);
+  const incomingNames = query.direction === 'incoming' && selected
+    && ['function','method'].includes(selected.item.kind) && !selected.item.name.startsWith('~')
+    ? new Set([selected.declaration?.name,selected.item.name]) : undefined;
   for (const document of documents) {
     yield;
     const item = data.get(document.uri)!;
+    if (!needsSemanticData(document,item.symbols,analysis,graph,query)) { continue; }
+    const semantic = item.semantic ??= document.typeSnapshot
+      ? yield* collectSemanticCallData(inputs.get(document.uri)!) : {calls:[],references:[],overrides:[]};
+    graph.calls.set(document.uri,semantic.calls);
+    graph.references.set(document.uri,semantic.references);
+    if (query.direction === 'prepare') { continue; }
     const add = (target: AnalysisDeclaration, range: AnalysisRange, kind: Edge['kind'], expandedPosition?: AnalysisPosition) => {
-      if (excluded(document,range.start)) { return; }
+      if (incomingNames && !incomingNames.has(target.name) || excluded(document,range.start)) { return; }
       const owner = ownerAt(item.symbols,expandedPosition ?? range.start,expandedPosition !== undefined);
       const from = owner && canonical.get(owner);
+      if (query.direction === 'outgoing' && from !== selectedKey) { return; }
       const to = targetKey(target,document.uri);
       if (from && to) { addEdge(graph,{from,to,uri:document.uri,range,kind}); }
     };
-    for (const call of item.semantic.calls) {
+    for (const call of semantic.calls) {
       yield;
       for (const target of call.targets) { add(target,call.range,'call',call.expandedRange?.start); }
     }
-    for (const reference of item.semantic.references) {
+    for (const reference of semantic.references) {
       yield;
       for (const target of reference.targets) { add(target,reference.range,'reference',reference.expandedRange?.start); }
     }
     for (const reference of document.navigationReferences ?? document.references) {
       yield;
-      if (reference.typeReference || reference.preprocessor || excluded(document,reference.range.start)) { continue; }
-      if (item.semantic.references.some(value => rangeKey(value.range) === rangeKey(reference.range))) { continue; }
-      if (item.semantic.calls.some(call => containsSourcePosition(call.range,reference.range.start))) { continue; }
+      if (!callableNames.has(reference.name) || reference.typeReference || reference.preprocessor
+        || excluded(document,reference.range.start)) { continue; }
+      if (incomingNames && !incomingNames.has(reference.name)) { continue; }
+      if (query.direction === 'outgoing') {
+        const owner = ownerAt(item.symbols,reference.range.start);
+        if (!owner || canonical.get(owner) !== selectedKey) { continue; }
+      }
+      if (semantic.references.some(value => rangeKey(value.range) === rangeKey(reference.range))) { continue; }
+      if (semantic.calls.some(call => containsSourcePosition(call.range,reference.range.start))) { continue; }
       const navigation = {analysis:document,position:reference.range.start,workspaceIndex};
       const target = reference.call ? findNavigationTargetDeclaration(navigation) : valueTarget(navigation,graph);
       if (!target?.signature || !['function','method'].includes(target.kind)) { continue; }
       add(target,reference.range,reference.call ? 'call' : 'reference');
     }
-    for (const relation of item.semantic.overrides) {
+    for (const relation of semantic.overrides) {
       const derived = targetKey(relation.derived,document.uri), base = targetKey(relation.base,document.uri);
       if (!derived || !base || derived === base) { continue; }
       const bases = graph.bases.get(derived) ?? new Set();
       bases.add(base); graph.bases.set(derived,bases);
     }
   }
-  cache.graphs.set(analysis.uri,graph);
+  cache.graphs.set(cacheKey,graph);
   // Requests can originate in many files; retain a bounded number of complete context graphs.
   if (cache.graphs.size > 8) { cache.graphs.delete(cache.graphs.keys().next().value!); }
   return graph;
+}
+
+function needsSemanticData(document: AnalyzedDocument, symbols: HierarchySymbol[], analysis: AnalyzedDocument,
+  graph: Graph, query: GraphQuery): boolean {
+  if (query.direction === 'prepare') {
+    return document.uri === analysis.uri && !symbols.some(symbol => symbol.item.kind !== 'file'
+      && containsSourcePosition(symbol.item.selectionRange,query.position));
+  }
+  const key = graph.aliases.get(query.item.data.key) ?? query.item.data.key;
+  const target = graph.symbols.get(key);
+  if (!target) { return false; }
+  if (query.direction === 'outgoing') { return document.uri === target.item.uri; }
+  // Ordinary function/method uses have a written name, including in expanded macros.
+  // Constructors, operators and conversions can be implicit, so retain the full search for them.
+  if (!['function','method'].includes(target.item.kind) || target.item.name.startsWith('~')) { return true; }
+  const names = new Set([target.item.name,target.declaration?.name]);
+  const source = document.expandedSource?.analysis ?? document;
+  return document.uri === target.item.uri || source.references.some(reference => names.has(reference.name))
+    || source.declarations.some(declaration => declaration.signature && names.has(declaration.name));
 }
 
 function publicItem(graph: Graph, key: string, sourceUri: string): AnalysisCallHierarchyItem | undefined {
@@ -197,7 +239,7 @@ export interface CallHierarchyInput {
 
 export function* prepareCallHierarchySteps(input: NavigationInput): Generator<AnalysisStep, AnalysisCallHierarchyItem[] | null, void> {
   if (excluded(input.analysis,input.position)) { return null; }
-  const graph = yield* graphSteps(input.analysis,input.workspaceIndex);
+  const graph = yield* graphSteps(input.analysis,input.workspaceIndex,{direction:'prepare',position:input.position});
   const keys = new Set<string>();
   const local = graph.byDocument.get(input.analysis.uri) ?? [];
   for (const symbol of local) {
@@ -231,7 +273,7 @@ export function* prepareCallHierarchySteps(input: NavigationInput): Generator<An
 }
 
 export function* incomingCallHierarchySteps(input: CallHierarchyInput): Generator<AnalysisStep, AnalysisCallHierarchyCall[], void> {
-  const graph = yield* graphSteps(input.analysis,input.workspaceIndex);
+  const graph = yield* graphSteps(input.analysis,input.workspaceIndex,{direction:'incoming',item:input.item});
   const key = graph.aliases.get(input.item.data.key) ?? input.item.data.key;
   if (!graph.symbols.has(key)) { return []; }
   const pending = [key], seen = new Set<string>(), edges: Edge[] = [];
@@ -247,7 +289,7 @@ export function* incomingCallHierarchySteps(input: CallHierarchyInput): Generato
 }
 
 export function* outgoingCallHierarchySteps(input: CallHierarchyInput): Generator<AnalysisStep, AnalysisCallHierarchyCall[], void> {
-  const graph = yield* graphSteps(input.analysis,input.workspaceIndex);
+  const graph = yield* graphSteps(input.analysis,input.workspaceIndex,{direction:'outgoing',item:input.item});
   const key = graph.aliases.get(input.item.data.key) ?? input.item.data.key;
   if (!graph.symbols.has(key)) { return []; }
   return groupCalls(graph,graph.outgoing.get(key) ?? [],'outgoing',input.analysis.uri,input.item.uri);
