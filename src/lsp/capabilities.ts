@@ -24,6 +24,7 @@ export function createInitializeResult(): InitializeResult {
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       hoverProvider: true,
+      inlayHintProvider: true,
       completionProvider: {
         triggerCharacters: COMPLETION_TRIGGER_CHARACTERS
       },

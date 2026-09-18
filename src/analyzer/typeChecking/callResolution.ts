@@ -4,19 +4,29 @@ import { isBuiltinDeclarationSource } from './builtinCatalog';
 import { createTypeCheckingContext, type TypeDiagnosticsInput } from './diagnostics';
 import { scopeFor } from './declarations';
 import { compatibleOverloads, evaluateExpression } from './expressions';
-import { descendants, field, type TypeNode } from './syntax';
+import { callArguments, descendants, field, type TypeNode } from './syntax';
 
 /** Builtin calls share diagnostic compatibility; ordinary AXEL functions retain arity identity. */
 export function createCallResolver(input: TypeDiagnosticsInput): (position: AnalysisPosition, allowPartialArguments?: boolean) => AnalysisDeclaration[] | undefined {
   const ctx = createTypeCheckingContext(input);
   const calls = descendants(ctx.analysis.typeSnapshot!.root, 'call_expression');
+  const key = (position: AnalysisPosition) => position.line + ':' + position.character;
+  const nameOf = (call: TypeNode) => {
+    const callee = field(call,'function');
+    return callee && (field(callee,'field') ?? (callee.kind === 'qualified_identifier' ? callee.children.at(-1) : callee));
+  };
+  const callStarts = new Map<string,TypeNode>();
+  for (const call of calls) {
+    const name = nameOf(call);
+    if (name && !callStarts.has(key(name.range.start))) { callStarts.set(key(name.range.start),call); }
+  }
   const documents = [input.analysis, ...input.documents ?? [], ...input.loginScope?.documents ?? []];
   const cached = new Map<TypeNode, AnalysisDeclaration[] | undefined>();
   const partialCache = new Map<TypeNode, AnalysisDeclaration[] | undefined>();
   return (position, allowPartialArguments = false) => {
     const results = allowPartialArguments ? partialCache : cached;
     const expandedPosition = input.analysis.expandedSource?.expandedPosition(position) ?? position;
-    const call = calls.find(call => {
+    const call = callStarts.get(key(expandedPosition)) ?? calls.find(call => {
       const callee = field(call, 'function');
       if (!callee) { return false; }
       const name = field(callee, 'field') ?? (callee.kind === 'qualified_identifier' ? callee.children.at(-1) : callee);
@@ -31,10 +41,10 @@ export function createCallResolver(input: TypeDiagnosticsInput): (position: Anal
     const builtin = candidates.every(fn => isBuiltinDeclarationSource(ctx.catalog, fn.uri));
     // Named receivers retain declaration lookup. Expression receivers need the
     // inferred result type even for ordinary methods, whose identity remains arity-based.
-    if (!candidates.length || (!builtin && !hasExpressionReceiver(functionNode))) {
+    if (!candidates.length || (!builtin && !allowPartialArguments && !hasExpressionReceiver(functionNode))) {
       results.set(call, undefined); return undefined;
     }
-    const values = (field(call, 'arguments')?.children ?? []).map(arg => evaluateExpression(ctx, arg, scope));
+    const values = callArguments(call).filter(arg => !(allowPartialArguments && arg.kind === 'ERROR' && arg.text === ',')).map(arg => evaluateExpression(ctx, arg, scope));
     const {viable, uncertain} = builtin
       ? compatibleOverloads(ctx, candidates, values, 'argument', allowPartialArguments)
       : {viable: candidates.filter(fn => (allowPartialArguments || values.length >= fn.required)

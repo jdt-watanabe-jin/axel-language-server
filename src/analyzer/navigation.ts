@@ -191,11 +191,24 @@ function findDeclarationAtPosition(
   return analysis.declarations.find((declaration) => contains(declaration.selectionRange, position));
 }
 
+const referenceStarts = new WeakMap<AnalysisReference[], Map<string, AnalysisReference>>();
+
 function findReferenceAtPosition(
   analysis: AnalyzedDocument,
   position: AnalysisPosition
 ): AnalysisReference | undefined {
-  return (analysis.navigationReferences ?? analysis.references).find((reference) => contains(reference.range, position));
+  const references = analysis.navigationReferences ?? analysis.references;
+  let starts = referenceStarts.get(references);
+  const key = (value: AnalysisPosition) => value.line + ':' + value.character;
+  if (!starts) {
+    starts = new Map();
+    for (const reference of references) {
+      const location = key(reference.range.start);
+      if (!starts.has(location)) { starts.set(location,reference); }
+    }
+    referenceStarts.set(references,starts);
+  }
+  return starts.get(key(position)) ?? references.find(reference => contains(reference.range,position));
 }
 
 function findDeclarationForReference(

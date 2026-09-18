@@ -1,3 +1,6 @@
+import { getInlayHintsSteps } from '../analyzer/inlayHints';
+import { normalizeInlayHintsSettings, toLspInlayHints } from './inlayHints';
+import type { InlayHintParams } from 'vscode-languageserver/node';
 import type { FoldingRangeCandidate } from '../analyzer/foldingRanges';
 import { registerFoldingRangeHandler } from './foldingRanges';
 import { runAnalysisStepsAsync, type AnalysisStep } from '../util/analysisSteps';
@@ -136,6 +139,12 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   let signatureMarkdown = false;
   let foldingCapabilities: FoldingRangeClientCapabilities | undefined;
   let featureSettings: Record<string, unknown> = {};
+  let inlayRefreshSupported = false;
+  const refreshInlayHints = (): void => {
+    if (inlayRefreshSupported) {
+      void context.connection.languages.inlayHint?.refresh().catch(error => context.logger.error(`Inlay hint refresh failed: ${getErrorMessage(error)}`));
+    }
+  };
   const updateFeatures = (settings: unknown): void => {
     invalidateRequests();
     featureSettings = settings !== null && typeof settings === 'object' ? settings as Record<string, unknown> : {};
@@ -143,6 +152,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onInitialize((params, token) => {
     throwIfCancelled(token);
     locale = params.locale;
+    inlayRefreshSupported = params.capabilities?.workspace?.inlayHint?.refreshSupport ?? false;
     foldingCapabilities = params.capabilities?.textDocument?.foldingRange;
     hoverMarkdown = params.capabilities?.textDocument?.hover?.contentFormat?.includes('markdown') ?? false;
     completionMarkdown = params.capabilities?.textDocument?.completion?.completionItem?.documentationFormat?.includes('markdown') ?? false;
@@ -151,8 +161,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     context.analyzer.configure?.(params.initializationOptions);
     return createInitializeResult();
   });
-  registerConfigurationChangeHandlers(context, updateFeatures);
-  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests);
+  registerConfigurationChangeHandlers(context, settings => { updateFeatures(settings); refreshInlayHints(); });
+  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints);
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>): Promise<T> => {
     const startedAt = Date.now();
     try {
@@ -169,8 +179,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       throw error;
     }
   };
-  registerWatchedFileHandlers(context, invalidateRequests);
-  registerBackgroundRefreshHandlers(context);
+  registerWatchedFileHandlers(context, () => { invalidateRequests(); refreshInlayHints(); });
+  registerBackgroundRefreshHandlers(context, refreshInlayHints);
   context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
 
   registerDocumentHighlightHandler(context, {
@@ -514,6 +524,28 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     });
   }));
 
+  context.connection.languages.inlayHint?.on(request(async (params: InlayHintParams, token) => {
+    const settings = normalizeInlayHintsSettings(featureSettings);
+    if (!settings.enabled) { return []; }
+    const document = context.documents.get(params.textDocument.uri);
+    return measureRequest(token, 'lsp.inlayHints', rangeRequestDetails(params, document), async () => {
+      if (!document) { return []; }
+      try {
+        const text = document.getText();
+        const analysis = await analyzeRequest(context, token, false, {uri:document.uri,version:document.version,text});
+        return toLspInlayHints(await runRequestSteps(getInlayHintsSteps({
+          analysis,text,range:params.range,workspaceIndex:context.analyzer,
+          suppressWhenArgumentContainsName:settings.suppressWhenArgumentContainsName
+        }),token));
+      } catch (error: unknown) {
+        rethrowCancellation(error);
+        throwIfCancelled(token);
+        context.logger.error(`Inlay hints failed: ${getErrorMessage(error)}`);
+        return [];
+      }
+    });
+  }));
+
   registerFoldingRangeHandler(context, () => revision, () => foldingCapabilities);
 
   context.connection.onDocumentSymbol(request(async (params: DocumentSymbolParams, token) => {
@@ -594,7 +626,7 @@ function registerConfigurationChangeHandlers(context: HandlerRegistrationContext
   });
 }
 
-function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void): () => Promise<void> {
+function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, refreshInlayHints: () => void): () => Promise<void> {
   const pending = new Map<string, TextDocument>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = async (): Promise<void> => {
@@ -605,12 +637,13 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
     // These updates belong to document notifications, not to the request that flushes them.
     // Cancelling that request must not discard another document's pending update.
     for (const document of documents) { await indexDocument(context, document); }
+    if (documents.length) { refreshInlayHints(); }
   };
 
   context.documents.onDidOpen((event) => {
     invalidateRequests();
     pending.delete(event.document.uri);
-    indexDocument(context, event.document);
+    void indexDocument(context, event.document).then(refreshInlayHints);
   });
 
   context.documents.onDidChangeContent((event) => {
@@ -627,6 +660,7 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
     pending.delete(event.document.uri);
     if (pending.size === 0) { clearTimeout(timer); timer = undefined; }
     context.analyzer.deleteDocument?.(event.document.uri);
+    refreshInlayHints();
     if (sendLoginDependencies(context)) { context.connection.languages.semanticTokens.refresh?.(); }
     context.connection.languages.diagnostics.refresh?.();
   });
@@ -685,8 +719,9 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext): void {
+function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext, refreshInlayHints: () => void): void {
   context.analyzer.onBackgroundIndexingComplete?.(() => {
+    refreshInlayHints();
     sendLoginDependencies(context);
     context.connection.languages.semanticTokens.refresh();
     context.connection.languages.diagnostics.refresh();

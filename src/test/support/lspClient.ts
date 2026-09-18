@@ -32,6 +32,9 @@ export function startLspServer(requestTimeoutMs = 5_000) {
     }
   }
   return {
+    onInlayHintRefresh(handler: () => void) {
+      return connection.onRequest('workspace/inlayHint/refresh', () => { handler(); return null; });
+    },
     onDiagnosticRefresh(handler: () => void) {
       return connection.onRequest('workspace/diagnostic/refresh', () => { handler(); return null; });
     },

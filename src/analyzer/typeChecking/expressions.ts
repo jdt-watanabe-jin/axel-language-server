@@ -1,3 +1,4 @@
+import { callArguments } from './syntax';
 import { resolveGuiPartPath } from '../guiResolution';
 import { createAxelParser } from '../axelParser';
 import { expandMacroInvocationText } from '../macroExpansion';
@@ -495,7 +496,7 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
     case 'call_expression': {
       const functionNode = field(node, 'function');
       const callSite = callSiteNode(functionNode) ?? node;
-      const args = field(node, 'arguments')?.children ?? [];
+      const args = callArguments(node);
       if (functionNode?.kind === 'identifier' && !lookupBinding(ctx,functionNode.text,scope,functionNode.start)) {
         const info = lookupClass(ctx,functionNode.text,scope);
         const constructors = info?.methods.get(info.name) ?? [];

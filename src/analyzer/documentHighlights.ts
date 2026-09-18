@@ -6,7 +6,7 @@ import { createTypeCheckingContext, expandedTypeInput, type TypeDiagnosticsInput
 import { compatibleOverloads, evaluateExpression } from './typeChecking/expressions';
 import { lookupBinding, lookupClass, scopeFor } from './typeChecking/declarations';
 import { dereference, uniquelyResolvedFunctions, type Binding, type ClassInfo, type FunctionInfo, type Type } from './typeChecking/model';
-import { field, type TypeNode } from './typeChecking/syntax';
+import { callArguments, field, type TypeNode } from './typeChecking/syntax';
 import { highlightKind, rangeKey, type HighlightKind } from './documentHighlightAccess';
 import { resolveImplicitGuiReference } from './guiReferenceResolution';
 import { allGuiMethods } from './guiResolution';
@@ -115,7 +115,7 @@ export function* getDocumentHighlightsSteps(input: NavigationInput): Generator<A
       let candidates = result.type.candidates ?? (result.type.call ? [result.type.call] : []);
       const call = parents.get(expression);
       if (call?.kind === 'call_expression' && field(call,'function') === expression) {
-        const args = field(call,'arguments')?.children ?? [];
+        const args = callArguments(call);
         const matched = compatibleOverloads(ctx,candidates,args.map(arg=>evaluateExpression(ctx,arg,scopeFor(ctx,arg))),'argument');
         candidates = matched.uncertain.length ? [] : matched.viable;
       }

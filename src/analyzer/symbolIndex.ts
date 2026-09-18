@@ -1088,7 +1088,7 @@ function referenceCallDetails(detail: CallTargetDetail | undefined): Pick<Analys
 
 function callArgumentCount(callExpression: Parser.SyntaxNode): number {
   const argumentsNode = callExpression.childForFieldName('arguments');
-  return argumentsNode === null ? 0 : argumentsNode.namedChildCount;
+  return argumentsNode === null ? 0 : argumentsNode.namedChildren.filter(child => child.type !== 'comment').length;
 }
 
 function callTargetNameNode(node: Parser.SyntaxNode | null): Parser.SyntaxNode | undefined {
