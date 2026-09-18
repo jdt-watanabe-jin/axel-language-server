@@ -168,6 +168,19 @@ function* referencesToDeclaration(
     }
   }
 
+  // Qualified GUI receivers are excluded from ordinary expression references.
+  // Resolve their parsed path segments with the same lookup used by definition.
+  for (const method of allGuiMethods(analysis)) {
+    for (const [index, range] of (method.receiverPathSegmentRanges ?? []).entries()) {
+      if (++visited % 64 === 0) { yield; }
+      if (method.receiverPath[index] !== target.name) { continue; }
+      const input = { analysis, position: range.start, workspaceIndex: navigationInput.workspaceIndex };
+      if (findGuiReceiverPathDeclaration(input)?.id === target.id) {
+        locations.push({ uri: analysis.uri, range });
+      }
+    }
+  }
+
   return locations;
 }
 

@@ -8,6 +8,32 @@ import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('rename analyzer', () => {
 
+  test('rename includes qualified GUI receiver paths without renaming unrelated parts', () => {
+    const { analysis, position } = analyzeMarked([
+      'class TestDlg : public GCDialog {',
+      '  GCVBoxLayout { GCListBox |lstBOX; };',
+      '};',
+      'void TestDlg::lstBOX::OnCreate() {}',
+      'void TestDlg::lstBOX::OnSelected(int index) {}',
+      'void TestDlg::lstBOX::OnDoubleClicked(int index) {}',
+      'void TestDlg::OnCreate() { lstBOX.GetCurIndex(); }',
+      'class OtherDlg : public GCDialog { GCListBox lstBOX; };',
+      'void OtherDlg::lstBOX::OnCreate() {}'
+    ].join('\n'));
+    const workspaceIndex = createWorkspaceIndex();
+    const expected = { changes: { 'file:///main.axl': [
+      edit(1, 27, 33, 'items'),
+      edit(3, 14, 20, 'items'),
+      edit(4, 14, 20, 'items'),
+      edit(5, 14, 20, 'items'),
+      edit(6, 27, 33, 'items')
+    ] } };
+    for (const cursor of [position, { line: 3, character: 15 }]) {
+      assert.deepStrictEqual(getRenameEdits({ analysis, position: cursor, newName: 'items', workspaceIndex }), expected);
+    }
+  });
+
+
   test('prepare rename rejects undeclared functions', () => {
     const { analysis, position } = analyzeMarked('void main() { |printf("x"); }');
 
