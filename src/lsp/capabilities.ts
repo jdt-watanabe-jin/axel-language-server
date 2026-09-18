@@ -32,6 +32,7 @@ export function createInitializeResult(): InitializeResult {
       },
       definitionProvider: true,
       referencesProvider: true,
+      documentHighlightProvider: true,
       renameProvider: {
         prepareProvider: true
       },

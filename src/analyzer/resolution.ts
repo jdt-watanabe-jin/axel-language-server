@@ -71,7 +71,7 @@ export function findLocalDeclaration(
   return selectBestDeclarationForCall(findLocalDeclarations(analysis, name, position), callResolution);
 }
 
-function findLocalDeclarations(
+export function findLocalDeclarations(
   analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
   name: string,
   position: AnalysisPosition

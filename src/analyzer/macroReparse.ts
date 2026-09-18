@@ -6,6 +6,7 @@ import { createMacroLookup } from './diagnostics';
 import { collectMacroSourceReplacements } from './macroExpansion';
 import { comparePositions, contains } from './resolution';
 import { nodeToAnalysisRange } from './syntaxTree';
+import { preprocessorUndefinition } from './preprocessorEvaluation';
 
 function positions(text: string) {
   const starts = [0];
@@ -48,9 +49,24 @@ export function* macroReparseSteps(root: Parser.SyntaxNode, source: string, orig
       const macro = visible.findMacro(name);
       if (!macro) { return undefined; }
       const origin = macro.visibilityStart ?? (macro.uri === original.uri ? macro.range.end : {line:0,character:0});
-      return undefs.some(n => n.childForFieldName('argument')?.text.trim() === name && n.startIndex < offset
+      return undefs.some(n => preprocessorUndefinition(n)?.name === name && n.startIndex < offset
         && comparePositions(nodeToAnalysisRange(n).start,origin)>=0) ? undefined : macro;
     }};
+  });
+  original.highlightExcludedRanges = original.macroInvocations.filter(invocation =>
+    original.highlightMacros?.some(item => comparePositions(item.range.start,invocation.selectionRange.start) === 0)
+    && !replacements.some(replacement => replacement.start <= sourcePositions.offset(invocation.range.start)
+      && sourcePositions.offset(invocation.range.end) <= replacement.end)).map(invocation=>invocation.range);
+  const macroUseRanges = new Set(replacements.flatMap(replacement=>(replacement.macroUses ?? [])
+    .map(use=>`${replacement.start+use.start}:${replacement.start+use.end}`)));
+  original.highlightMacros = original.highlightMacros?.filter(item=> {
+    const start=sourcePositions.offset(item.range.start),end=sourcePositions.offset(item.range.end);
+    if (original.highlightExcludedRanges?.some(range=>contains(range,item.range.start)
+      && comparePositions(range.start,item.range.start) !== 0)) { return false; }
+    if (replacements.some(replacement=>replacement.start <= start && end <= replacement.end)) {
+      return macroUseRanges.has(`${start}:${end}`);
+    }
+    return true;
   });
   if (!replacements.length) { return original; }
   let text='', cursor=0;
@@ -101,7 +117,22 @@ export function* macroReparseSteps(root: Parser.SyntaxNode, source: string, orig
       ? {start:sourcePositions.position(segment.start+first.start),end:sourcePositions.position(segment.start+last.end)}
       : mappedRange(range);
   };
-  result.expandedSource = { analysis: expanded, sourceRange: mappedRange, referenceRange, expandedPosition: toExpanded };
+  const highlightRange = (range: AnalysisRange): AnalysisRange | undefined => {
+    const start=expandedPositions.offset(range.start), end=expandedPositions.offset(range.end);
+    const segment=segments.find(item=>item.expandedStart <= start && start < item.expandedEnd);
+    if (!segment) { return mappedRange(range); }
+    if (end > segment.expandedEnd) { return undefined; }
+    const spans=segment.sourceSpans?.slice(start-segment.expandedStart,end-segment.expandedStart);
+    if (!spans?.length || spans.some((span,i)=>!span || span.end-span.start !== 1
+      || (i>0 && spans[i-1]!.end !== span.start))) { return undefined; }
+    const first=spans[0]!,last=spans.at(-1)!;
+    const sourceStart=segment.start+first.start,sourceEnd=segment.start+last.end;
+    if (source.slice(sourceStart,sourceEnd) !== text.slice(start,end)) { return undefined; }
+    return {start:sourcePositions.position(sourceStart),end:sourcePositions.position(sourceEnd)};
+  };
+  result.expandedSource = { analysis: expanded, sourceRange: mappedRange, referenceRange, highlightRange, expandedPosition: toExpanded };
+  result.highlightMacros = original.highlightMacros;
+  result.highlightExcludedRanges = original.highlightExcludedRanges;
   // Conditional recovery may have erased directives before this second parse.
   const writtenIncludes = new Map(original.includes.map(include =>
     [`${include.range.start.line}:${include.range.start.character}`, include]));

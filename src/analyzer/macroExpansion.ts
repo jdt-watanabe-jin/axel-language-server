@@ -20,6 +20,8 @@ export interface MacroExpansionDiagnostic {
 }
 
 export interface MacroExpansionResult {
+  /** Source-written macro names actually expanded, relative to the input text. */
+  macroUses?: MacroSourceSpan[];
   /** One origin per expanded UTF-16 unit; generated replacement-body units have no origin. */
   sourceSpans?: (MacroSourceSpan | undefined)[];
   runtimeMacros?: string[];
@@ -40,6 +42,14 @@ function composeSpans(spans: (MacroSourceSpan | undefined)[], input: (MacroSourc
     if (!span) { return undefined; }
     const first = input[span.start], last = input[span.end-1];
     return first && last ? {start:first.start,end:last.end} : undefined;
+  });
+}
+
+function mapMacroUses(uses: MacroSourceSpan[] | undefined, origins: (MacroSourceSpan | undefined)[] | undefined): MacroSourceSpan[] {
+  if (!uses || !origins) { return []; }
+  return uses.flatMap(use => {
+    const first=origins[use.start],last=origins[use.end-1];
+    return first && last ? [{start:first.start,end:last.end}] : [];
   });
 }
 
@@ -124,7 +134,7 @@ function expandKnownMacro(
     const nested = expandNestedInvocations(objects.expandedText, visibleMacros, {
       ...state, depth: state.depth + 1, stack: [...state.stack, macro.name]
     });
-    return { ...nested, ...(nested.sourceSpans && objects.sourceSpans
+    return { ...nested, ...(state.trackSource ? {macroUses:[...objects.macroUses ?? [],...mapMacroUses(nested.macroUses,objects.sourceSpans)]} : {}), ...(nested.sourceSpans && objects.sourceSpans
       ? {sourceSpans:composeSpans(nested.sourceSpans,objects.sourceSpans)} : {}), steps: [...objects.steps, ...nested.steps] };
   }
 
@@ -157,14 +167,19 @@ function expandKnownMacro(
   let argumentTruncated = false;
   const argumentDiagnostics: MacroExpansionDiagnostic[] = [];
   const argumentSpans = new Map<number,(MacroSourceSpan | undefined)[]>();
+  const argumentUses: MacroSourceSpan[] = [];
   const substitutedSpans = state.trackSource ? [] as (MacroSourceSpan | undefined)[] : undefined;
   const substituted = substituteParameters(macro.replacementText, parameterNames, args, state, false, undefined,
-    (argument, index) => {
+    (argument, index, pasted) => {
       const context = state.systemContext;
       const expanded = expandSourceTokens(argument, visibleMacros, {...state,
         systemContext: context ? {...context, position: positionWithinText(context.position, originalText, argumentStarts[index])} : undefined
       });
       const objects = expandObjectMacroText(expanded.expandedText, visibleMacros, [], state.trackSource);
+      if (state.trackSource && !pasted) {
+        argumentUses.push(...[...expanded.macroUses ?? [],...mapMacroUses(objects.macroUses,expanded.sourceSpans)]
+          .map(use=>({start:use.start+argumentStarts[index],end:use.end+argumentStarts[index]})));
+      }
       argumentTruncated ||= expanded.truncated || objects.truncated;
       argumentDiagnostics.push(...expanded.diagnostics, ...objects.diagnostics);
       if (objects.sourceSpans && expanded.sourceSpans) {
@@ -183,6 +198,7 @@ function expandKnownMacro(
   });
 
   return {
+    ...(state.trackSource ? {macroUses:[{start:0,end:macro.name.length},...argumentUses,...mapMacroUses(nested.macroUses,substitutedSpans)]} : {}),
     ...(nested.sourceSpans && substitutedSpans ? {sourceSpans:composeSpans(nested.sourceSpans,substitutedSpans)} : {}),
     expandedText: nested.expandedText,
     steps: [
@@ -208,6 +224,7 @@ function expandNestedInvocations(
   }
 
   let expandedText = text;
+  const macroUses: MacroSourceSpan[] = [];
   let sourceSpans: (MacroSourceSpan | undefined)[] | undefined = state.trackSource ? copiedSpans(0,text.length) : undefined;
   const steps: MacroExpansionStep[] = [];
   const diagnostics: MacroExpansionDiagnostic[] = [];
@@ -223,6 +240,7 @@ function expandNestedInvocations(
       continue;
     }
     const result = expandKnownMacro(invocation.text, macro, parsed.arguments, visibleMacros, state);
+    macroUses.push(...(result.macroUses ?? []).map(use=>({start:use.start+invocation.start,end:use.end+invocation.start})));
     if (sourceSpans) {
       const replacement = result.sourceSpans?.map(span=>span && ({start:span.start+invocation.start,end:span.end+invocation.start}))
         ?? Array.from({length:result.expandedText.length},()=>undefined);
@@ -235,7 +253,7 @@ function expandNestedInvocations(
   }
 
   if (sourceSpans) { sourceSpans = sourceSpans.slice(expandedText.length-expandedText.trimStart().length,expandedText.trimEnd().length); }
-  return { expandedText: expandedText.trim(), ...(sourceSpans ? {sourceSpans} : {}), steps, truncated, diagnostics };
+  return { expandedText: expandedText.trim(), ...(sourceSpans ? {sourceSpans,macroUses} : {}), steps, truncated, diagnostics };
 }
 
 function substituteParameters(
@@ -245,7 +263,7 @@ function substituteParameters(
   state?: ExpansionState,
   sourcePositions = false,
   sourceExpansions: ReadonlyMap<number, { end: number; text: string; spans?: (MacroSourceSpan | undefined)[] }> = new Map(),
-  expandArgument?: (argument: string, index: number) => string,
+  expandArgument?: (argument: string, index: number, pasted: boolean) => string,
   sourceSpans?: (MacroSourceSpan | undefined)[],
   argumentSpans?: ReadonlyMap<number,(MacroSourceSpan | undefined)[]>
 ): string {
@@ -301,11 +319,13 @@ function substituteParameters(
 
     const identifier = /^[A-Za-z_$][0-9A-Za-z_$]*/.exec(replacementText.slice(index));
     if (identifier !== null) {
-      let value = values.get(identifier[0]);
+      const pasted = replacementText.slice(0,index).replace(/\/\*[\s\S]*?\*\//g,'').trimEnd().endsWith('##')
+        || replacementText.startsWith('##',skipMacroTrivia(replacementText,index+identifier[0].length));
+      let value = pasted ? undefined : values.get(identifier[0]);
       if (value === undefined && rawValues.has(identifier[0])) {
         const raw = rawValues.get(identifier[0])!;
-        value = expandArgument?.(raw, parameters.indexOf(identifier[0])) ?? raw;
-        values.set(identifier[0], value);
+        value = expandArgument?.(raw, parameters.indexOf(identifier[0]),pasted) ?? raw;
+        if (!pasted) { values.set(identifier[0], value); }
       }
       const context = state?.systemContext;
       if (value === undefined && context !== undefined) {
@@ -317,7 +337,7 @@ function substituteParameters(
         }
       }
       const replacement = value ?? identifier[0];
-      append(replacement,argumentSpans?.get(parameters.indexOf(identifier[0]))
+      append(replacement,pasted ? undefined : argumentSpans?.get(parameters.indexOf(identifier[0]))
         ?? (sourceSpans && sourcePositions ? value === undefined ? copiedSpans(index,index+identifier[0].length)
           : Array.from({length:replacement.length},()=>({start:index,end:index+identifier[0].length})) : undefined));
       index += identifier[0].length;
@@ -377,6 +397,7 @@ function positionWithinText(start: AnalysisPosition, text: string, offset: numbe
 }
 
 function expandSourceTokens(text: string, lookup: MacroLookup, state: ExpansionState): MacroExpansionResult {
+  const macroUses: MacroSourceSpan[] = [];
   let truncated = false;
   const diagnostics: MacroExpansionDiagnostic[] = [];
   const expansions = new Map<number, { end: number; text: string; spans?: (MacroSourceSpan | undefined)[] }>();
@@ -394,13 +415,14 @@ function expandSourceTokens(text: string, lookup: MacroLookup, state: ExpansionS
       truncated ||= result.truncated;
       diagnostics.push(...result.diagnostics);
       if (result.diagnostics.length > 0 || result.truncated) { continue; }
+      macroUses.push(...(result.macroUses ?? []).map(use=>({start:use.start+start,end:use.end+start})));
       for (const name of result.runtimeMacros ?? []) { state.runtimeMacros?.add(name); }
       expansions.set(start, { end: candidate.end, text: result.expandedText,
         spans:result.sourceSpans?.map(span=>span && ({start:span.start+start,end:span.end+start})) });
     }
   // Apply replacements against original offsets; never re-scan generated text as source.
   return {expandedText: substituteParameters(text, [], [], state, true, expansions,undefined,sourceSpans),
-    ...(sourceSpans ? {sourceSpans} : {}),steps: [], truncated, diagnostics};
+    ...(sourceSpans ? {sourceSpans,macroUses} : {}),steps: [], truncated, diagnostics};
 }
 
 function findNestedInvocationTexts(text: string): { text: string; start: number; end: number }[] {
@@ -554,6 +576,7 @@ function findMatchingCloseParen(text: string, openParenIndex: number): number {
 
 /** Expand object-like tokens without substituting inside strings or comments. */
 export function expandObjectMacroText(text: string, lookup: MacroLookup, stack: readonly string[] = [], trackSource = false): MacroExpansionResult {
+  const macroUses: MacroSourceSpan[] = [];
   let expandedText = '';
   const sourceSpans = trackSource ? [] as (MacroSourceSpan | undefined)[] : undefined;
   const copy = (start:number,end:number) => {
@@ -577,15 +600,17 @@ export function expandObjectMacroText(text: string, lookup: MacroLookup, stack: 
     if (!macro || macro.parameters !== undefined) { copy(i,i+name.length); i += name.length; continue; }
     if (stack.includes(name) || stack.length >= 8) { truncated=true; copy(i,i+name.length); i+=name.length; continue; }
     const nested = expandObjectMacroText(macro.replacementText,lookup,[...stack,name]);
+    if (trackSource) { macroUses.push({start:i,end:i+name.length}); }
     expandedText += nested.expandedText; truncated ||= nested.truncated;
     sourceSpans?.push(...Array.from({length:nested.expandedText.length},()=>({start:i,end:i+name.length})));
     steps.push({macroName:name,before:name,after:macro.replacementText},...nested.steps);
     i += name.length;
   }
-  return {expandedText,...(sourceSpans ? {sourceSpans} : {}),steps,truncated,diagnostics:[]};
+  return {expandedText,...(sourceSpans ? {sourceSpans,macroUses} : {}),steps,truncated,diagnostics:[]};
 }
 
 export interface MacroSourceReplacement {
+  macroUses?: MacroSourceSpan[];
   sourceSpans?: (MacroSourceSpan | undefined)[];
   start: number;
   end: number;
@@ -645,6 +670,7 @@ export function collectMacroSourceReplacements(text: string,
         if (close>=0) {
           const aliasSpans = [...expansion.sourceSpans!,...copiedSpans(open-start,close+1-start)];
           expansion=expandMacroInvocationText(expansion.expandedText+text.slice(open,close+1),lookup,{trackSource:true});
+          expansion.macroUses=mapMacroUses(expansion.macroUses,aliasSpans);
           if (expansion.sourceSpans) { expansion.sourceSpans=composeSpans(expansion.sourceSpans,aliasSpans); }
           index=close+1;
         }
@@ -654,11 +680,14 @@ export function collectMacroSourceReplacements(text: string,
     // Expand object tokens introduced by function macros, and vice versa.
     let expanded = expansion.expandedText;
     let sourceSpans = expansion.sourceSpans;
+    const macroUses = [...expansion.macroUses ?? []];
     let complete = true;
     for (let depth = 0; depth < 8; depth++) {
       const objects = expandObjectMacroText(expanded, lookup,[],true);
       const calls = expandNestedInvocations(objects.expandedText, lookup, {maxDepth:8,depth,stack:[],trackSource:true});
       if (objects.truncated || calls.truncated || calls.diagnostics.length) { complete = false; break; }
+      macroUses.push(...mapMacroUses(objects.macroUses,sourceSpans),
+        ...mapMacroUses(mapMacroUses(calls.macroUses,objects.sourceSpans),sourceSpans));
       if (calls.expandedText === expanded) { break; }
       if (sourceSpans && objects.sourceSpans && calls.sourceSpans) {
         sourceSpans=composeSpans(composeSpans(calls.sourceSpans,objects.sourceSpans),sourceSpans);
@@ -666,7 +695,7 @@ export function collectMacroSourceReplacements(text: string,
       expanded = calls.expandedText;
       if (depth === 7) { complete = false; }
     }
-    if (complete) { result.push({start, end:index, name, text:expanded,sourceSpans}); }
+    if (complete) { result.push({start, end:index, name, text:expanded,sourceSpans,macroUses}); }
   }
   return result;
 }

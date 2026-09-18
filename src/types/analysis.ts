@@ -309,6 +309,9 @@ export interface AnalyzeDocumentInput {
 }
 
 export interface AnalyzedDocument {
+  /** Source-written macro occurrences tied to the definition active at that position. */
+  highlightMacros?: { range: AnalysisRange; target: string }[];
+  highlightExcludedRanges?: AnalysisRange[];
   /** Undef events retained by the lightweight dependency pass. */
   macroUndefinitions?: { name: string; range: AnalysisRange }[];
   /** Keep virtual positions until semantic checks finish; only published ranges use source positions. */
@@ -317,6 +320,8 @@ export interface AnalyzedDocument {
     sourceRange(range: AnalysisRange): AnalysisRange;
     /** Preserves macro argument origins for reference presentation without changing declaration ranges. */
     referenceRange?(range: AnalysisRange): AnalysisRange;
+    /** Exact source spelling only; generated or token-pasted names have no highlight range. */
+    highlightRange?(range: AnalysisRange): AnalysisRange | undefined;
     expandedPosition(position: AnalysisPosition, end?: boolean): AnalysisPosition;
   };
   documentationBlocks?: readonly import('../analyzer/documentation/model').DocumentationBlock[];

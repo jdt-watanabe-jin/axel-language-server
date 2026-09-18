@@ -1,4 +1,5 @@
 import { collectFoldingRangesSteps, type FoldingRangeCandidate } from './foldingRanges';
+import { collectHighlightMacrosSteps } from './documentHighlightMacros';
 import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import { buildDocumentationBlocks } from './documentation/index';
 import { nodeToAnalysisRange } from './syntaxTree';
@@ -115,7 +116,8 @@ export class DocumentAnalyzer {
       ...(input.knownGuiClasses ?? []).map((guiClass) => guiClass.name),
       ...guiClasses.map((guiClass) => guiClass.name)
     ]);
-    const { inactiveRanges, uncertainRanges, uncertainNames } = conditional?.evaluation ?? evaluatePreprocessor(root, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
+    const evaluation = conditional?.evaluation ?? evaluatePreprocessor(root, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
+    const { inactiveRanges, uncertainRanges, uncertainNames } = evaluation;
     yield;
     const macroDefinitions = collectMacroDefinitions(root, input.uri);
     const activeMacroDefinitions = macroDefinitions.filter((macro) => !isSystemMacroName(macro.name)
@@ -225,6 +227,8 @@ export class DocumentAnalyzer {
       inactiveRanges
     };
 
+    analysis.highlightMacros = yield* collectHighlightMacrosSteps(originalRoot, analysis, visibleMacroDefinitions,
+      [...evaluation.skippedConditionRanges ?? [],...evaluation.uncertainMacroReferenceRanges ?? []]);
     if (expandMacros) {
       analysis = yield* macroReparseSteps(root, conditional?.text ?? input.text, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocumentSteps({...input, text,
         preprocessorSymbols: input.preprocessorSymbols?.map(symbol => ({...symbol, sourceRange: symbol.sourceRange

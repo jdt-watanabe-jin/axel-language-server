@@ -5,6 +5,8 @@ import { containsSourcePosition, isSystemMacroName, resolveSystemMacro, systemMa
 import { isDeclarationNodeType, isTypeSpecifierNodeType } from './nodeKinds';
 
 interface MacroDefinition {
+  definitionKey?: string;
+  ambiguousDefinition?: boolean;
   value?: string;
   possiblyUndefined?: boolean;
   unknownValue?: boolean;
@@ -29,6 +31,8 @@ const PREPROCESSOR_IF_NODE_TYPES = new Set([
 ]);
 
 export interface PreprocessorEvaluation {
+  skippedConditionRanges?: AnalysisRange[];
+  uncertainMacroReferenceRanges?: AnalysisRange[];
   uncertainConditionalRanges?: AnalysisRange[];
   branchRanges?: boolean;
   inactiveRanges: AnalysisRange[];
@@ -75,6 +79,7 @@ function visitChildren(
   result: PreprocessorEvaluation, active: Activity, includeSymbols: readonly AnalysisPreprocessorSymbol[]
 ): void {
   for (const node of children) {
+    recordUncertainMacroReference(node, macros, result);
     if (isPreprocessorConditional(node)) {
       visitConditional(node, macros, result, active, includeSymbols);
     } else if (active === false) {
@@ -111,6 +116,13 @@ function visitConditional(
   let remaining: Activity = true;
   const outcomes: MacroDefinitions[] = [];
   for (const branch of branchesFromConditional(node)) {
+    const operand = branch.condition ?? branch.name;
+    if (operand) {
+      for (const name of [operand,...operand.descendantsOfType('identifier')]) { recordUncertainMacroReference(name,macros,result); }
+    }
+    if (operand && and(parentActive, remaining) !== true) {
+      (result.skippedConditionRanges ??= []).push(nodeToAnalysisRange(operand));
+    }
     const condition = evaluateBranchCondition(branch, macros);
     if (parentActive !== false && remaining !== false && condition === undefined) {
       (result.uncertainConditionalRanges ??= []).push(nodeToAnalysisRange(node));
@@ -135,6 +147,8 @@ function visitConditional(
       const present = definitions.filter((definition): definition is MacroDefinition => definition !== undefined);
       const first = present[0];
       macros.set(name, {
+        definitionKey: first.definitionKey,
+        ambiguousDefinition: present.some(definition => definition.ambiguousDefinition || definition.definitionKey !== first.definitionKey),
         value: first.value,
         possiblyUndefined: present.length !== outcomes.length || present.some(definition => definition.possiblyUndefined),
         unknownValue: present.some(definition => definition.unknownValue || definition.value !== first.value)
@@ -221,17 +235,37 @@ function applyPreprocessorMutation(node: Parser.SyntaxNode, macros: MacroDefinit
   if (node.type === 'preproc_def' || node.type === 'preproc_function_def') {
     const nameNode = node.childForFieldName('name');
     if (nameNode !== null && !isSystemMacroName(nameNode.text)) {
-      macros.set(nameNode.text, { value: node.childForFieldName('value')?.text.trim() });
+      macros.set(nameNode.text, { value: node.childForFieldName('value')?.text.trim(), definitionKey: String(nameNode.startIndex) });
     }
     return;
   }
 
   if (node.type === 'preproc_call' && /^#[ \t]*undef\b/.test(firstLine(node.text))) {
-    const argumentNode = node.childForFieldName('argument');
-    const name = argumentNode?.text.trim().match(/^[A-Za-z_$][0-9A-Za-z_$]*/)?.[0];
+    const name = preprocessorUndefinition(node)?.name;
     if (name !== undefined && !isSystemMacroName(name)) {
       macros.delete(name);
     }
+  }
+}
+
+/** The generic preproc_arg includes comments; bind only its leading name token. */
+export function preprocessorUndefinition(node: Parser.SyntaxNode): {name: string; range: AnalysisRange} | undefined {
+  if (node.type !== 'preproc_call' || node.childForFieldName('directive')?.text.replace(/\s/g,'') !== '#undef') { return undefined; }
+  const argument = node.childForFieldName('argument');
+  const match = argument?.text.match(/^(\s*)([A-Za-z_$][0-9A-Za-z_$]*)/);
+  if (!argument || !match) { return undefined; }
+  const prefixLines = match[1].split('\n');
+  const start = {line:argument.startPosition.row+prefixLines.length-1,
+    character:(prefixLines.length === 1 ? argument.startPosition.column : 0)+prefixLines.at(-1)!.length};
+  return {name:match[2],range:{start,end:{line:start.line,character:start.character+match[2].length}}};
+}
+
+function recordUncertainMacroReference(node: Parser.SyntaxNode, macros: MacroDefinitions, result: PreprocessorEvaluation): void {
+  const undef = preprocessorUndefinition(node);
+  if (node.type !== 'identifier' && !undef) { return; }
+  const definition = macros.get(undef?.name ?? node.text);
+  if (definition?.possiblyUndefined || definition?.ambiguousDefinition) {
+    (result.uncertainMacroReferenceRanges ??= []).push(undef?.range ?? nodeToAnalysisRange(node));
   }
 }
 

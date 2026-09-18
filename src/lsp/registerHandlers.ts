@@ -46,6 +46,7 @@ import { toLspSemanticTokens } from './semanticTokens';
 import { toLspSignatureHelp } from './signatureHelp';
 import type { IncludeResolutionStatus } from '../analyzer/includeDiagnostics';
 import { registerCallHierarchyHandlers } from './callHierarchy';
+import { registerDocumentHighlightHandler } from './documentHighlights';
 
 export interface ServerLogger {
   info?(message: string): void;
@@ -171,6 +172,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   registerWatchedFileHandlers(context, invalidateRequests);
   registerBackgroundRefreshHandlers(context);
   context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
+
+  registerDocumentHighlightHandler(context, {
+    request,
+    measureRequest,
+    runRequestSteps,
+    analyzeRequest: (token, input) => analyzeRequest(context, token, false, input)
+  });
 
   registerCallHierarchyHandlers(context, {
     request,
