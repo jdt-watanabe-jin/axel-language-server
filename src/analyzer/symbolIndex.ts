@@ -973,9 +973,9 @@ function memberAccessChain(node: Parser.SyntaxNode): {
   }
 
   return {
-    receiverName: isMemberReceiverNode(argument)
-      ? argument.text
-      : undefined,
+    // Keep expression receivers so call resolution can use their syntax and result type.
+    // Their text is not a variable name and will not match ordinary name lookup.
+    receiverName: argument?.text,
     memberNodes
   };
 }
@@ -1051,10 +1051,6 @@ function qualifiedIdentifierSegments(node: Parser.SyntaxNode): Parser.SyntaxNode
 
 function isQualifiedIdentifierSegmentNode(node: Parser.SyntaxNode | null | undefined): boolean {
   return node?.type === 'identifier' || node?.type === 'namespace_identifier';
-}
-
-function isMemberReceiverNode(node: Parser.SyntaxNode | null | undefined): node is Parser.SyntaxNode {
-  return node?.type === 'identifier' || node?.type === 'class_name' || node?.type === 'this';
 }
 
 interface CallTargetDetail {

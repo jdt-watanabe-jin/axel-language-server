@@ -25,14 +25,20 @@ export function createCallResolver(input: TypeDiagnosticsInput): (position: Anal
     if (!call) { return undefined; }
     if (results.has(call)) { return results.get(call); }
     const scope = scopeFor(ctx, call);
-    const callee = evaluateExpression(ctx, field(call, 'function')!, scope);
+    const functionNode = field(call, 'function')!;
+    const callee = evaluateExpression(ctx, functionNode, scope);
     const candidates = callee.type.candidates ?? (callee.type.call ? [callee.type.call] : []);
-    // Restrict type-based selection to explicitly registered analysis declarations.
-    if (!candidates.length || candidates.some(fn => !isBuiltinDeclarationSource(ctx.catalog, fn.uri))) {
+    const builtin = candidates.every(fn => isBuiltinDeclarationSource(ctx.catalog, fn.uri));
+    // Named receivers retain declaration lookup. Expression receivers need the
+    // inferred result type even for ordinary methods, whose identity remains arity-based.
+    if (!candidates.length || (!builtin && !hasExpressionReceiver(functionNode))) {
       results.set(call, undefined); return undefined;
     }
     const values = (field(call, 'arguments')?.children ?? []).map(arg => evaluateExpression(ctx, arg, scope));
-    const {viable, uncertain} = compatibleOverloads(ctx, candidates, values, 'argument', allowPartialArguments);
+    const {viable, uncertain} = builtin
+      ? compatibleOverloads(ctx, candidates, values, 'argument', allowPartialArguments)
+      : {viable: candidates.filter(fn => (allowPartialArguments || values.length >= fn.required)
+        && (fn.variadic || values.length <= fn.parameters.length)), uncertain: []};
     const remaining = new Set([...viable, ...uncertain]);
     const declarations = candidates.filter(fn => remaining.has(fn)).flatMap(fn => {
       const document = documents.find(document => document.uri === fn.uri);
@@ -44,4 +50,12 @@ export function createCallResolver(input: TypeDiagnosticsInput): (position: Anal
     results.set(call, result);
     return result;
   };
+}
+
+function hasExpressionReceiver(node: TypeNode): boolean {
+  if (node.kind !== 'field_expression') { return false; }
+  const receiver = field(node, 'argument');
+  if (!receiver) { return false; }
+  if (receiver.kind === 'field_expression') { return hasExpressionReceiver(receiver); }
+  return !['identifier', 'class_name', 'this', 'qualified_identifier'].includes(receiver.kind);
 }
