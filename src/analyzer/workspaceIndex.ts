@@ -10,7 +10,7 @@ import type { DocumentationBindings } from './documentation/model';
 import { affectedBySyntaxRecovery } from './syntaxRecovery';
 import { normalizeTargetPlatform } from './targetPlatform';
 import { descendants, field } from './typeChecking/syntax';
-import { collectTypeDiagnosticsSteps } from './typeChecking/diagnostics';
+import { collectTypeDiagnosticsSteps, type TypeDiagnosticsInput } from './typeChecking/diagnostics';
 import { loadBuiltinCatalog, type BuiltinCatalog } from './typeChecking/builtinCatalog';
 import * as fs from 'fs';
 import { containsSourcePosition, isSystemMacroName, normalizeInternalFeatures, normalizeTool } from './systemMacros';
@@ -530,25 +530,31 @@ export class WorkspaceIndex {
     yield* this.loginScopeSteps('');
   }
 
-  public resolveCallDeclarations(analysis: AnalyzedDocument, position: AnalysisPosition, allowPartialArguments = false): AnalysisDeclaration[] | undefined {
-    if (!analysis.typeSnapshot) { return undefined; }
+  public callHierarchyTypeInput(analysis: AnalyzedDocument): TypeDiagnosticsInput {
     this.ensureForcedIncludesIndexed();
     const loginScope = this.loginScope(analysis.uri);
     const ordinaryDocuments = [analysis, ...this.collectDefiniteVisibleUris(analysis.uri).flatMap(uri => {
       const document = this.documents.get(uri)?.analysis;
       return document ? [document] : [];
     })];
-    const documents = [...ordinaryDocuments, ...loginScope?.documents ?? []];
     const catalog = this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles);
-    const cached = this.callResolutionCache.get(analysis.uri);
-    if (cached && cached.catalog === catalog && cached.documents.length === documents.length
-      && documents.every((document, i) => document === cached.documents[i])) { return cached.resolve(position, allowPartialArguments); }
     const macros = this.collectPositionAwareMacroDefinitions(analysis.uri, true);
-    const resolve = createCallResolver({analysis, documents: ordinaryDocuments, loginScope, catalog, resolveMacro: (name, node) => {
+    return {analysis, documents: ordinaryDocuments, loginScope, catalog, resolveMacro: (name, node) => {
       const macro = macros.filter(macro => macro.name === name
         && (!macro.visibilityStart || comparePositions(macro.visibilityStart, node.range.start) <= 0)).at(-1);
       return macro && !('_typeUndef' in macro) ? macro : undefined;
-    }});
+    }};
+  }
+
+  public resolveCallDeclarations(analysis: AnalyzedDocument, position: AnalysisPosition, allowPartialArguments = false): AnalysisDeclaration[] | undefined {
+    if (!analysis.typeSnapshot) { return undefined; }
+    const input = this.callHierarchyTypeInput(analysis);
+    const documents = [...input.documents ?? [], ...input.loginScope?.documents ?? []];
+    const catalog = input.catalog!;
+    const cached = this.callResolutionCache.get(analysis.uri);
+    if (cached && cached.catalog === catalog && cached.documents.length === documents.length
+      && documents.every((document, i) => document === cached.documents[i])) { return cached.resolve(position, allowPartialArguments); }
+    const resolve = createCallResolver(input);
     this.callResolutionCache.set(analysis.uri, {documents, catalog, resolve});
     return resolve(position, allowPartialArguments);
   }

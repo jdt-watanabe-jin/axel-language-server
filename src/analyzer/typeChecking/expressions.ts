@@ -8,7 +8,7 @@ import { checkCompatibility } from './compatibility';
 import { lookupBinding, lookupClass, resolveType } from './declarations';
 import {
   basic, dereference, isInteger, isNumeric, pointer, role, sameType, unknownType,
-  type ExpressionResult, type FunctionInfo, type Scope, type Type, type TypeContext
+  uniquelyResolvedFunctions, type ExpressionResult, type FunctionInfo, type Scope, type Type, type TypeContext
 } from './model';
 import { buildTypeSnapshot, descendants, field, type TypeNode } from './syntax';
 
@@ -54,7 +54,11 @@ function member(ctx: TypeContext, type: Type, name: string, seen = new Set<strin
 export function checkCondition(ctx: TypeContext, node: TypeNode, value: ExpressionResult): void {
   const type = dereference(value.type);
   if (type.kind === 'unknown' || isNumeric(type) || type.kind === 'pointer' || type.kind === 'null' || ['natural', 'string'].includes(role(type) ?? '')) { return; }
-  if (type.classInfo?.methods.has('convert:bool')) { return; }
+  const conversions = type.classInfo?.methods.get('convert:bool') ?? [];
+  if (conversions.length) {
+    ctx.semanticCalls.push({node,targets:uniquelyResolvedFunctions(conversions.filter(fn => sameType(fn.result,basic('bool'))))});
+    return;
+  }
   problem(ctx, node, 'condition', basic('bool'), type);
 }
 
@@ -125,6 +129,7 @@ export function checkBinaryExpression(ctx: TypeContext, node: TypeNode, operator
     return temporary(basic('int'));
   }
   const candidates = a.classInfo?.methods.get(`operator${operator}`) ?? [];
+  recordOverload(ctx, field(node, 'operator') ?? node, candidates, [right], [], 'operator');
   const selected = selectOverload(ctx, candidates, [right], 'operator');
   if (selected.fn) { return temporary(selected.fn.result); }
   if (selected.uncertain) { return unknown(); }
@@ -155,8 +160,26 @@ function selectOverload(ctx: TypeContext, candidates: FunctionInfo[], values: Ex
   return viable.length ? {uncertain:true} : {};
 }
 
-function invoke(ctx: TypeContext, node: TypeNode, candidates: FunctionInfo[], args: TypeNode[], scope: Scope): ExpressionResult {
+function recordOverload(ctx: TypeContext, siteNode: TypeNode, candidates: FunctionInfo[], values: ExpressionResult[],
+  valueNodes: TypeNode[], site: 'argument' | 'operator'): FunctionInfo[] {
+  const {viable, uncertain} = compatibleOverloads(ctx, candidates, values, site);
+  const targets = uniquelyResolvedFunctions([...viable, ...uncertain]);
+  ctx.semanticCalls.push({node:siteNode,targets});
+  if (targets.length) {
+    const target = targets[0];
+    valueNodes.forEach((node,index) => {
+      if (target.parameters[index]) {
+        checkCompatibility(ctx,values[index].type,target.parameters[index],site,node);
+      }
+    });
+  }
+  return targets;
+}
+
+function invoke(ctx: TypeContext, node: TypeNode, candidates: FunctionInfo[], args: TypeNode[], scope: Scope,
+  siteNode = node): ExpressionResult {
   const values = args.map(arg => evaluateExpression(ctx, arg, scope));
+  recordOverload(ctx,siteNode,candidates,values,args,'argument');
   const selected = selectOverload(ctx, candidates, values, 'argument');
   if (selected.uncertain) { return unknown(); }
   const fn = selected.fn ?? candidates[0];
@@ -343,13 +366,21 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
       const targetNode = field(node, 'type');
       if (!targetNode) { return unknown(); }
       const target = resolveType(ctx, targetNode, scope);
-      if (checkCompatibility(ctx, value.type, target, 'cast') === 'rejected') { problem(ctx, node, 'cast', target, value.type); }
+      if (checkCompatibility(ctx, value.type, target, 'cast', node) === 'rejected') { problem(ctx, node, 'cast', target, value.type); }
       return temporary(target);
     }
     case 'sizeof_expression': return { ...temporary(basic('int')), constantExpression: true };
     case 'new_expression': {
       const typeNode = field(node, 'type');
-      return typeNode ? temporary(pointer(resolveType(ctx, typeNode, scope))) : unknown();
+      if (!typeNode) { return unknown(); }
+      const type = resolveType(ctx, typeNode, scope);
+      const args = (node.fields.arguments ?? []).filter(arg => node.children.includes(arg));
+      const constructors = type.classInfo?.methods.get(type.classInfo.name) ?? [];
+      if (constructors.length) {
+        const values = args.map(arg => evaluateExpression(ctx,arg,scope));
+        recordOverload(ctx,typeNode,constructors,values,args,'argument');
+      }
+      return temporary(pointer(type));
     }
     case 'delete_expression': {
       const value = expression(field(node, 'argument'));
@@ -397,7 +428,7 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
       const subscript = member(ctx, type, 'operator[]');
       const indexNode = field(node, 'index');
       if (subscript?.type.call && indexNode && (role(type) !== 'VARRAY' || isInteger(index.type))) {
-        return invoke(ctx, node, subscript.type.candidates ?? [subscript.type.call], [indexNode], scope);
+        return invoke(ctx, node, subscript.type.candidates ?? [subscript.type.call], [indexNode], scope, node);
       }
       problem(ctx, node, 'subscript', undefined, type);
       return unknown();
@@ -416,8 +447,12 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
         return {...temporary(type, constant),constantExpression:isConstant(value)};
       }
       if (['++', '--'].includes(op) && isNumeric(type) && value.category !== 'temporary') { return temporary(type); }
-      const candidate = type.classInfo?.methods.get(`operator${op}`)?.find(fn => fn.parameters.length === 0);
-      if (candidate) { return temporary(candidate.result); }
+      const candidates = type.classInfo?.methods.get(`operator${op}`)?.filter(fn => fn.parameters.length === 0) ?? [];
+      if (candidates.length) {
+        const targets = recordOverload(ctx,field(node,'operator') ?? node,candidates,[],[],'operator');
+        if (targets.length) { return temporary(targets[0].result); }
+        return unknown();
+      }
       problem(ctx, node, 'unary_operator', undefined, type);
       return unknown();
     }
@@ -438,6 +473,7 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
         }
         if (left.type.kind === 'class' && !role(left.type)) {
           const candidates = left.type.classInfo?.methods.get(`operator${op}`) ?? [];
+          recordOverload(ctx,field(node,'operator') ?? node,candidates,[right],[field(node,'right')!],'operator');
           const selected = selectOverload(ctx, candidates, [right], 'operator');
           if (selected.fn) { return temporary(selected.fn.result); }
           if (!selected.uncertain) { problem(ctx, node, 'binary_operator', left.type, right.type); }
@@ -445,19 +481,32 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
         }
         const value = checkBinaryExpression(ctx, node, op.slice(0, -1), left, right);
         if (value.type.kind === 'unknown') { return value; }
-      } else if (checkCompatibility(ctx, right.type, left.type, 'assign') === 'rejected') {
+      } else {
+        const candidates = left.type.classInfo?.methods.get('operator=') ?? [];
+        if (candidates.length) {
+          recordOverload(ctx,field(node,'operator') ?? node,candidates,[right],[field(node,'right')!],'operator');
+        }
+        if (checkCompatibility(ctx, right.type, left.type, 'assign', field(node,'operator') ?? field(node,'right')) === 'rejected') {
         problem(ctx, node, 'assignment', left.type, right.type);
+        }
       }
       return { type: left.type, category: 'storage' };
     }
     case 'call_expression': {
       const functionNode = field(node, 'function');
-      const callee = expression(functionNode);
+      const callSite = callSiteNode(functionNode) ?? node;
       const args = field(node, 'arguments')?.children ?? [];
-      if (callee.type.call) { return invoke(ctx, node, callee.type.candidates ?? [callee.type.call], args, scope); }
+      if (functionNode?.kind === 'identifier' && !lookupBinding(ctx,functionNode.text,scope,functionNode.start)) {
+        const info = lookupClass(ctx,functionNode.text,scope);
+        const constructors = info?.methods.get(info.name) ?? [];
+        if (constructors.length) { return invoke(ctx,node,constructors,args,scope,functionNode); }
+      }
+      const callee = expression(functionNode);
+      if (callee.type.call) { return invoke(ctx, node, callee.type.candidates ?? [callee.type.call], args, scope, callSite); }
       const candidates = callee.type.classInfo?.methods.get('operator()');
-      if (candidates?.length) { return invoke(ctx, node, candidates, args, scope); }
+      if (candidates?.length) { return invoke(ctx, node, candidates, args, scope, callSite); }
       for (const arg of args) { expression(arg); }
+      ctx.semanticCalls.push({node:callSite,targets:[]});
       if (callee.type.kind !== 'unknown') { problem(ctx, node, 'not_callable', undefined, callee.type); }
       return unknown();
     }
@@ -470,4 +519,17 @@ function evaluate(ctx: TypeContext, node: TypeNode, scope: Scope): ExpressionRes
     }
     default: return unknown();
   }
+}
+
+function callSiteNode(node: TypeNode | undefined): TypeNode | undefined {
+  if (!node) { return undefined; }
+  if (node.kind === 'field_expression') {
+    const name = field(node,'field');
+    return name ?? node;
+  }
+  if (node.kind === 'qualified_identifier') {
+    const name = field(node,'name') ?? node.children.at(-1);
+    return name ?? node;
+  }
+  return node;
 }

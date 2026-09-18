@@ -24,6 +24,7 @@ The server currently supports these Language Server Protocol features:
 - Completion for AXEL declaration keywords, visible symbols, enum members, macros, built-ins, include paths, AXEL execution files, inherited members, `this->` members, static members, GUI parts, and GUI events.
 - Go to Definition for local declarations, declarations visible through resolved includes, include paths, AXEL execution files, static members, inherited members, `this->` members, GUI parts, and GUI event handlers.
 - Find References for resolved symbol identities across the current document, resolved includes, dependent documents, and forced includes.
+- Call Hierarchy for resolved calls and unambiguous function references, with incoming and outgoing exploration across the current analysis index. See the [call hierarchy implementation guide](docs/developer/call-hierarchy.md) for ownership, virtual dispatch, caching, and limits.
 - Prepare Rename and Rename for safe resolved symbols, including references in included files when the symbol identity is known.
 - Code actions for deterministic missing-include quick fixes.
 - Signature help for functions, methods, inherited member calls, `this->` member calls, forced-include functions, function-like macros, dialog-owner methods, and GUI part member calls.

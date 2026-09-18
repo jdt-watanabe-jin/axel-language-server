@@ -108,7 +108,8 @@ function isNameNode(node: Parser.SyntaxNode): boolean {
     'class_name',
     'qualified_declarator',
     'operator_declarator',
-    'conversion_declarator'
+    'conversion_declarator',
+    'destructor_name'
   ].includes(node.type);
 }
 

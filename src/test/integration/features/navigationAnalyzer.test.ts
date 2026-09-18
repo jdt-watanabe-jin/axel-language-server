@@ -283,6 +283,23 @@ suite('navigation', () => {
     ]);
   });
 
+  test('definition on an explicit destructor call jumps to the destructor', () => {
+    const { analysis, position } = analyzeMarked([
+      'class Version { ~Version() {} };',
+      'void destroy(Version value) { value.|~Version(); }'
+    ].join('\n'));
+
+    const definitions = getDefinitions({
+      analysis,
+      position,
+      workspaceIndex: createWorkspaceIndex()
+    });
+
+    assert.deepStrictEqual(definitions.map((location) => location.range.start), [
+      { line: 0, character: 16 }
+    ]);
+  });
+
   test('definition on an overloaded static method call jumps to the matching arity', () => {
     const { analysis, position } = analyzeMarked([
       'class Version {};',

@@ -315,6 +315,8 @@ export interface AnalyzedDocument {
   expandedSource?: {
     analysis: AnalyzedDocument;
     sourceRange(range: AnalysisRange): AnalysisRange;
+    /** Preserves macro argument origins for reference presentation without changing declaration ranges. */
+    referenceRange?(range: AnalysisRange): AnalysisRange;
     expandedPosition(position: AnalysisPosition, end?: boolean): AnalysisPosition;
   };
   documentationBlocks?: readonly import('../analyzer/documentation/model').DocumentationBlock[];

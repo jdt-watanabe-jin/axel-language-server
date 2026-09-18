@@ -85,6 +85,7 @@ function nameOf(node: TypeNode | undefined): string | undefined {
   if (!node) { return undefined; }
   if (node.kind === 'operator_declarator') { return `operator${node.fields.operator?.map(part => part.text).join('') ?? node.text.slice(8).trim()}`; }
   if (node.kind === 'conversion_declarator') { return `convert:${field(node, 'type')?.text ?? ''}`; }
+  if (node.kind === 'destructor_name') { return node.text; }
   if (node.kind === 'qualified_declarator') { return nameOf(field(node, 'name')); }
   if (node.kind === 'identifier' || node.kind === 'class_name') { return node.text; }
   return nameOf(field(node, 'declarator') ?? node.children.find(c => c.kind.endsWith('declarator')));
@@ -110,7 +111,7 @@ function shapeType(ctx: TypeContext, node: TypeNode, base: Type, scope: Scope, d
     const conversion = findDeclarator(field(node, 'declarator'), 'conversion_declarator');
     const result = conversion ? resolveType(ctx, field(conversion, 'type'), scope) : base;
     const fn: FunctionInfo = {
-      name: nameOf(node) ?? '', node: declaration, uri: scope.uri, result, parameters,
+      name: nameOf(node) ?? '', node: declaration, declarator: node, uri: scope.uri, result, parameters,
       required: Math.min(parameters.length, paramNodes.filter(p => !findDeclarator(field(p, 'declarator'), 'init_declarator')).length),
       variadic: paramsNode?.text.includes('...') ?? false, owner: scope.owner, scope
     };
@@ -129,7 +130,7 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
   const documents = [...new Map([...(options.documents ?? []), options.analysis].map(d => [d.uri, d])).values()];
   const ctx: TypeContext = {
     ...options, documents, classes: [], scopes: [], functions: [], bindings: [], aliases: new Map(),
-    nodeScopes: new Map(), diagnostics: [], cache: new Map()
+    nodeScopes: new Map(), diagnostics: [], cache: new Map(), semanticCalls: []
   };
   const aliasScopes = new Map<string, Scope[]>();
   aliasScopeIndexes.set(ctx, aliasScopes);
@@ -171,7 +172,9 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
         ctx.classes.push(info);
       } else if (field(node, 'body')) { info.defined = true; info.node = node; }
       const base = node.children.find(c => c.kind === 'base_class_clause');
-      info.baseName = base?.children.find(c => c.kind !== 'access_specifier')?.text ?? info.baseName;
+      const baseNames = base?.children.filter(c => c.kind !== 'access_specifier').map(c => c.text) ?? [];
+      info.baseNames = baseNames.length ? baseNames : info.baseNames;
+      info.baseName = baseNames[0] ?? info.baseName;
       ctx.nodeScopes.set(node, scope);
       for (const child of node.children) { mapScopes(child, info.scope, true); }
       return;
@@ -229,6 +232,10 @@ export function buildTypeContext(options: { analysis: AnalyzedDocument; document
         if (shaped.type.kind === 'function') {
           const fn = shaped.type.call!;
           fn.owner = owner;
+          // Qualified definitions use the owner's member scope for lookup, but their syntax and declaration live in this document.
+          fn.uri = scope.uri;
+          fn.virtual = node.children.some(child => child.kind === 'storage_class_specifier'
+              && child.text.split(/\s+/).includes('virtual'));
           // GUI handlers belong to an instance path within the enclosing class.
           // Preserve syntax identifiers so whitespace does not change identity.
           const instance = qualified && field(qualified, 'instance');

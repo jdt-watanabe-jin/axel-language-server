@@ -45,6 +45,7 @@ import { toLspWorkspaceEdit } from './rename';
 import { toLspSemanticTokens } from './semanticTokens';
 import { toLspSignatureHelp } from './signatureHelp';
 import type { IncludeResolutionStatus } from '../analyzer/includeDiagnostics';
+import { registerCallHierarchyHandlers } from './callHierarchy';
 
 export interface ServerLogger {
   info?(message: string): void;
@@ -71,6 +72,7 @@ export interface AnalyzerLike extends
   invalidateUri?(uri: string): void;
   onBackgroundIndexingComplete?(listener: () => void): void;
   getLoginDependencies?(cachedOnly?: boolean): { generation: number; uris: string[] };
+  getAnalyzedDocument?(uri: string): AnalyzedDocument | undefined;
 }
 
 export interface HandlerRegistrationContext {
@@ -169,6 +171,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   registerWatchedFileHandlers(context, invalidateRequests);
   registerBackgroundRefreshHandlers(context);
   context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
+
+  registerCallHierarchyHandlers(context, {
+    request,
+    measureRequest,
+    runRequestSteps,
+    analyzeRequest: (token, input) => analyzeRequest(context, token, false, input)
+  });
 
   context.connection.languages.diagnostics.on(request(async (params, token) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }

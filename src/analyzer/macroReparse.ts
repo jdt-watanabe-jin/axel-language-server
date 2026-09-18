@@ -92,7 +92,16 @@ export function* macroReparseSteps(root: Parser.SyntaxNode, source: string, orig
   const expanded = yield* analyze(text,toExpanded);
   yield;
   const result = map(expanded) as AnalyzedDocument;
-  result.expandedSource = { analysis: expanded, sourceRange: mappedRange, expandedPosition: toExpanded };
+  const referenceRange = (range: AnalysisRange): AnalysisRange => {
+    const start=expandedPositions.offset(range.start),end=expandedPositions.offset(range.end);
+    const segment=segments.find(segment=>segment.expandedStart<=start && end<=segment.expandedEnd);
+    const first=segment?.sourceSpans?.[start-segment.expandedStart];
+    const last=segment?.sourceSpans?.[end-segment.expandedStart-1];
+    return segment && first && last && first.start <= last.end
+      ? {start:sourcePositions.position(segment.start+first.start),end:sourcePositions.position(segment.start+last.end)}
+      : mappedRange(range);
+  };
+  result.expandedSource = { analysis: expanded, sourceRange: mappedRange, referenceRange, expandedPosition: toExpanded };
   // Conditional recovery may have erased directives before this second parse.
   const writtenIncludes = new Map(original.includes.map(include =>
     [`${include.range.start.line}:${include.range.start.character}`, include]));

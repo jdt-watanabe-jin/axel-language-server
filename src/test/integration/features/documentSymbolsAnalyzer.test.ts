@@ -90,13 +90,17 @@ suite('collectDocumentSymbols', () => {
     ]);
   });
 
-  test('preserves the complete destructor name and selection range', () => {
-    const tree = createAxelParser().parse('class Version {};\nVersion::~Version() {}');
+  test('preserves complete inline and external destructor names and selection ranges', () => {
+    const tree = createAxelParser().parse('class Version { ~Version() {} };\nVersion::~Version() {}');
     assert.strictEqual(tree.rootNode.hasError, false);
-    const method = collectDocumentSymbols(tree.rootNode)[0].children![0];
-    assert.strictEqual(method.name, '~Version');
-    assert.strictEqual(method.kind, 'method');
-    assert.deepStrictEqual(method.selectionRange, {
+    const methods = collectDocumentSymbols(tree.rootNode)[0].children!;
+    assert.deepStrictEqual(methods.map(method => [method.name, method.kind]), [
+      ['~Version', 'method'], ['~Version', 'method']
+    ]);
+    assert.deepStrictEqual(methods[0].selectionRange, {
+      start: { line: 0, character: 16 }, end: { line: 0, character: 24 }
+    });
+    assert.deepStrictEqual(methods[1].selectionRange, {
       start: { line: 1, character: 9 }, end: { line: 1, character: 17 }
     });
   });

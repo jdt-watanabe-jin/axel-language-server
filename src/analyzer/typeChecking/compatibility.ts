@@ -1,7 +1,9 @@
-import { type Type, type CheckSite, type TypeContext, sameType, isNumeric, role, dereference } from './model';
+import { type Type, type CheckSite, type TypeContext, sameType, isNumeric, role, dereference, uniquelyResolvedFunctions } from './model';
+import type { TypeNode } from './syntax';
 
 /** This is a direct conversion relation, deliberately not a transitive graph. */
-export function checkCompatibility(ctx: TypeContext, from: Type, to: Type, site: CheckSite): 'accepted' | 'rejected' | 'unknown' {
+export function checkCompatibility(ctx: TypeContext, from: Type, to: Type, site: CheckSite,
+  conversionSite?: TypeNode): 'accepted' | 'rejected' | 'unknown' {
   from=dereference(from); to=dereference(to);
   if(from.kind==='unknown' || to.kind==='unknown') { return 'unknown'; }
   if(site==='initialize' && to.const && to.kind==='pointer') { return 'rejected'; }
@@ -20,11 +22,19 @@ export function checkCompatibility(ctx: TypeContext, from: Type, to: Type, site:
   if(role(from)==='natural' && to.kind==='basic' && ['int','double'].includes(to.name)) { return site==='operator' ? 'rejected' : 'accepted'; }
   if(from.kind==='class' && site!=='operator' && ['argument','return','cast'].includes(site)) {
     const conversions=from.classInfo!.methods.get('convert:'+to.name) ?? [];
-    if(conversions.some(f=>sameType(f.result,to))) { return 'accepted'; }
+    const matching=conversions.filter(f=>sameType(f.result,to));
+    if(matching.length) {
+      if (conversionSite) { ctx.semanticCalls.push({node:conversionSite,targets:uniquelyResolvedFunctions(matching)}); }
+      return 'accepted';
+    }
   }
   if(to.kind==='class' && (site==='assign'||site==='initialize')) {
     const candidates=to.classInfo!.methods.get('operator=') ?? [];
-    if(candidates.some(f=>f.parameters.length===1 && (sameType(from,f.parameters[0]) || isNumeric(from)&&isNumeric(f.parameters[0])))) { return 'accepted'; }
+    const matching=candidates.filter(f=>f.parameters.length===1 && (sameType(from,f.parameters[0]) || isNumeric(from)&&isNumeric(f.parameters[0])));
+    if(matching.length) {
+      if (conversionSite) { ctx.semanticCalls.push({node:conversionSite,targets:uniquelyResolvedFunctions(matching)}); }
+      return 'accepted';
+    }
   }
   return site === 'cast' ? 'unknown' : 'rejected';
 }
