@@ -52,6 +52,7 @@ export class DocumentAnalyzer {
   private readonly parser: Parser;
   private readonly logger: AnalysisLogger;
   private readonly cache = new Map<string, CachedAnalysis>();
+  private readonly outlineCache = new Map<string, { key: string; symbols: AnalysisSymbol[] }>();
   private readonly syntaxCache = new Map<string, {version:number; roots:Map<string, Parser.SyntaxNode>}>();
 
   private syntaxRoot(input: AnalyzeDocumentInput, text = input.text): Parser.SyntaxNode {
@@ -81,6 +82,28 @@ export class DocumentAnalyzer {
     } finally {
       this.releaseSyntax(input.uri);
     }
+  }
+
+  /** Outline only: do not expand dependencies, build reference/type indexes or compute diagnostics. */
+  public *getDocumentSymbolsSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, AnalysisSymbol[], void> {
+    const key = JSON.stringify([input.version, input.text, analysisContextKeyFromInput(input)]);
+    const cached = this.outlineCache.get(input.uri);
+    if (cached?.key === key) { return cached.symbols; }
+    yield;
+    try {
+      const original = this.syntaxRoot(input);
+      const conditional = original.hasError ? conditionalReparse(input, text => this.parser.parse(text)) : undefined;
+      const root = conditional ? this.syntaxRoot(input, conditional.text) : original;
+      yield;
+      const evaluation = conditional?.evaluation ?? evaluatePreprocessor(root, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
+      const guiClasses = buildGuiIndex(root, input.uri);
+      yield;
+      const symbols = filterSymbolsForInactiveRanges(collectDocumentSymbols(root, {
+        guiClasses, guiMethods: collectExternalGuiMethods(root), excludedRanges: evaluation.inactiveRanges
+      }), evaluation.inactiveRanges);
+      this.outlineCache.set(input.uri, { key, symbols });
+      return symbols;
+    } finally { this.releaseSyntax(input.uri); }
   }
 
   public analyzeDocument(input: AnalyzeDocumentInput, expandMacros = true, dependenciesOnly = false): AnalyzedDocument {
@@ -271,11 +294,13 @@ export class DocumentAnalyzer {
 
   public clear(uri?: string): void {
     if (uri === undefined) {
+      this.outlineCache.clear();
       this.cache.clear();
       this.syntaxCache.clear();
       return;
     }
 
+    this.outlineCache.delete(uri);
     this.cache.delete(uri);
     this.syntaxCache.delete(uri);
   }

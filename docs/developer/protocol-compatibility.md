@@ -16,3 +16,13 @@ npm run test:ci
 ```
 
 The extension's R0 baseline separately tests VS Code 1.82.0 and its reference Host version, checks real-client Open/Change/Save/Close transmission, and provides a repeatable stdio performance harness with process memory and build fingerprints. Those results apply to the linked development server. They do not update the extension's pinned published dependency.
+
+## Document outline analysis policy
+
+The `axel` configuration snapshot accepts `workspaceSymbols: "Just My Code" | "All"`, defaulting to `"Just My Code"`. Despite the historical setting name, it controls `textDocument/documentSymbol`, not `workspace/symbol` collection. The removed object-form `workspaceSymbols.exclude` remains a configuration error.
+
+Just My Code uses an isolated syntax-only outline cache keyed by URI, version, source and preprocessing context. It never requires dependency indexing or diagnostic completion; pending content notifications are not flushed through foreground semantic analysis for this request. Local declarations, GUI structure and locally evaluable conditions are included. Macro-generated declarations and externally determined GUI kinds may require All. Other language features retain their dependency analysis.
+
+All uses the existing shared analysis, including forced headers, resolved includes, login declarations and diagnostics. Both modes return symbols of the requested document only. A configuration update affects the next request without reopening the document; there is no standard document-symbol refresh request.
+
+Regression coverage: `documentOutline.test.ts` in integration/features and E2E, and `documentOutlineScheduling.test.ts` in unit. Name resolution must pass only required GUI context fields, without spreading an analysis object whose lazy getters compute unrelated semantic data.

@@ -99,7 +99,7 @@ export function findLocalDeclarations(
       const input = { analysis, position, workspaceIndex: {} };
       const { guiClasses, guiMethods } = analysis;
       const guiContext = guiClasses && guiMethods && findEnclosingGuiMethodContext({
-        analysis: { ...analysis, guiClasses, guiMethods }, position
+        analysis: { uri: analysis.uri, declarations: analysis.declarations, guiClasses, guiMethods }, position
       });
       let owner = guiContext ? undefined : thisReceiverType(input);
       const visited = new Set<string>();
@@ -287,7 +287,7 @@ function requiredParameterCount(parameters: NonNullable<AnalysisDeclaration['sig
 export function thisReceiverType(input: DeclarationResolutionInput): string | undefined {
   const { guiClasses, guiMethods } = input.analysis;
   if (guiClasses && guiMethods) {
-    const context = findEnclosingGuiMethodContext({ ...input, analysis: { ...input.analysis, guiClasses, guiMethods },
+    const context = findEnclosingGuiMethodContext({ ...input, analysis: { uri: input.analysis.uri, declarations: input.analysis.declarations, guiClasses, guiMethods },
       workspaceIndex: {
         findGuiClass: (uri, name) => input.workspaceIndex.findGuiClass?.(uri, name)
           ?? input.workspaceIndex.findVisibleGuiClasses?.(uri, name)?.[0],

@@ -18,7 +18,7 @@ export function configurationKeys(settings: Settings) {
       ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
   return {
     analysis: canonical(analysis),
-    features: canonical({ hover: settings.hover ?? 'default', autocomplete: settings.autocomplete ?? 'default',
+    features: canonical({ workspaceSymbols: settings.workspaceSymbols ?? 'Just My Code', hover: settings.hover ?? 'default', autocomplete: settings.autocomplete ?? 'default',
       errorSquiggles: settings.errorSquiggles ?? 'enabledIfIncludesResolve', inlayHints: normalizeInlayHintsSettings(settings) }),
     symbols: canonical({ project: normalizeProjectSettings(settings),
       defines: analysis.defines, tool: analysis.tool, targetPlatform: analysis.targetPlatform, internalFeatures: analysis.internalFeatures }),
@@ -41,15 +41,16 @@ export function validateSettings(value: unknown): Settings {
   if (value.sxmHome !== undefined && typeof value.sxmHome !== 'string') { fail('sxmHome'); }
   if (value.maxNumberOfProblems !== undefined && (typeof value.maxNumberOfProblems !== 'number'
     || !Number.isFinite(value.maxNumberOfProblems) || value.maxNumberOfProblems <= 0)) { fail('maxNumberOfProblems'); }
+  if (object(value.workspaceSymbols) && Object.prototype.hasOwnProperty.call(value.workspaceSymbols, 'exclude')) { fail('workspaceSymbols.exclude (removed; use project.exclude)'); }
   const enums: Record<string, string[]> = {
     tool: ['axel', 'ismo', 'asca', 'spicechart'], targetPlatform: Object.keys(TARGET_PLATFORMS),
     internalFeatures: ['enabled', 'disabled'], hover: ['default', 'disabled'], autocomplete: ['default', 'disabled'],
-    errorSquiggles: ['enabled', 'disabled', 'enabledIfIncludesResolve']
+    errorSquiggles: ['enabled', 'disabled', 'enabledIfIncludesResolve'], workspaceSymbols: ['All', 'Just My Code']
   };
   for (const [key, choices] of Object.entries(enums)) {
     if (value[key] !== undefined && !choices.includes(value[key] as string)) { fail(key); }
   }
-  for (const key of ['workspaceSymbols', 'fileOperations']) {
+  for (const key of ['fileOperations']) {
     const group = value[key];
     if (group === undefined) { continue; }
     if (!object(group)) { fail(key); }

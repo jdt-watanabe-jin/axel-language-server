@@ -68,6 +68,7 @@ export interface AnalyzerLike extends
   WorkspaceCompletionIndex,
   WorkspaceNavigationIndex,
   WorkspaceCodeActionIndex {
+  getDocumentSymbolsSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, import('../types/analysis').AnalysisSymbol[], void>;
   getFoldingRangesSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void>;
   updateOpenDocument?(input: AnalyzeDocumentInput): void;
   analyzeRequestDocument?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
@@ -253,11 +254,11 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose();
     return Promise.all([workspaceSymbols?.dispose(), typeHierarchy.dispose()]).then(() => undefined);
   });
-  const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>): Promise<T> => {
+  const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>, flushChanges = true): Promise<T> => {
     const startedAt = Date.now();
     try {
       throwIfCancelled(token);
-      await flushPendingChanges();
+      if (flushChanges) { await flushPendingChanges(); }
       validateRequest();
       await cancellationCheckpoint(token);
       const result = await work();
@@ -649,12 +650,19 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 
   context.connection.onDocumentSymbol(request(async (params: DocumentSymbolParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
+    const local = featureSettings.workspaceSymbols !== 'All' && !!context.analyzer.getDocumentSymbolsSteps;
     return measureRequest(token, 'lsp.documentSymbol', documentRequestDetails(params, document), async () => {
       if (document === undefined) {
         return [];
       }
 
       try {
+        if (local) {
+          const symbols = await runRequestSteps(context.analyzer.getDocumentSymbolsSteps!({
+            uri: document.uri, version: document.version, text: document.getText()
+          }), token);
+          return symbols.map(toLspDocumentSymbol);
+        }
         const analysis = await analyzeRequest(context, token, false, {
           uri: document.uri,
           version: document.version,
@@ -667,7 +675,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         context.logger.error(`Document symbols failed: ${getErrorMessage(error)}`);
         return [];
       }
-    });
+    }, !local);
   }));
 
   context.connection.languages.semanticTokens.on(request(async (params: SemanticTokensParams, token) => {

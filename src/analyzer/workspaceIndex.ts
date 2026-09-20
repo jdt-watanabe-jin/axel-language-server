@@ -81,6 +81,7 @@ export class WorkspaceIndex {
   private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
   private readonly analyzer: DocumentAnalyzer;
+  private readonly outlineAnalyzer = new DocumentAnalyzer();
   private includeRoots: string[];
   private forcedIncludeRoots: string[];
   private forcedIncludeFiles: string[];
@@ -347,6 +348,12 @@ export class WorkspaceIndex {
 
   public onBackgroundIndexingComplete(listener: () => void): void {
     this.backgroundCompleteListeners.push(listener);
+  }
+
+  public *getDocumentSymbolsSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, import('../types/analysis').AnalysisSymbol[], void> {
+    return yield* this.outlineAnalyzer.getDocumentSymbolsSteps({ ...input, tool: this.tool,
+      targetPlatform: this.targetPlatform, internalFeatures: this.internalFeatures,
+      preprocessorSymbols: defaultPreprocessorSymbols(this.defines).filter(symbol => !isSystemMacroName(symbol.name)) });
   }
 
   public *getFoldingRangesSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void> {
@@ -701,6 +708,7 @@ export class WorkspaceIndex {
   }
 
   public deleteDocument(uri: string): void {
+    this.outlineAnalyzer.clear(uri);
     this.openInputs.delete(fileIdentity(uri));
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
@@ -1552,6 +1560,7 @@ export class WorkspaceIndex {
   }
 
   private clearCachedAnalysis(): void {
+    this.outlineAnalyzer.clear();
     this.backgroundGeneration++;
     if (!this.backgroundStepping) {
       this.activeBackground?.steps.return();
