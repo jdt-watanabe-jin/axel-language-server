@@ -14,6 +14,7 @@ out/server.js
 
 The server currently supports these Language Server Protocol features:
 
+- Workspace symbols across open and unopened AXEL files, with live exclusions, background indexing and cancellation. See [workspace symbols](docs/user/workspace-symbols.md) for scope, settings and navigation behavior.
 - Text document synchronization for AXEL source files.
 - Diagnostics:
   - syntax diagnostics from `tree-sitter-axel`

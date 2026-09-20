@@ -1,9 +1,10 @@
 import type * as Parser from 'tree-sitter';
 import type { AnalysisGuiClass, AnalysisGuiMethod, AnalysisGuiPart, AnalysisRange, AnalysisSymbol, AnalysisSymbolKind } from '../types/analysis';
 import { isDeclarationNodeType, isIncludeNodeType, isTypeSpecifierNodeType } from './nodeKinds';
-import { getDeclaratorName, nodeToAnalysisRange } from './syntaxTree';
+import { findInnermostDeclaratorName, getDeclaratorName, nodeToAnalysisRange } from './syntaxTree';
 
 export interface CollectDocumentSymbolsOptions {
+  allDeclarators?: boolean;
   excludedRanges?: readonly AnalysisRange[];
   guiClasses?: readonly AnalysisGuiClass[];
   guiMethods?: readonly AnalysisGuiMethod[];
@@ -17,7 +18,7 @@ export function collectDocumentSymbols(
   const nestedGuiMethods = nestableGuiMethods(options);
 
   const externalMethods = new Map<AnalysisSymbol, { owner: string; name: string; selectionRange: AnalysisRange }>();
-  const context: SymbolContext = { nestedGuiMethods, externalMethods, excludedRanges: options.excludedRanges ?? [] };
+  const context: SymbolContext = { nestedGuiMethods, externalMethods, excludedRanges: options.excludedRanges ?? [], allDeclarators: options.allDeclarators };
   for (const child of rootNode.namedChildren) {
     symbols.push(...symbolsFromNode(child, context));
   }
@@ -26,6 +27,7 @@ export function collectDocumentSymbols(
 }
 
 interface SymbolContext {
+  allDeclarators?: boolean;
   nestedGuiMethods: ReadonlySet<string>;
   containerKind?: AnalysisSymbolKind;
   containerName?: string;
@@ -68,12 +70,22 @@ function symbolsFromNode(node: Parser.SyntaxNode, context: SymbolContext): Analy
     return anonymousEnumMembers;
   }
 
+  if (context.allDeclarators && isDeclarationNodeType(node.type)) {
+    const declarators = node.children.filter((_, index) => node.fieldNameForChild(index) === 'declarator');
+    if (declarators.length > 1) {
+      return declarators.flatMap(declarator => {
+        const symbol = declarationSymbolFromNode(node, context, declarator);
+        return symbol ? [symbol] : [];
+      });
+    }
+  }
+
   const symbol = symbolFromNode(node, context);
   if (symbol !== null) {
     return [symbol];
   }
 
-  if (!isTransparentSymbolContainer(node)) {
+  if (!isTransparentSymbolContainer(node) && !(context.allDeclarators && node.type === 'preproc_elifdef')) {
     return [];
   }
 
@@ -142,17 +154,17 @@ function macroSymbolFromNode(node: Parser.SyntaxNode): AnalysisSymbol | null {
   };
 }
 
-function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolContext): AnalysisSymbol | null {
+function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolContext, declarator?: Parser.SyntaxNode): AnalysisSymbol | null {
   if (node.type === 'function_definition' && context.nestedGuiMethods.has(rangeKey(nodeToAnalysisRange(node)))) {
     return null;
   }
 
-  const nameNode = getDeclaratorName(node);
+  const nameNode = declarator ? findInnermostDeclaratorName(declarator) : getDeclaratorName(node);
   if (nameNode === null || nameNode.text.trim().length === 0) {
     return null;
   }
 
-  const callable = node.type === 'function_definition' || containsFunctionDeclarator(node);
+  const callable = node.type === 'function_definition' || containsFunctionDeclarator(declarator ?? node);
   const scope = nameNode.type === 'qualified_declarator' ? nameNode.childForFieldName('scope') : null;
   const memberNodes = scope === null ? [] : nameNode.children.filter((_, index) => nameNode.fieldNameForChild(index) === 'name');
   const member = memberNodes[0] ?? null;
@@ -162,7 +174,7 @@ function declarationSymbolFromNode(node: Parser.SyntaxNode, context: SymbolConte
   const qualified = callable && scope !== null && member !== null && nameNode.childForFieldName('instance') === null;
   const owner = qualified ? scope.text : context.containerName;
   const localName = qualified ? memberName : nameNode.text;
-  let kind = declarationKind(node.type, localName, qualified ? 'class' : context.containerKind, node);
+  let kind = declarationKind(node.type, localName, qualified ? 'class' : context.containerKind, declarator ?? node);
   if (callable && owner === localName && node.childForFieldName('type') === null) {
     kind = 'constructor';
   }

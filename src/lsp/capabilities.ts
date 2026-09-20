@@ -43,6 +43,8 @@ export function createInitializeResult(): InitializeResult {
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
       documentSymbolProvider: true,
+      workspaceSymbolProvider: true,
+      workspace: { workspaceFolders: { supported: true, changeNotifications: true } },
       callHierarchyProvider: true,
       foldingRangeProvider: true,
       semanticTokensProvider: {

@@ -1,4 +1,5 @@
 import { getInlayHintsSteps } from '../analyzer/inlayHints';
+import { registerWorkspaceSymbolHandler } from './workspaceSymbols';
 import { normalizeInlayHintsSettings, toLspInlayHints } from './inlayHints';
 import type { InlayHintParams } from 'vscode-languageserver/node';
 import type { FoldingRangeCandidate } from '../analyzer/foldingRanges';
@@ -109,6 +110,7 @@ interface RefactorHandlerConnection {
 }
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
+  const workspaceSymbols = registerWorkspaceSymbolHandler(context);
   let revision = 0;
   const invalidateRequests = () => { revision++; };
   const queue = createRequestHandler();
@@ -151,6 +153,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   };
   context.connection.onInitialize((params, token) => {
     throwIfCancelled(token);
+    workspaceSymbols?.initialize(params);
     locale = params.locale;
     inlayRefreshSupported = params.capabilities?.workspace?.inlayHint?.refreshSupport ?? false;
     foldingCapabilities = params.capabilities?.textDocument?.foldingRange;
@@ -161,8 +164,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     context.analyzer.configure?.(params.initializationOptions);
     return createInitializeResult();
   });
-  registerConfigurationChangeHandlers(context, settings => { updateFeatures(settings); refreshInlayHints(); });
-  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints);
+  registerConfigurationChangeHandlers(context, settings => { workspaceSymbols?.configure(settings); updateFeatures(settings); refreshInlayHints(); });
+  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => workspaceSymbols?.dispose());
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>): Promise<T> => {
     const startedAt = Date.now();
     try {
@@ -179,9 +182,9 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       throw error;
     }
   };
-  registerWatchedFileHandlers(context, () => { invalidateRequests(); refreshInlayHints(); });
+  registerWatchedFileHandlers(context, () => { invalidateRequests(); refreshInlayHints(); }, uris => workspaceSymbols?.invalidate(uris));
   registerBackgroundRefreshHandlers(context, refreshInlayHints);
-  context.connection.onInitialized?.(() => { sendLoginDependencies(context); });
+  context.connection.onInitialized?.(() => { workspaceSymbols?.start(); sendLoginDependencies(context); });
 
   registerDocumentHighlightHandler(context, {
     request,
@@ -598,8 +601,9 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   }));
 }
 
-function registerWatchedFileHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void): void {
+function registerWatchedFileHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, invalidateSymbols: (uris: string[]) => void): void {
   context.connection.onDidChangeWatchedFiles((event) => {
+    invalidateSymbols(event.changes.map(change => change.uri));
     if (event.changes.length > 0) { invalidateRequests(); }
     for (const change of event.changes) {
       context.analyzer.invalidateUri?.(change.uri);
@@ -626,7 +630,8 @@ function registerConfigurationChangeHandlers(context: HandlerRegistrationContext
   });
 }
 
-function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, refreshInlayHints: () => void): () => Promise<void> {
+function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, refreshInlayHints: () => void,
+  disposeSymbols: () => Promise<void> | undefined): () => Promise<void> {
   const pending = new Map<string, TextDocument>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = async (): Promise<void> => {
@@ -665,12 +670,13 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
     context.connection.languages.diagnostics.refresh?.();
   });
 
-  context.connection.onShutdown?.(token => {
+  context.connection.onShutdown?.(async token => {
     throwIfCancelled(token);
     invalidateRequests();
     clearTimeout(timer);
     timer = undefined;
     pending.clear();
+    await disposeSymbols();
   });
   return flush;
 }

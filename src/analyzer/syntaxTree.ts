@@ -66,7 +66,7 @@ export function getDeclaratorName(node: Parser.SyntaxNode): Parser.SyntaxNode | 
   return findInnermostDeclaratorName(declarator);
 }
 
-function findInnermostDeclaratorName(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
+export function findInnermostDeclaratorName(node: Parser.SyntaxNode): Parser.SyntaxNode | null {
   if (isNameNode(node)) {
     return node;
   }

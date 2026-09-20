@@ -12,7 +12,7 @@ export function toLspDocumentSymbol(symbol: AnalysisSymbol): DocumentSymbol {
   );
 }
 
-function toLspSymbolKind(kind: AnalysisSymbolKind): SymbolKind {
+export function toLspSymbolKind(kind: AnalysisSymbolKind): SymbolKind {
   switch (kind) {
     case 'constructor':
       return SymbolKind.Constructor;

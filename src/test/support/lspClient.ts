@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import * as path from 'path';
-import { CancellationToken, createProtocolConnection, StreamMessageReader, StreamMessageWriter } from 'vscode-languageserver/node';
+import { CancellationToken, createProtocolConnection, StreamMessageReader, StreamMessageWriter, WorkDoneProgress,
+  type WorkDoneProgressBegin, type WorkDoneProgressReport, type WorkDoneProgressEnd } from 'vscode-languageserver/node';
 
 // Real stdio transport and production entry point; no analyzer or handler doubles.
 export function startLspServer(requestTimeoutMs = 5_000) {
@@ -32,6 +33,9 @@ export function startLspServer(requestTimeoutMs = 5_000) {
     }
   }
   return {
+    onWorkDoneProgress(token: string, handler: (value: WorkDoneProgressBegin | WorkDoneProgressReport | WorkDoneProgressEnd) => void) {
+      return connection.onProgress(WorkDoneProgress.type, token, handler);
+    },
     onInlayHintRefresh(handler: () => void) {
       return connection.onRequest('workspace/inlayHint/refresh', () => { handler(); return null; });
     },
