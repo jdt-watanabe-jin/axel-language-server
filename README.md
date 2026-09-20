@@ -27,6 +27,7 @@ The server currently supports these Language Server Protocol features:
 - Find References for resolved symbol identities across the current document, resolved includes, dependent documents, and forced includes.
 - Document highlights for the same resolved symbol within the requesting document, classified as Text, Read, or Write. See the [document highlight guide](docs/developer/document-highlights.md) for request behavior and testing.
 - Call Hierarchy for resolved calls and unambiguous function references, with incoming and outgoing exploration across the current analysis index. See the [call hierarchy implementation guide](docs/developer/call-hierarchy.md) for ownership, virtual dispatch, caching, and limits.
+- Type Hierarchy from type and variable names, with direct base types and derived types across unopened project files. See [type hierarchy](docs/user/type-hierarchy.md) for supported targets and [implementation](docs/developer/type-hierarchy.md) for resolution, indexing and cancellation.
 - Prepare Rename and Rename for safe resolved symbols, including references in included files when the symbol identity is known.
 - Code actions for deterministic missing-include quick fixes.
 - Parameter-name inlay hints for resolved function and method arguments, disabled by default. See [inlay hints](docs/user/inlay-hints.md) for configuration, suppression, overloads and source mapping.

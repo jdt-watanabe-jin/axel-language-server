@@ -1,14 +1,24 @@
 import * as assert from 'assert';
 import { CancellationToken, CancellationTokenSource, LSPErrorCodes } from 'vscode-languageserver/node';
-import { ConfigurationManager } from '../../lsp/configuration';
+import { ConfigurationManager, validateSettings } from '../../lsp/configuration';
 
 suite('configuration pull', () => {
+  test('rejects retired exclusions, including empty arrays, and invalid project patterns', () => {
+    for (const group of ['workspaceSymbols', 'fileOperations']) {
+      assert.throws(() => validateSettings({ [group]: { exclude: [] } }), /exclude/);
+    }
+    for (const pattern of ['', '/absolute', '../parent', 'a/./b', '!x', '{a,b}', '[ab]', 'a\\b']) {
+      assert.throws(() => validateSettings({ project: { include: [pattern] } }), /project/);
+    }
+    assert.throws(() => validateSettings({ project: [] }), /project/);
+    assert.deepStrictEqual(validateSettings({ project: { include: [], exclude: [] } }).project, { include: [], exclude: [] });
+  });
   test('ignores unknown keys, property order and explicit defaults when comparing snapshots', async () => {
     let value: unknown = {};
     let applied = 0;
     const manager = new ConfigurationManager(() => Promise.resolve(value), () => { applied++; }, () => {}, () => {});
     manager.start(); await manager.ready(CancellationToken.None);
-    value = { unknown: true, fileOperations: { exclude: [], updateIncludesOnRename: true },
+    value = { unknown: true, project: { include: ['**/*'], exclude: [] }, fileOperations: { updateIncludesOnRename: true },
       errorSquiggles: 'enabledIfIncludesResolve', tool: 'axel', includeRoots: [], inlayHints: { parameterNames: { enabled: false } } };
     manager.refresh(); await manager.ready(CancellationToken.None);
     assert.strictEqual(applied, 1);

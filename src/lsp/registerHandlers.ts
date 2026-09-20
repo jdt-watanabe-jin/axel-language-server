@@ -1,3 +1,4 @@
+import { ProjectScope, normalizeProjectSettings } from '../analyzer/projectScope';
 import { getInlayHintsSteps } from '../analyzer/inlayHints';
 import { ConfigurationManager, configurationKeys } from './configuration';
 import { registerFileOperations } from './fileOperations';
@@ -53,6 +54,7 @@ import { toLspSemanticTokens } from './semanticTokens';
 import { toLspSignatureHelp } from './signatureHelp';
 import type { IncludeResolutionStatus } from '../analyzer/includeDiagnostics';
 import { registerCallHierarchyHandlers } from './callHierarchy';
+import { createTypeHierarchyIndex, registerTypeHierarchyHandlers } from './typeHierarchy';
 import { registerDocumentHighlightHandler } from './documentHighlights';
 
 export interface ServerLogger {
@@ -78,6 +80,7 @@ export interface AnalyzerLike extends
   deleteDocument?(uri: string): void;
   configure?(options: unknown): void;
   setAnalysisEnabled?(enabled: boolean): void;
+  setProjectScope?(scope: ProjectScope): void;
   invalidateUri?(uri: string): void;
   invalidatePaths?(uris: readonly string[]): void;
   onBackgroundIndexingComplete?(listener: () => void): void;
@@ -90,6 +93,7 @@ export interface HandlerRegistrationContext {
   documents: TextDocuments<TextDocument>;
   analyzer: AnalyzerLike;
   logger: ServerLogger;
+  projectScope?: ProjectScope;
   configuration?: Pick<ConfigurationManager, 'start' | 'refresh' | 'ready' | 'isReady' | 'settings' | 'dispose'>;
 }
 
@@ -112,16 +116,25 @@ interface RefactorHandlerConnection {
 }
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
+  const projectScope = context.projectScope ??= new ProjectScope(message => context.logger.error(message));
+  context.analyzer.setProjectScope?.(projectScope);
+  const typeHierarchy = createTypeHierarchyIndex(context);
   const fileOperations = registerFileOperations(context, uris => invalidateFiles(uris));
-  const workspaceSymbols = registerWorkspaceSymbolHandler(context, roots => fileOperations.setRoots(roots));
+  const workspaceSymbols = registerWorkspaceSymbolHandler(context, roots => {
+    projectScope.setRoots(roots); revision++; fileOperations.setRoots(roots); typeHierarchy.invalidate();
+  });
+  const updateOpenScope = () => projectScope.setOpenUris((context.documents.all?.() ?? []).map(document => document.uri));
+  context.documents.onDidChangeContent(updateOpenScope);
+  context.documents.onDidClose(updateOpenScope);
     let revision = 0;
   let documentsDirty = false;
   const invalidateRequests = () => { revision++; if (!context.configuration?.isReady) { documentsDirty = true; } };
   const invalidateFiles = (uris: string[]): void => {
     if (!uris.length) { return; }
-    invalidateRequests();
+    invalidateRequests(); projectScope.invalidate();
     fileOperations.invalidate(uris);
     workspaceSymbols?.invalidate(uris);
+    typeHierarchy.invalidate(uris);
     if (context.analyzer.invalidatePaths) { context.analyzer.invalidatePaths(uris); }
     else { for (const uri of uris) { context.analyzer.invalidateUri?.(uri); } }
     if (!context.configuration?.isReady) { return; }
@@ -181,6 +194,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     context.analyzer.setAnalysisEnabled?.(true);
     if (filesChanged) { fileOperations.configure(); } else { fileOperations.resume(); }
     workspaceSymbols?.resume();
+    typeHierarchy.resume();
     if (!analysisChanged && !featuresChanged && !documentsDirty) { return; }
     documentsDirty = false;
     for (const document of context.documents.all()) { void indexDocument(context, document); }
@@ -193,6 +207,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     token => context.connection.sendRequest<unknown[]>('workspace/configuration', { items: [{ section: 'axel' }] }, token)
       .then(result => { if (!Array.isArray(result) || result.length !== 1) { throw new Error('Expected one configuration result.'); } return result[0]; }),
       settings => {
+        projectScope.configure(normalizeProjectSettings(settings));
         const keys = configurationKeys(settings);
         const recovered = appliedKeys && JSON.stringify(keys) === JSON.stringify(appliedKeys);
         analysisChanged = !appliedKeys || keys.analysis !== appliedKeys.analysis || !!recovered;
@@ -201,10 +216,11 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         updateFeatures(settings);
         if (analysisChanged) { context.analyzer.configure?.(settings); }
         workspaceSymbols?.configure(settings);
+        typeHierarchy.configure(settings);
         appliedKeys = keys;
       },
     () => { revision++; analysisChanged = false; featuresChanged = false; filesChanged = false;
-      context.analyzer.setAnalysisEnabled?.(false); workspaceSymbols?.pause(); fileOperations.pause(); },
+      context.analyzer.setAnalysisEnabled?.(false); workspaceSymbols?.pause(); fileOperations.pause(); typeHierarchy.pause(); },
     message => {
       context.logger.error(message);
       void context.connection.sendNotification('window/showMessage', { type: 1, message }).catch(() => {});
@@ -218,6 +234,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       throw new ResponseError(ErrorCodes.InvalidParams, 'AXEL requires workspace/configuration support.');
     }
     dynamicConfiguration = params.capabilities.workspace.didChangeConfiguration?.dynamicRegistration === true;
+    projectScope.setRoots(params.workspaceFolders?.map(folder => folder.uri) ?? (params.rootUri ? [params.rootUri] : []));
     workspaceSymbols?.initialize(params);
     fileOperations.initialize(params);
     locale = params.locale;
@@ -230,7 +247,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   });
   context.connection.onDidChangeConfiguration?.(() => context.configuration!.refresh());
   const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => {
-    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); return workspaceSymbols?.dispose();
+    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose();
+    return Promise.all([workspaceSymbols?.dispose(), typeHierarchy.dispose()]).then(() => undefined);
   });
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>): Promise<T> => {
     const startedAt = Date.now();
@@ -272,6 +290,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     runRequestSteps,
     analyzeRequest: (token, input) => analyzeRequest(context, token, false, input)
   });
+
+  registerTypeHierarchyHandlers(context, typeHierarchy, { request });
 
   context.connection.languages.diagnostics.on(request(async (params, token) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }

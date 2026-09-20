@@ -7,7 +7,7 @@ import { performance } from 'perf_hooks';
 export function registerFileOperations(context: HandlerRegistrationContext, invalidate: (uris: string[]) => void) {
   let roots: string[] = [];
   let editsSupported = false;
-  const index = new FileRenameIndex(() => context.documents.all?.() ?? [], message => context.logger.info?.(message));
+  const index = new FileRenameIndex(() => context.documents.all?.() ?? [], message => context.logger.info?.(message), context.projectScope);
   let warming: CancellationTokenSource | undefined;
   let timer: NodeJS.Timeout | undefined;
   let dirty = true;

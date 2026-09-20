@@ -48,6 +48,10 @@ Before resolving includes, the workspace collects dependency metadata without bu
 
 Document versions alone do not identify an analysis context. Changes in visible includes, macros, forced entries, configuration, and notified companion/declaration files invalidate dependent results. Catalog registration must never exempt all forced includes or all headers with a familiar basename. Regressions must exercise unchanged source versions with changed dependencies as well as normal edits.
 
+Project candidate ownership is separate from semantic visibility. `src/analyzer/projectScope.ts` owns roots, include/exclude matching, canonical file identity, enumeration, and scope revision. The LSP registration context shares one instance with candidate consumers and attaches it to `WorkspaceIndex`. Reference-search documents retain the requesting source and its visible dependencies; unrelated indexed documents must belong to this scope. Excluding or opening a header does not remove it from required dependency analysis or restore it as an unrelated project candidate. Scope changes retain open-document and dependency state while candidate indexes reconcile their membership.
+
+The complete `workspace/configuration` response supplies `project: { include: ["**/*"], exclude: [] }` by default. An empty include array selects no project candidates. Central validation rejects invalid arrays/patterns and the removed `workspaceSymbols.exclude` or `fileOperations.exclude` keys, including empty arrays, before any consumer applies the snapshot. See [configuration acquisition](../user/configuration.md) and [shared project scope](../user/workspace-symbols.md#shared-project-scope).
+
 ## Regression coverage
 
 The checked-in [corpus manifest](../../src/test/integration/fixtures/type-checking/manifest.json) fixes source hashes, expected compiler errors, error codes, and evidence identifiers for 156 ordinary cases and one separately tracked compiler crash. A crash has `expectedError: null`; it is not an accepted program or an ordinary type error. The corpus covers the initial observations and their follow-up experiments, rather than asserting complete equivalence with AXEL.

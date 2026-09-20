@@ -29,12 +29,9 @@ suite('Workspace Symbol query', () => {
       (e: unknown) => (e as { code: number }).code === LSPErrorCodes.RequestCancelled); }
     finally { source.dispose(); }
   });
-  test('normalizes exclusion settings without adding node-specific exclusions', () => {
-    assert.deepStrictEqual(normalizeWorkspaceSymbolSettings({}).exclude, []);
-    const errors: string[] = [];
-    assert.deepStrictEqual(normalizeWorkspaceSymbolSettings({ workspaceSymbols: {
-      exclude: ['**/generated/**', 1, '!keep', '../outside', '/absolute', 'C:/outside', '']
-    } }, e => errors.push(e)).exclude, ['**/generated/**']);
-    assert.strictEqual(errors.length, 6);
+  test('normalizes shared project defaults without implicit exclusions', () => {
+    assert.deepStrictEqual(normalizeWorkspaceSymbolSettings({}).project, { include: ['**/*'], exclude: [] });
+    assert.deepStrictEqual(normalizeWorkspaceSymbolSettings({ project: { include: [], exclude: ['generated'] } }).project,
+      { include: [], exclude: ['generated'] });
   });
 });

@@ -11,7 +11,7 @@ The include index scans `.axl`, `.h`, and `.hh` source files under workspace fol
 The `axel` configuration object accepts:
 
 ```json
-{"fileOperations":{"updateIncludesOnRename":true,"exclude":[]}}
+{"project":{"include":["**/*"],"exclude":[]},"fileOperations":{"updateIncludesOnRename":true}}
 ```
 
-`updateIncludesOnRename` defaults to true. `exclude` defaults to an empty array and only excludes source files from automatic edits. It is independent of workspace-symbol exclusions. Patterns are root-relative, use `/`, and support `*`, `?`, and `**`; absolute paths, `..`, negative patterns and empty patterns are invalid. `.git` and symlinks below roots are not scanned. External include roots are lookup locations, not extra editing roots. Changes take effect after configuration acquisition without restarting.
+`updateIncludesOnRename` defaults to true. Source files must belong to the [shared project scope](workspace-symbols.md#shared-project-scope) both before and after the move. A move into or out of that scope does not edit the moving source. Referenced targets may be excluded or outside workspace roots. `.git` and symlinks below roots are not scanned. External include roots are lookup locations, not extra editing roots. Changes take effect after configuration acquisition without restarting. The former `fileOperations.exclude` setting is rejected, including an empty array; migrate it to `project.exclude`.

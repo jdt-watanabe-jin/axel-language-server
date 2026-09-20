@@ -49,7 +49,7 @@ suite('Workspace Symbol index', () => {
     const { root, file, index } = setup(); fs.writeFileSync(file, '#if FLAG\nint enabled;\n#else\nint disabled;\n#endif');
     index.configure(normalizeWorkspaceSymbolSettings({ defines: ['FLAG=1'] }));
     assert.deepStrictEqual(await names(index), ['enabled']);
-    index.configure(normalizeWorkspaceSymbolSettings({ workspaceSymbols: { exclude: ['**/main.axl'] } }));
+    index.configure(normalizeWorkspaceSymbolSettings({ project: { exclude: ['**/main.axl'] } }));
     assert.deepStrictEqual(await names(index), []);
     index.configure(normalizeWorkspaceSymbolSettings({}));
     assert.deepStrictEqual(await names(index), ['disabled']);
@@ -116,7 +116,7 @@ suite('Workspace Symbol index', () => {
   });
   test('does not bypass excluded ancestor directories with an open buffer', async () => {
     const { root, index } = setup();
-    index.configure(normalizeWorkspaceSymbolSettings({ workspaceSymbols: { exclude: ['src'] } }));
+    index.configure(normalizeWorkspaceSymbolSettings({ project: { exclude: ['src'] } }));
     index.updateDocument({ uri: pathToFileURL(path.join(root, 'src', 'new.axl')).toString(), version: 1, text: 'int excluded;' });
     assert.deepStrictEqual(await names(index), []);
   });

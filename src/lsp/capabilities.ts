@@ -50,6 +50,7 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
           .filter(key => client?.workspace?.fileOperations?.[key as keyof NonNullable<NonNullable<ClientCapabilities['workspace']>['fileOperations']>] === true)
           .map(key => [key, { filters: [{ scheme: 'file', pattern: { glob: '**/*' } }] }])) },
       callHierarchyProvider: true,
+      typeHierarchyProvider: true,
       foldingRangeProvider: true,
       semanticTokensProvider: {
         legend: SEMANTIC_TOKEN_LEGEND,

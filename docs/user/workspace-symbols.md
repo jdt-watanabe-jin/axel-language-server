@@ -6,19 +6,22 @@ Types, functions, methods, constructors, operators, global variables, fields, en
 
 Queries match names and qualified names without case sensitivity. The server ranks exact, prefix, substring, then ordered-subsequence matches; clients may reorder results. `Version::make` searches qualified names and `mkv` matches `makeVersion`. Empty or whitespace-only queries return all candidates without a silent result limit.
 
-## Exclusions
+## Shared project scope
 
 Send this configuration in the `axel` item of the `workspace/configuration` response:
 
 ```json
 {
-  "workspaceSymbols": {
+  "project": {
+    "include": ["**/*"],
     "exclude": ["**/generated/**"]
   }
 }
 ```
 
-The default is an empty array. `.git` directories are always excluded; `node_modules` is not special. Patterns apply relative to each workspace root, including open files and descendants of excluded directories. With no roots, the document's parent is the base. `*` matches within one path segment, `?` matches one character, and `**` matches zero or more segments. Use `/` separators. Absolute paths, `..` segments and negative patterns are invalid. Missing settings use the default; a non-array value or invalid element rejects the complete configuration snapshot. Reconfiguration replaces the array.
+The default include is `["**/*"]` and the default exclude is `[]`. Explicit `include: []` disables project-wide candidates. Files must match an include and no exclude; directory matches also apply to descendants. `.git` directories are always excluded; `node_modules` is not special. Patterns apply relative to each workspace root, including open files and descendants of excluded directories. With no roots, the document's parent is the base. `*` matches within one path segment, `?` matches one character, and `**` matches zero or more segments. Use `/` separators. Empty or absolute paths, `.` or `..` segments, backslashes, negative patterns and brace/bracket extensions are invalid. Missing settings use the default; a non-array value or invalid element rejects the complete configuration snapshot. Reconfiguration replaces both arrays. Overlapping roots accept a file when any root-relative path satisfies both conditions and deduplicate its physical identity.
+
+This scope also governs derived-type candidates and include-rename source files. Excluded open documents retain their editor support; excluded dependencies remain available for type resolution and navigation without becoming project-wide candidates.
 
 Editor file/search exclusions and `.gitignore` do not implicitly restrict symbol searches. Symlinks and junctions below workspace roots are not traversed. Only `file:` documents are supported.
 

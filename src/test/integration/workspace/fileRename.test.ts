@@ -57,10 +57,27 @@ suite('file rename includes', () => {
     const f = fixture(); f.write('api.h', ''); f.write('main.axl', '#define HEADER "api.h"\n#include HEADER\n// #include "api.h"');
     assert.strictEqual(await f.rename(f.move('api.h', 'new.h')), undefined);
     f.write('main.axl', '#include "api.h"\n');
-    f.index.configure([f.uri('')], { fileOperations: { exclude: ['main.axl'] } });
+    f.index.configure([f.uri('')], { project: { exclude: ['main.axl'] } });
     assert.strictEqual(await f.rename(f.move('api.h', 'new.h')), undefined);
     f.index.configure([f.uri('')], { fileOperations: { updateIncludesOnRename: false } });
     assert.strictEqual(await f.rename(f.move('api.h', 'new.h')), undefined);
+  });
+  test('requires source membership before and after a move while allowing excluded targets', async () => {
+    const f = fixture(); f.write('api.h', ''); f.write('src/main.axl', '#include "../api.h"\n');
+    f.index.configure([f.uri('')], { project: { include: ['src'], exclude: [] } });
+    assert.strictEqual(await f.rename(f.move('src/main.axl', 'outside/deep/deeper/main.axl')), undefined);
+    const changes = await f.rename(f.move('api.h', 'new.h'));
+    assert.strictEqual(changes?.[0].edits[0].newText, '../new.h');
+    f.index.configure([f.uri('')], { project: { include: [], exclude: [] } });
+    assert.strictEqual(await f.rename(f.move('api.h', 'new.h')), undefined);
+  });
+  test('checks the future filename for folderless open-source renames', async () => {
+    const f = fixture(); f.write('api.h', ''); f.write('main.axl', '#include "api.h"\n');
+    f.setOpen([TextDocument.create(f.uri('main.axl'), 'axel', 1, '#include "api.h"\n')]);
+    f.index.configure([], { project: { include: ['*.axl'], exclude: ['excluded.axl'] } });
+    const changes = await f.rename(f.move('main.axl', 'deep/nested/new.axl'));
+    assert.strictEqual(changes?.[0].edits[0].newText, '../../api.h');
+    assert.strictEqual(await f.rename(f.move('main.axl', 'deep/nested/excluded.axl')), undefined);
   });
   test('cancellation never returns partial edits', async () => {
     const f = fixture(); f.write('api.h', ''); f.write('main.axl', '#include "api.h"');

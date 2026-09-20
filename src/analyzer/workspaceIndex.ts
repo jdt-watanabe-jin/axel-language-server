@@ -1,3 +1,4 @@
+import type { ProjectScope } from './projectScope';
 import type { FoldingRangeCandidate } from './foldingRanges';
 import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import { throwIfCancelled } from '../util/cancellation';
@@ -64,6 +65,8 @@ interface IndexedDocument {
 }
 
 export class WorkspaceIndex {
+  private projectScope?: ProjectScope;
+  public setProjectScope(scope: ProjectScope): void { this.projectScope = scope; this.requestRevision++; }
   private requestAnalysisActive = false;
   private requestRevision = 0;
   private requestTail: Promise<unknown> = Promise.resolve();
@@ -589,9 +592,11 @@ export class WorkspaceIndex {
   }
 
   public listReferenceSearchDocuments(sourceUri: string): AnalyzedDocument[] {
-    void sourceUri;
     this.ensureForcedIncludesIndexed();
-    return [...Array.from(this.documents.values()).map((document) => document.analysis),
+    const visible = new Set([sourceUri, ...this.collectVisibleUris(sourceUri)]);
+    return [...Array.from(this.documents.values())
+      .filter(document => !this.projectScope || visible.has(document.analysis.uri) || this.projectScope.contains(document.analysis.uri))
+      .map((document) => document.analysis),
       ...(this.loginScope(sourceUri)?.documents ?? [])];
   }
 

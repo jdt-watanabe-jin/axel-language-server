@@ -19,7 +19,7 @@ export function toLspWorkspaceSymbol(entry: WorkspaceSymbolEntry, supportedKinds
 /** Lifecycle hooks are composed with the existing registrations, never overwritten. */
 export function registerWorkspaceSymbolHandler(context: HandlerRegistrationContext, foldersChanged: (roots: string[]) => void = () => {}) {
   if (!context.connection.onWorkspaceSymbol) { return undefined; }
-  const index = new WorkspaceSymbolIndex(error => context.logger.error(error));
+  const index = new WorkspaceSymbolIndex(error => context.logger.error(error), context.projectScope);
   let roots: string[] = [];
   let foldersSupported = false;
   let progressSupported = false;
@@ -63,7 +63,7 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
     },
     pause() { index.pause(); },
     resume() { index.resume(); },
-    configure(settings: unknown) { index.configure(normalizeWorkspaceSymbolSettings(settings, error => context.logger.error(error))); },
+    configure(settings: unknown) { index.configure(normalizeWorkspaceSymbolSettings(settings)); },
     invalidate(uris: readonly string[]) { index.invalidateFiles(uris); },
     dispose() { return index.dispose(); }
   };

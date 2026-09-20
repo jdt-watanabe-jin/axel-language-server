@@ -1,10 +1,9 @@
 import { CancellationToken, CancellationTokenSource, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 import { pathToFileURL } from 'url';
 import type { AnalyzeDocumentInput } from '../../types/analysis';
 import type { WorkspaceSymbolEntry, WorkspaceSymbolSettings } from './model';
-import { collectWorkspaceSymbolFiles, excluded, fileIdentity, filePath, insideRoot, isAxelFile } from './files';
+import { ProjectScope, canonicalPath, fileIdentity, filePath } from '../projectScope';
 import { extractWorkspaceSymbols } from './extract';
 import { searchWorkspaceSymbols } from './query';
 import { cancellationCheckpoint, throwIfCancelled } from '../../util/cancellation';
@@ -12,8 +11,7 @@ import { cancellationCheckpoint, throwIfCancelled } from '../../util/cancellatio
 interface CachedSymbols { fingerprint: string; entries: WorkspaceSymbolEntry[] }
 type Progress = (completed: number, total: number) => void;
 export class WorkspaceSymbolIndex {
-  private settings: WorkspaceSymbolSettings = { exclude: [], defines: [] };
-  private roots: string[] = [];
+  private settings: WorkspaceSymbolSettings = { project: { include: ['**/*'], exclude: [] }, defines: [] };
   private readonly open = new Map<string, AnalyzeDocumentInput>();
   private readonly invalidated = new Set<string>();
   private cache = new Map<string, CachedSymbols>();
@@ -27,13 +25,14 @@ export class WorkspaceSymbolIndex {
   private running?: Promise<void>;
   private readonly source = new CancellationTokenSource();
   private readonly listeners = new Set<Progress>();
-  constructor(private readonly logError: (message: string) => void) {}
+  constructor(private readonly logError: (message: string) => void, private readonly projectScope = new ProjectScope(logError)) {}
   configure(settings: WorkspaceSymbolSettings): void {
     if (JSON.stringify(settings) === JSON.stringify(this.settings)) { return; }
+    this.projectScope.configure(settings.project);
     this.settings = settings; this.prepared = new Map(); this.changed();
   }
   setRoots(uris: readonly string[]): void {
-    this.roots = [...new Set(uris.filter(uri => filePath(uri) !== undefined))]; this.changed();
+    this.projectScope.setRoots(uris); this.changed();
   }
   updateDocument(input: AnalyzeDocumentInput): void {
     const file = filePath(input.uri); if (!file) { return; }
@@ -72,28 +71,21 @@ export class WorkspaceSymbolIndex {
     }
   }
   private async reconcile(): Promise<Map<string, CachedSymbols>> {
-    const token = this.source.token; const settings = this.settings; const roots = [...this.roots];
+    const token = this.source.token; const settings = this.settings;
     const previous = this.prepared; const opened = [...this.open.values()];
     const invalidated = [...this.invalidated]; this.invalidated.clear();
     for (const file of invalidated) {
-      const key = fileIdentity(await realPathOrMissing(file));
+      const key = fileIdentity(canonicalPath(file));
       if (!previous.get(key)?.fingerprint.startsWith('open:')) { previous.delete(key); }
     }
-    const files = await collectWorkspaceSymbolFiles(roots, settings.exclude, token, this.logError);
+    const files = await this.projectScope.collect(token, opened.map(input => input.uri));
     const candidates = new Map<string, { file: string; input?: AnalyzeDocumentInput }>();
     for (const file of files.values()) { candidates.set(fileIdentity(file), { file }); }
-    const actualRoots: string[] = [];
-    for (const uri of roots) { try { actualRoots.push(await fs.realpath(filePath(uri)!)); } catch { /* logged by enumeration */ } }
     for (const input of opened) {
-      const original = filePath(input.uri)!;
-      if (!isAxelFile(original)) { continue; }
-      const actual = await realPathOrMissing(original);
-      const owning = actualRoots.filter(root => insideRoot(actual, root));
-      if (roots.length && !owning.length) { continue; }
-      const bases = roots.length ? owning : [path.dirname(actual)];
-      if (bases.every(root => excluded(path.relative(root, actual), settings.exclude))) { continue; }
-      if (await hasLink(original, roots.map(uri => filePath(uri)!))) { continue; }
-      candidates.set(fileIdentity(actual), { file: actual, input });
+      if (!this.projectScope.contains(input.uri)) { continue; }
+      const file = canonicalPath(filePath(input.uri)!);
+      const candidate = candidates.get(fileIdentity(file));
+      if (candidate) { candidate.input = input; }
     }
     const result = new Map<string, CachedSymbols>();
     let completed = 0;
@@ -158,23 +150,4 @@ export class WorkspaceSymbolIndex {
     this.disposed = true; this.dirty = false; this.source.cancel();
     await this.running; this.source.dispose(); this.cache.clear(); this.prepared.clear(); this.open.clear(); this.listeners.clear();
   }
-}
-
-async function realPathOrMissing(file: string): Promise<string> {
-  try { return await fs.realpath(file); }
-  catch {
-    const parent = path.dirname(file);
-    return parent === file ? file : path.join(await realPathOrMissing(parent), path.basename(file));
-  }
-}
-async function hasLink(file: string, roots: readonly string[]): Promise<boolean> {
-  const boundary = roots.filter(root => insideRoot(file, root)).sort((a, b) => b.length - a.length)[0];
-  let current = file;
-  while (current !== boundary) {
-    try { if ((await fs.lstat(current)).isSymbolicLink()) { return true; } } catch { /* unsaved or deleted file */ }
-    const parent = path.dirname(current);
-    if (parent === current || (!boundary && current !== file)) { break; }
-    current = parent;
-  }
-  return false;
 }

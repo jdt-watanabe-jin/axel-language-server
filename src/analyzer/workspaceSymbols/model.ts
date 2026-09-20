@@ -8,7 +8,7 @@ export interface WorkspaceSymbolEntry {
   selectionRange: AnalysisRange;
 }
 export interface WorkspaceSymbolSettings {
-  exclude: string[];
+  project: import('../projectScope').ProjectSettings;
   defines: string[];
   tool?: string;
   targetPlatform?: string;

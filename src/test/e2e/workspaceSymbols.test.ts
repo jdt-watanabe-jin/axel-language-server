@@ -26,9 +26,9 @@ suite('Workspace Symbol LSP', function () {
       await server.notify('textDocument/didChange', { textDocument: { uri, version: 2 }, contentChanges: [{ text: 'int edited;' }] });
       assert.deepStrictEqual((await server.request<WorkspaceSymbol[]>('workspace/symbol', { query: '' })).map(x => x.name), ['edited']);
       await server.notify('textDocument/didClose', { textDocument: { uri } });
-      await server.configure( { settings: { workspaceSymbols: { exclude: ['**/main.axl'] } } });
+      await server.configure( { settings: { project: { exclude: ['**/main.axl'] } } });
       assert.deepStrictEqual(await server.request('workspace/symbol', { query: '' }), []);
-      await server.configure( { settings: { workspaceSymbols: { exclude: [] } } });
+      await server.configure( { settings: { project: { exclude: [] } } });
       assert.strictEqual((await server.request<WorkspaceSymbol[]>('workspace/symbol', { query: 'find' })).length, 1);
       await server.notify('workspace/didChangeWorkspaceFolders', { event: { added: [], removed: [{ uri: rootUri, name: 'root' }] } });
       assert.deepStrictEqual(await server.request('workspace/symbol', { query: '' }), []);

@@ -6,7 +6,7 @@ import { CancellationToken, LSPErrorCodes, ResponseError, type FileRename, type 
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { createAxelParser } from './axelParser';
 import { resolveInclude } from './includeResolver';
-import { collectWorkspaceSymbolFiles, excluded, fileIdentity, filePath, insideRoot, isAxelFile } from './workspaceSymbols/files';
+import { ProjectScope, normalizeProjectSettings, fileIdentity, filePath, insideRoot } from './projectScope';
 import { cancellationCheckpoint, isCancellationError, throwIfCancelled } from '../util/cancellation';
 import type { Settings } from '../lsp/configuration';
 
@@ -17,13 +17,13 @@ class Deadline extends Error {}
 
 /** Physical include index; deliberately independent of symbol visibility/preprocessing. */
 export class FileRenameIndex {
-  private roots: string[] = [];
   private settings: Settings = {};
   private revision = 0;
   private cache = new Map<string, RecordEntry>();
-  constructor(private readonly openDocuments: () => readonly TextDocument[], private readonly log: (message: string) => void) {}
+  constructor(private readonly openDocuments: () => readonly TextDocument[], private readonly log: (message: string) => void, private readonly projectScope = new ProjectScope(log)) {}
   configure(roots: string[], settings: Settings): void {
-    this.roots = roots; this.settings = settings; this.revision++;
+    this.projectScope.setRoots(roots); this.projectScope.configure(normalizeProjectSettings(settings));
+    this.settings = settings; this.revision++;
   }
   invalidate(uris: readonly string[] = []): void {
     this.revision++;
@@ -38,26 +38,17 @@ export class FileRenameIndex {
     }); } catch (error) { if (!isCancellationError(error)) { this.log(`Include index: ${String(error)}`); } }
   }
   private async snapshot(token: CancellationToken, check: () => void): Promise<RecordEntry[]> {
-    const operations = this.settings.fileOperations as { exclude?: string[] } | undefined;
-    const exclusions = operations?.exclude ?? [];
-    const actualRoots = await Promise.all(this.roots.map(async uri => {
-      const file = filePath(uri); if (!file) { return undefined; }
-      return fs.promises.realpath(file);
-    }));
-    const roots = actualRoots.filter((root): root is string => root !== undefined);
-    const files = await collectWorkspaceSymbolFiles(roots.map(root => pathToFileURL(root).toString()), exclusions, token,
-      message => { throw new Error(message); });
+    const opened = this.openDocuments();
+    const files = await this.projectScope.collect(token, opened.map(document => document.uri), true);
     check();
     const candidates = new Map<string, { file: string; document?: TextDocument }>();
     for (const file of files.values()) { candidates.set(fileIdentity(file), { file }); }
-    for (const document of this.openDocuments()) {
-      const original = filePath(document.uri);
-      if (!original || !isAxelFile(original)) { continue; }
+    for (const document of opened) {
+      if (!this.projectScope.contains(document.uri)) { continue; }
+      const original = filePath(document.uri); if (!original) { continue; }
       const file = await canonicalPath(original);
-      const bases = roots.length ? roots.filter(root => insideRoot(file, root)) : [path.dirname(file)];
-      if (!bases.length || bases.every(root => excluded(path.relative(root, file), exclusions))) { continue; }
-      if (await hasLink(original, this.roots.map(uri => filePath(uri)!).filter(Boolean))) { continue; }
-      candidates.set(fileIdentity(file), { file, document });
+      const candidate = candidates.get(fileIdentity(file));
+      if (candidate) { candidate.document = document; }
     }
     const result: RecordEntry[] = [];
     for (const [key, candidate] of candidates) {
@@ -95,11 +86,11 @@ export class FileRenameIndex {
   async getEdits(files: readonly FileRename[], token: CancellationToken, budgetMs = 1_500): Promise<WorkspaceEdit | null> {
     throwIfCancelled(token);
     if ((this.settings.fileOperations as { updateIncludesOnRename?: boolean } | undefined)?.updateIncludesOnRename === false || !files.length) { return null; }
-    const revision = this.revision;
+    const revision = this.revision; const scopeRevision = this.projectScope.revision;
     const deadline = performance.now() + budgetMs;
     const check = () => {
       throwIfCancelled(token);
-      if (revision !== this.revision) { throw changed(); }
+      if (revision !== this.revision || scopeRevision !== this.projectScope.revision) { throw changed(); }
       if (performance.now() >= deadline) { throw new Deadline(); }
     };
     try {
@@ -151,6 +142,7 @@ export class FileRenameIndex {
         await cancellationCheckpoint(token); check();
         const edits: TextEdit[] = [];
         const source = forward(record.file);
+        if (!this.projectScope.contains(pathToFileURL(source).toString(), record.document.uri)) { continue; }
         for (const include of record.includes) {
           check();
           const before = resolveInclude({ includingFilePath: record.file, includeText: include.written, includeRoots, fileExists: exists });
@@ -208,15 +200,4 @@ async function canonicalPath(file: string): Promise<string> {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; }
     return path.join(await canonicalPath(parent), path.basename(file));
   }
-}
-async function hasLink(file: string, roots: readonly string[]): Promise<boolean> {
-  const boundary = roots.filter(root => insideRoot(file, root)).sort((a, b) => b.length - a.length)[0];
-  for (let current = file; current !== boundary;) {
-    try { if ((await fs.promises.lstat(current)).isSymbolicLink()) { return true; } }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { throw error; } }
-    const parent = path.dirname(current);
-    if (parent === current || (!boundary && current !== file)) { break; }
-    current = parent;
-  }
-  return false;
 }

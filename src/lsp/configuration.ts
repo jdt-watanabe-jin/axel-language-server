@@ -1,3 +1,4 @@
+import { normalizeProjectSettings, validProjectPattern } from '../analyzer/projectScope';
 import { CancellationToken, CancellationTokenSource, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import { throwIfCancelled } from '../util/cancellation';
 import { TARGET_PLATFORMS } from '../analyzer/targetPlatform';
@@ -19,9 +20,9 @@ export function configurationKeys(settings: Settings) {
     analysis: canonical(analysis),
     features: canonical({ hover: settings.hover ?? 'default', autocomplete: settings.autocomplete ?? 'default',
       errorSquiggles: settings.errorSquiggles ?? 'enabledIfIncludesResolve', inlayHints: normalizeInlayHintsSettings(settings) }),
-    symbols: canonical({ exclude: [...new Set((settings.workspaceSymbols as Settings | undefined)?.exclude as string[] ?? [])],
+    symbols: canonical({ project: normalizeProjectSettings(settings),
       defines: analysis.defines, tool: analysis.tool, targetPlatform: analysis.targetPlatform, internalFeatures: analysis.internalFeatures }),
-    files: canonical({ includeRoots: analysis.includeRoots, exclude: [...new Set((settings.fileOperations as Settings | undefined)?.exclude as string[] ?? [])],
+    files: canonical({ includeRoots: analysis.includeRoots, project: normalizeProjectSettings(settings),
       updateIncludesOnRename: (settings.fileOperations as Settings | undefined)?.updateIncludesOnRename ?? true })
   };
 }
@@ -53,11 +54,16 @@ export function validateSettings(value: unknown): Settings {
     if (group === undefined) { continue; }
     if (!object(group)) { fail(key); }
     const settings = group as Settings;
-    if (settings.exclude !== undefined && (!Array.isArray(settings.exclude) || !settings.exclude.every(pattern =>
-      typeof pattern === 'string' && pattern.length > 0 && !/^[!/]|[:\\]/.test(pattern)
-      && !pattern.split('/').some(part => !part || part === '.' || part === '..')))) { fail(`${key}.exclude`); }
+    if (Object.prototype.hasOwnProperty.call(settings, 'exclude')) { fail(`${key}.exclude (removed; use project.exclude)`); }
     if (key === 'fileOperations' && settings.updateIncludesOnRename !== undefined && typeof settings.updateIncludesOnRename !== 'boolean') {
       fail('fileOperations.updateIncludesOnRename');
+    }
+  }
+  if (value.project !== undefined) {
+    if (!object(value.project)) { fail('project'); }
+    for (const key of ['include', 'exclude']) {
+      const patterns = (value.project as Settings)[key];
+      if (patterns !== undefined && (!Array.isArray(patterns) || !patterns.every(validProjectPattern))) { fail(`project.${key}`); }
     }
   }
   if (value.inlayHints !== undefined) {
