@@ -1,5 +1,7 @@
 import * as assert from 'assert';
-import { registerHandlers } from '../../lsp/registerHandlers';
+import { registerHandlers } from '../support/configuredHandlers';
+import { registerHandlers as registerPullHandlers } from '../../lsp/registerHandlers';
+import { CancellationToken } from 'vscode-languageserver/node';
 import { createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
   test('registers requests without dedicated successful handler scenarios', () => {
@@ -108,7 +110,7 @@ suite('registerHandlers', () => {
     assert.strictEqual(diagnosticRefreshes, 1, 'Header changes must request fresh diagnostics without a source edit');
   });
 
-  test('applies changed configuration and reindexes open documents', () => {
+  test('pulls changed configuration and ignores notification payload', async () => {
     let configurationHandler: ((params: { settings?: unknown }) => void) | undefined;
     const configuredOptions: unknown[] = [];
     const analyzedTexts: string[] = [];
@@ -118,6 +120,8 @@ suite('registerHandlers', () => {
       end: { line: 3, character: 18 }
     }];
     const connection = {
+      sendRequest: async () => [{ defines: ['SEMVER_TEST'] }],
+      window: { showErrorMessage: () => undefined },
       onInitialize: () => undefined,
       onDidChangeConfiguration: (handler: (params: { settings?: unknown }) => void) => {
         configurationHandler = handler;
@@ -165,21 +169,30 @@ suite('registerHandlers', () => {
       configure: (options: unknown) => configuredOptions.push(options)
     };
 
-    registerHandlers({
+    const context = {
       connection: connection as never,
       documents: documents as never,
       analyzer,
-      logger: { error: () => undefined }
-    });
+      logger: { error: () => undefined },
+      configuration: undefined as import('../../lsp/registerHandlers').HandlerRegistrationContext['configuration']
+    };
+    registerPullHandlers(context);
+    context.configuration!.start();
+    await context.configuration!.ready(CancellationToken.None);
 
+    const analysesBefore = analyzedTexts.length;
     configurationHandler?.({
       settings: {
-        defines: ['SEMVER_TEST']
+        defines: ['IGNORED']
       }
     });
 
+    await context.configuration!.ready(CancellationToken.None);
+    assert.strictEqual(analyzedTexts.length, analysesBefore, 'unchanged settings must not reindex documents');
     assert.deepStrictEqual(configuredOptions, [{ defines: ['SEMVER_TEST'] }]);
-    assert.deepStrictEqual(analyzedTexts, ['#if SEMVER_TEST\nint value;\n#endif']);
+    assert.ok(analyzedTexts.length > 0);
+    assert.ok(analyzedTexts.every(text => text === '#if SEMVER_TEST\nint value;\n#endif'));
+    context.configuration!.dispose();
     assert.deepStrictEqual(new Set(notifications.map(item => JSON.stringify(item))), new Set([
       {
         method: 'axel/inactiveRanges',
@@ -193,4 +206,3 @@ suite('registerHandlers', () => {
     ].map(item => JSON.stringify(item))));
   });
 });
-

@@ -3,24 +3,10 @@ import * as path from 'path';
 import { normalizeInternalFeatures, normalizeTool } from './systemMacros';
 import type { WorkspaceIndexOptions } from './workspaceIndex';
 
-const ENVIRONMENT_PATH_SEPARATOR = ';';
-
-interface AxelEnvironment {
-  APP_AXELPATH?: string;
-  SXM_FORCED_INCLUDE_FILES?: string;
-}
-
-export function workspaceIndexOptionsFromEnvironment(environment: AxelEnvironment): WorkspaceIndexOptions {
-  return {
-    includeRoots: splitPathList(environment.APP_AXELPATH),
-    forcedIncludeFiles: splitPathList(environment.SXM_FORCED_INCLUDE_FILES)
-  };
-}
-
-export function mergeWorkspaceIndexOptions(
-  base: WorkspaceIndexOptions,
+export function normalizeWorkspaceIndexOptions(
   overrides: unknown
 ): WorkspaceIndexOptions {
+  const base: WorkspaceIndexOptions = {};
   if (!isWorkspaceIndexOptions(overrides)) {
     return base;
   }
@@ -41,14 +27,6 @@ export function mergeWorkspaceIndexOptions(
     ...(defines === undefined ? {} : { defines }),
     ...(maxNumberOfProblems === undefined ? {} : { maxNumberOfProblems })
   };
-}
-
-function splitPathList(value: string | undefined): string[] {
-  if (value === undefined || value.trim() === '') {
-    return [];
-  }
-
-  return normalizePaths(value.split(ENVIRONMENT_PATH_SEPARATOR).filter((entry) => entry.trim() !== ''));
 }
 
 function normalizePaths(paths: string[]): string[] {

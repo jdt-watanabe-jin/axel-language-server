@@ -1,5 +1,6 @@
 import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import * as path from 'path';
+import * as fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import type { AnalysisDeclaration, AnalyzedDocument } from '../types/analysis';
 import { containsSourcePosition } from './systemMacros';
@@ -67,7 +68,10 @@ export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndex
     for (const include of analysis.includes) {
       const resolution = resolveInclude({ includingFilePath: fileURLToPath(uri),
         includeText: include.kind === 'angle' ? `<${include.includePath}>` : include.kind === 'quote' ? `"${include.includePath}"` : include.includePath,
-        includeRoots: options.includeRoots ?? [] });
+        includeRoots: options.includeRoots ?? [], fileExists: file => {
+          dependencies.add(pathToFileURL(path.normalize(file)).toString());
+          return fs.existsSync(file);
+        } });
       const candidates = resolution.status === 'resolved' ? [resolution.filePath] : resolution.candidates;
       for (const candidate of candidates) { dependencies.add(pathToFileURL(path.normalize(candidate)).toString()); }
       if (resolution.status !== 'resolved') { continue; }

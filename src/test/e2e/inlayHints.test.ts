@@ -24,7 +24,7 @@ suite('LSP parameter inlay hints', function () {
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', {textDocument:{uri,languageId:'axel',version:1,text}});
       assert.deepStrictEqual(await server.request('textDocument/inlayHint', params), []);
-      const configure = (enabled: unknown, suppress: unknown) => server.notify('workspace/didChangeConfiguration', {
+      const configure = (enabled: unknown, suppress: unknown) => server.configure( {
         settings:{inlayHints:{parameterNames:{enabled,suppressWhenArgumentContainsName:suppress}}}
       });
       await configure(true, true);
@@ -34,9 +34,9 @@ suite('LSP parameter inlay hints', function () {
       await configure(true, false);
       assert.strictEqual((await server.request<InlayHint[]>('textDocument/inlayHint', params)).length, 2);
       await configure('invalid', false);
-      assert.deepStrictEqual(await server.request('textDocument/inlayHint', params), []);
+      await assert.rejects(server.request('textDocument/inlayHint', params), /configuration unavailable/);
       await configure(true, 'invalid');
-      assert.strictEqual((await server.request<InlayHint[]>('textDocument/inlayHint', params)).length, 1);
+      await assert.rejects(server.request('textDocument/inlayHint', params), /configuration unavailable/);
       await configure(false, true);
       assert.deepStrictEqual(await server.request('textDocument/inlayHint', params), []);
     } finally { await server.stop(); }
@@ -53,12 +53,12 @@ suite('LSP parameter inlay hints', function () {
     const params = {textDocument:{uri},range:{start:{line:0,character:0},end:{line:5,character:0}}};
     const enabled = {inlayHints:{parameterNames:{enabled:true,suppressWhenArgumentContainsName:true}}};
     try {
-      await server.request('initialize',{processId:null,rootUri:null,capabilities:{workspace:{inlayHint:{refreshSupport:true}}},initializationOptions:enabled});
+      await server.request('initialize',{processId:null,rootUri:null,capabilities:{workspace:{inlayHint:{refreshSupport:true}}},configuration:enabled});
       await server.notify('initialized',{});
       await server.notify('textDocument/didOpen',{textDocument:{uri,languageId:'axel',version:1,text:'#include "api.h"\nvoid main(){f(1);}'}});
       assert.deepStrictEqual((await server.request<InlayHint[]>('textDocument/inlayHint',params)).map(h=>h.label),['count:']);
       let previous = refreshes;
-      await server.notify('workspace/didChangeConfiguration',{settings:enabled});
+      await server.configure({settings:{inlayHints:{parameterNames:{enabled:true,suppressWhenArgumentContainsName:false}}}});
       await server.request('textDocument/inlayHint',params);
       assert.ok(refreshes > previous,'configuration requests refresh');
       previous = refreshes;
@@ -80,9 +80,9 @@ suite('LSP parameter inlay hints', function () {
     let refreshes = 0;
     server.onInlayHintRefresh(()=>{ refreshes++; });
     try {
-      await server.request('initialize',{processId:null,rootUri:null,capabilities:{},initializationOptions:{inlayHints:{parameterNames:{enabled:true}}}});
+      await server.request('initialize',{processId:null,rootUri:null,capabilities:{},configuration:{inlayHints:{parameterNames:{enabled:true}}}});
       await server.notify('initialized',{});
-      await server.notify('workspace/didChangeConfiguration',{settings:{inlayHints:{parameterNames:{enabled:false}}}});
+      await server.configure({settings:{inlayHints:{parameterNames:{enabled:false}}}});
       await server.request('textDocument/inlayHint',{textDocument:{uri:'file:///missing.axl'},range:{start:{line:0,character:0},end:{line:0,character:1}}});
       assert.strictEqual(refreshes,0);
     } finally { await server.stop(); }
@@ -95,7 +95,7 @@ suite('LSP parameter inlay hints', function () {
     const params = {textDocument:{uri},range:{start:{line:0,character:0},end:{line:10000,character:0}}};
     const text = 'void f(int count) {}\nvoid main(){\n' + 'f(1);\n'.repeat(2000) + '}';
     try {
-      await server.request('initialize',{processId:null,rootUri:null,capabilities:{},initializationOptions:{inlayHints:{parameterNames:{enabled:true}}}});
+      await server.request('initialize',{processId:null,rootUri:null,capabilities:{},configuration:{inlayHints:{parameterNames:{enabled:true}}}});
       await server.notify('initialized',{});
       await server.notify('textDocument/didOpen',{textDocument:{uri,languageId:'axel',version:1,text}});
       const cancelled = server.request('textDocument/inlayHint',params,source.token);

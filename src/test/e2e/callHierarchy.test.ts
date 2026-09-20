@@ -24,7 +24,7 @@ suite('LSP stdio Call hierarchy', function () {
       processId: null,
       rootUri: null,
       capabilities: {},
-      initializationOptions: {}
+      configuration: {}
     });
     await server.notify('initialized', {});
     return result;

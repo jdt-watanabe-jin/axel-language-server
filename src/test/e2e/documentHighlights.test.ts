@@ -11,7 +11,7 @@ suite('LSP stdio Document highlights', function () {
   teardown(async () => { await server.stop(); });
   async function initialize() {
     const result = await server.request<InitializeResult>('initialize', {
-      processId: null, rootUri: null, capabilities: {}, initializationOptions: {}
+      processId: null, rootUri: null, capabilities: {}, configuration: {}
     });
     await server.notify('initialized', {});
     return result;

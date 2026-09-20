@@ -21,6 +21,7 @@ export class WorkspaceSymbolIndex {
   private prepared = new Map<string, CachedSymbols>();
   private revision = 0;
   private started = false;
+  private pauseGeneration = 0;
   private dirty = false;
   private disposed = false;
   private running?: Promise<void>;
@@ -51,15 +52,17 @@ export class WorkspaceSymbolIndex {
     this.changed();
   }
   start(): void { this.started = true; this.dirty = true; this.schedule(); }
+  resume(): void { this.started = true; if (this.dirty) { this.schedule(); } }
+  pause(): void { this.started = false; this.revision++; this.pauseGeneration++; }
   private changed(): void { this.revision++; this.dirty = true; if (this.started) { this.schedule(); } }
   private schedule(): void {
-    if (this.running || this.disposed) { return; }
+    if (this.running || this.disposed || !this.started) { return; }
     this.running = this.run().catch(error => {
       if (!this.disposed) { this.logError(`Workspace symbol index: ${String(error)}`); }
     }).finally(() => { this.running = undefined; if (this.dirty && !this.disposed) { this.schedule(); } });
   }
   private async run(): Promise<void> {
-    while (this.dirty && !this.disposed) {
+    while (this.dirty && !this.disposed && this.started) {
       await cancellationCheckpoint(this.source.token);
       this.dirty = false;
       const revision = this.revision;
@@ -97,7 +100,7 @@ export class WorkspaceSymbolIndex {
     for (const listener of this.listeners) { listener(0, candidates.size); }
     for (const [key, candidate] of candidates) {
       await cancellationCheckpoint(token);
-      if (settings !== this.settings) { return result; }
+      if (settings !== this.settings || !this.started) { return result; }
       try {
         const stat = candidate.input ? undefined : await fs.stat(candidate.file);
         const fingerprint = candidate.input ? `open:${candidate.input.uri}:${candidate.input.version}:${candidate.input.text}`
@@ -127,6 +130,7 @@ export class WorkspaceSymbolIndex {
     return result;
   }
   async search(query: string, token: CancellationToken, progress?: Progress): Promise<WorkspaceSymbolEntry[]> {
+    const pauseGeneration = this.pauseGeneration;
     throwIfCancelled(token);
     if (this.disposed) { throw new ResponseError(LSPErrorCodes.RequestCancelled, 'Workspace index disposed.'); }
     if (progress) { this.listeners.add(progress); }
@@ -142,6 +146,7 @@ export class WorkspaceSymbolIndex {
       });
       while (this.running) { await Promise.race([this.running, cancelled]); }
       throwIfCancelled(token);
+      if (pauseGeneration !== this.pauseGeneration) { throw new ResponseError(LSPErrorCodes.ContentModified, 'Configuration changed during symbol search.'); }
       const revision = this.revision;
       const entries = [...this.cache.values()].flatMap(item => item.entries);
       const result = await searchWorkspaceSymbols(entries, query, token);

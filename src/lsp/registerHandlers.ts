@@ -1,4 +1,7 @@
 import { getInlayHintsSteps } from '../analyzer/inlayHints';
+import { ConfigurationManager, configurationKeys } from './configuration';
+import { registerFileOperations } from './fileOperations';
+import { DidChangeConfigurationNotification, ErrorCodes } from 'vscode-languageserver/node';
 import { registerWorkspaceSymbolHandler } from './workspaceSymbols';
 import { normalizeInlayHintsSettings, toLspInlayHints } from './inlayHints';
 import type { InlayHintParams } from 'vscode-languageserver/node';
@@ -74,7 +77,9 @@ export interface AnalyzerLike extends
   semanticTokenWorkspaceIndex?(sourceUri: string): WorkspaceDeclarationLookup;
   deleteDocument?(uri: string): void;
   configure?(options: unknown): void;
+  setAnalysisEnabled?(enabled: boolean): void;
   invalidateUri?(uri: string): void;
+  invalidatePaths?(uris: readonly string[]): void;
   onBackgroundIndexingComplete?(listener: () => void): void;
   getLoginDependencies?(cachedOnly?: boolean): { generation: number; uris: string[] };
   getAnalyzedDocument?(uri: string): AnalyzedDocument | undefined;
@@ -85,6 +90,7 @@ export interface HandlerRegistrationContext {
   documents: TextDocuments<TextDocument>;
   analyzer: AnalyzerLike;
   logger: ServerLogger;
+  configuration?: Pick<ConfigurationManager, 'start' | 'refresh' | 'ready' | 'isReady' | 'settings' | 'dispose'>;
 }
 
 interface InactiveRangesParams {
@@ -99,10 +105,6 @@ interface FormattingHandlerConnection {
   onDocumentRangeFormatting?(handler: (params: DocumentRangeFormattingParams, token: CancellationToken) => unknown): void;
 }
 
-interface ConfigurationHandlerConnection {
-  onDidChangeConfiguration?(handler: (params: { settings?: unknown }) => void): void;
-}
-
 interface RefactorHandlerConnection {
   onPrepareRename?(handler: (params: PrepareRenameParams, token: CancellationToken) => unknown): void;
   onRenameRequest?(handler: (params: RenameParams, token: CancellationToken) => unknown): void;
@@ -110,9 +112,24 @@ interface RefactorHandlerConnection {
 }
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
-  const workspaceSymbols = registerWorkspaceSymbolHandler(context);
-  let revision = 0;
-  const invalidateRequests = () => { revision++; };
+  const fileOperations = registerFileOperations(context, uris => invalidateFiles(uris));
+  const workspaceSymbols = registerWorkspaceSymbolHandler(context, roots => fileOperations.setRoots(roots));
+    let revision = 0;
+  let documentsDirty = false;
+  const invalidateRequests = () => { revision++; if (!context.configuration?.isReady) { documentsDirty = true; } };
+  const invalidateFiles = (uris: string[]): void => {
+    if (!uris.length) { return; }
+    invalidateRequests();
+    fileOperations.invalidate(uris);
+    workspaceSymbols?.invalidate(uris);
+    if (context.analyzer.invalidatePaths) { context.analyzer.invalidatePaths(uris); }
+    else { for (const uri of uris) { context.analyzer.invalidateUri?.(uri); } }
+    if (!context.configuration?.isReady) { return; }
+    sendLoginDependencies(context);
+    void context.connection.languages.semanticTokens.refresh?.();
+    void context.connection.languages.diagnostics.refresh?.();
+    refreshInlayHints();
+  };
   const queue = createRequestHandler();
   let validateRequest = () => undefined as void;
   const request = <P, T>(work: (params: P, token: CancellationToken) => Promise<T>) => {
@@ -129,7 +146,11 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         return result;
       } finally { validateRequest = () => undefined; }
     });
-    return (params: P, token = CancellationToken.None) => queued({ params, revision }, token);
+    return async (params: P, token = CancellationToken.None) => {
+      const entry = { params, revision };
+      await context.configuration!.ready(token);
+      return queued(entry, token);
+    };
   };
   const runRequestSteps = <T>(steps: Generator<AnalysisStep, T, void>, token: CancellationToken) =>
     runAnalysisStepsAsync(steps, token, validateRequest);
@@ -148,24 +169,69 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     }
   };
   const updateFeatures = (settings: unknown): void => {
-    invalidateRequests();
     featureSettings = settings !== null && typeof settings === 'object' ? settings as Record<string, unknown> : {};
   };
+  let dynamicConfiguration = false;
+  let appliedKeys: ReturnType<typeof configurationKeys> | undefined;
+  let analysisChanged = false;
+  let featuresChanged = false;
+  let filesChanged = false;
+  const refresh = () => {
+    if (!context.configuration!.isReady) { return; }
+    context.analyzer.setAnalysisEnabled?.(true);
+    if (filesChanged) { fileOperations.configure(); } else { fileOperations.resume(); }
+    workspaceSymbols?.resume();
+    if (!analysisChanged && !featuresChanged && !documentsDirty) { return; }
+    documentsDirty = false;
+    for (const document of context.documents.all()) { void indexDocument(context, document); }
+    sendLoginDependencies(context);
+    void context.connection.languages.semanticTokens.refresh?.();
+    void context.connection.languages.diagnostics.refresh?.();
+    refreshInlayHints();
+  };
+  context.configuration ??= new ConfigurationManager(
+    token => context.connection.sendRequest<unknown[]>('workspace/configuration', { items: [{ section: 'axel' }] }, token)
+      .then(result => { if (!Array.isArray(result) || result.length !== 1) { throw new Error('Expected one configuration result.'); } return result[0]; }),
+      settings => {
+        const keys = configurationKeys(settings);
+        const recovered = appliedKeys && JSON.stringify(keys) === JSON.stringify(appliedKeys);
+        analysisChanged = !appliedKeys || keys.analysis !== appliedKeys.analysis || !!recovered;
+        featuresChanged = !appliedKeys || keys.features !== appliedKeys.features;
+        filesChanged = !appliedKeys || keys.files !== appliedKeys.files;
+        updateFeatures(settings);
+        if (analysisChanged) { context.analyzer.configure?.(settings); }
+        workspaceSymbols?.configure(settings);
+        appliedKeys = keys;
+      },
+    () => { revision++; analysisChanged = false; featuresChanged = false; filesChanged = false;
+      context.analyzer.setAnalysisEnabled?.(false); workspaceSymbols?.pause(); fileOperations.pause(); },
+    message => {
+      context.logger.error(message);
+      void context.connection.sendNotification('window/showMessage', { type: 1, message }).catch(() => {});
+    },
+    5_000, refresh
+  );
+  context.analyzer.setAnalysisEnabled?.(false);
   context.connection.onInitialize((params, token) => {
     throwIfCancelled(token);
+    if (params.capabilities?.workspace?.configuration !== true) {
+      throw new ResponseError(ErrorCodes.InvalidParams, 'AXEL requires workspace/configuration support.');
+    }
+    dynamicConfiguration = params.capabilities.workspace.didChangeConfiguration?.dynamicRegistration === true;
     workspaceSymbols?.initialize(params);
+    fileOperations.initialize(params);
     locale = params.locale;
     inlayRefreshSupported = params.capabilities?.workspace?.inlayHint?.refreshSupport ?? false;
     foldingCapabilities = params.capabilities?.textDocument?.foldingRange;
     hoverMarkdown = params.capabilities?.textDocument?.hover?.contentFormat?.includes('markdown') ?? false;
     completionMarkdown = params.capabilities?.textDocument?.completion?.completionItem?.documentationFormat?.includes('markdown') ?? false;
     signatureMarkdown = params.capabilities?.textDocument?.signatureHelp?.signatureInformation?.documentationFormat?.includes('markdown') ?? false;
-    updateFeatures(params.initializationOptions);
-    context.analyzer.configure?.(params.initializationOptions);
-    return createInitializeResult();
+    return createInitializeResult(params.capabilities);
   });
-  registerConfigurationChangeHandlers(context, settings => { workspaceSymbols?.configure(settings); updateFeatures(settings); refreshInlayHints(); });
-  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => workspaceSymbols?.dispose());
+  context.connection.onDidChangeConfiguration?.(() => context.configuration!.refresh());
+  const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => {
+    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); return workspaceSymbols?.dispose();
+  });
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>): Promise<T> => {
     const startedAt = Date.now();
     try {
@@ -182,9 +248,16 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       throw error;
     }
   };
-  registerWatchedFileHandlers(context, () => { invalidateRequests(); refreshInlayHints(); }, uris => workspaceSymbols?.invalidate(uris));
+  context.connection.onDidChangeWatchedFiles(event => invalidateFiles(event.changes.map(change => change.uri)));
   registerBackgroundRefreshHandlers(context, refreshInlayHints);
-  context.connection.onInitialized?.(() => { workspaceSymbols?.start(); sendLoginDependencies(context); });
+  context.connection.onInitialized?.(() => {
+    workspaceSymbols?.start();
+    if (dynamicConfiguration) {
+      void context.connection.client.register(DidChangeConfigurationNotification.type, undefined)
+        .catch(error => context.logger.error(`Configuration registration failed: ${String(error)}`));
+    }
+    context.configuration!.start();
+  });
 
   registerDocumentHighlightHandler(context, {
     request,
@@ -601,35 +674,6 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   }));
 }
 
-function registerWatchedFileHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, invalidateSymbols: (uris: string[]) => void): void {
-  context.connection.onDidChangeWatchedFiles((event) => {
-    invalidateSymbols(event.changes.map(change => change.uri));
-    if (event.changes.length > 0) { invalidateRequests(); }
-    for (const change of event.changes) {
-      context.analyzer.invalidateUri?.(change.uri);
-    }
-    if (event.changes.length > 0) {
-      sendLoginDependencies(context);
-      context.connection.languages.semanticTokens.refresh?.();
-      context.connection.languages.diagnostics.refresh();
-    }
-  });
-}
-
-function registerConfigurationChangeHandlers(context: HandlerRegistrationContext, updateFeatures: (settings: unknown) => void): void {
-  const connection = context.connection as ConfigurationHandlerConnection;
-  connection.onDidChangeConfiguration?.((params) => {
-    updateFeatures(params.settings);
-    context.analyzer.configure?.(params.settings);
-    for (const document of context.documents.all()) {
-      indexDocument(context, document);
-    }
-    sendLoginDependencies(context);
-    context.connection.languages.semanticTokens.refresh();
-    context.connection.languages.diagnostics.refresh();
-  });
-}
-
 function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, refreshInlayHints: () => void,
   disposeSymbols: () => Promise<void> | undefined): () => Promise<void> {
   const pending = new Map<string, TextDocument>();
@@ -682,12 +726,13 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
 }
 
 async function indexDocument(context: HandlerRegistrationContext, document: TextDocument, token: CancellationToken = CancellationToken.None): Promise<void> {
+  if (!context.configuration?.isReady) { return; }
   try {
     const input = { uri: document.uri, version: document.version, text: document.getText() };
     if (context.analyzer.analyzeForegroundDocumentAsync) {
       const analysis = await context.analyzer.analyzeForegroundDocumentAsync(input, token);
       throwIfCancelled(token);
-      if (context.documents.get(input.uri)?.version !== input.version) { return; }
+      if (!context.configuration.isReady || context.documents.get(input.uri)?.version !== input.version) { return; }
       sendInactiveRanges(context, analysis);
     } else { analyzeForInteractiveRequest(context, input); }
     if (sendLoginDependencies(context)) {
@@ -727,6 +772,7 @@ function getErrorMessage(error: unknown): string {
 
 function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext, refreshInlayHints: () => void): void {
   context.analyzer.onBackgroundIndexingComplete?.(() => {
+    if (!context.configuration?.isReady) { return; }
     refreshInlayHints();
     sendLoginDependencies(context);
     context.connection.languages.semanticTokens.refresh();

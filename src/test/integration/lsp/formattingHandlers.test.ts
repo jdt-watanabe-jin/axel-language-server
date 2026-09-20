@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { registerHandlers } from '../../../lsp/registerHandlers';
+import { registerHandlers } from '../../support/configuredHandlers';
 import { createTestDocument, emptyAnalysis } from '../../support/handlerFixtures';
 
 suite('registerHandlers', () => {

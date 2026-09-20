@@ -41,15 +41,17 @@ Formatting intentionally changes indentation only. It does not rewrite expressio
 
 Leading Doxygen comments can provide structured documentation for hover, completion, and signature help. See the [Doxygen comments guide](docs/user/doxygen-comments.md) for supported forms, commands, binding rules, and limits.
 
+See [configuration acquisition](docs/user/configuration.md) and [file operations and include renaming](docs/user/file-operations.md) for the client contract.
+
 ## System-defined macros
 
-Pass `tool` in `initialize.initializationOptions` and in `workspace/didChangeConfiguration.settings`:
+Return `tool` in the `axel` item of the `workspace/configuration` response (see [configuration](docs/user/configuration.md)):
 
 ```json
 { "tool": "ismo" }
 ```
 
-Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid values select `axel`; invalid values are logged. Changing the configuration invalidates analysis and refreshes diagnostics, inactive ranges, and semantic tokens without restarting the server.
+Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted values select `axel`; invalid values reject the configuration snapshot. Changing the configuration invalidates analysis and refreshes diagnostics, inactive ranges, and semantic tokens without restarting the server.
 
 `__AXEL__` is always defined as the integer `1`, regardless of Tool. `__AXELVERSION__` is always defined as the integer `510`, preserving the former IntelliSense header value; no header include is required.
 
@@ -59,7 +61,7 @@ Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted or invalid
 
 `__AXELCONSOLE__` is always defined as an integer: `1` for Tool `axel`, and `0` for every other supported Tool. Its value follows Tool configuration changes without a document edit or server restart.
 
-`__AXEL_INTERNAL__` is always defined as an integer. Pass `internalFeatures` in initialization options and configuration settings: `enabled` selects `1`, and `disabled` selects `0`. Omitted or invalid values select `enabled`. Changes refresh analysis without editing the document or restarting the server. Use `#if __AXEL_INTERNAL__` to select a branch by value; `#ifdef __AXEL_INTERNAL__` is true for both settings.
+`__AXEL_INTERNAL__` is always defined as an integer. Pass `internalFeatures` in the `axel` configuration response: `enabled` selects `1`, and `disabled` selects `0`. Omitted values select `enabled`; invalid values reject the configuration snapshot. Changes refresh analysis without editing the document or restarting the server. Use `#if __AXEL_INTERNAL__` to select a branch by value; `#ifdef __AXEL_INTERNAL__` is true for both settings.
 
 Tool `ismo` defines only `__APP_LEDIT__=1`, `asca` defines only `__APP_SEDIT__=1`, and `spicechart` defines only `__APP_SCHART__=1`. Tool `axel` defines none of these application macros. A non-selected macro is undefined, not defined as zero.
 
@@ -69,7 +71,7 @@ Hover, completion, diagnostics, and conditional evaluation share these definitio
 
 ### Target platform
 
-Pass `targetPlatform` alongside `tool` in initialization options and configuration notifications. It selects the analysis target independently of the server host and Tool; it does not change the execution environment. Omitted or invalid values select `windows-x64`, and invalid values are logged. Changes invalidate document and include analysis and refresh diagnostics, inactive ranges, and semantic tokens without a restart.
+Pass `targetPlatform` alongside `tool` in the `axel` configuration response. It selects the analysis target independently of the server host and Tool; it does not change the execution environment. Omitted values select `windows-x64`; invalid values reject the configuration snapshot. Changes invalidate document and include analysis and refresh diagnostics, inactive ranges, and semantic tokens without a restart.
 
 | Value | OS | CPU | Pointer bytes |
 | --- | --- | --- | --- |
@@ -134,10 +136,10 @@ npm run lint
 
 ### Hover and completion settings
 
-Pass `hover` and `autocomplete` at the top level of initialization options or `workspace/didChangeConfiguration.settings`. Each accepts `"default"` (enabled, the default) or `"disabled"`. A disabled hover returns `null`; disabled completion returns an empty list, including manually requested completion. Other language features remain enabled. Changes apply to subsequent requests without restarting, and omitted or invalid values select `"default"`. These settings do not control snippets or word suggestions supplied by the editor.
+Pass `hover` and `autocomplete` at the top level of the `axel` configuration response. Each accepts `"default"` (enabled, the default) or `"disabled"`. A disabled hover returns `null`; disabled completion returns an empty list, including manually requested completion. Other language features remain enabled. Changes apply to subsequent requests without restarting, and omitted values select `"default"`; invalid values reject the configuration snapshot. These settings do not control snippets or word suggestions supplied by the editor.
 
 ### Diagnostic display settings
 
-Pass `errorSquiggles` alongside `hover` and `autocomplete` in initialization options and configuration notifications. It accepts `enabled`, `disabled`, and `enabledIfIncludesResolve` (the default for omitted or invalid values). `disabled` returns an empty full diagnostic report, clearing errors and warnings in both editor squiggles and the Problems panel. It does not disable parsing or other language features. `enabled` returns normal diagnostics regardless of missing includes.
+Pass `errorSquiggles` alongside `hover` and `autocomplete` in the `axel` configuration response. It accepts `enabled`, `disabled`, and `enabledIfIncludesResolve` (the default for omitted values). `disabled` returns an empty full diagnostic report, clearing errors and warnings in both editor squiggles and the Problems panel. It does not disable parsing or other language features. `enabled` returns normal diagnostics regardless of missing includes.
 
 `enabledIfIncludesResolve` checks each document independently, including transitive and forced includes, using parsed syntax and the existing include resolver. Inactive includes are excluded. If an include cannot resolve, only include-resolution errors are returned; errors in a nested include are anchored at the requesting document窶冱 include, and forced-include errors at its start. Unsupported include expressions also count as unresolved. LSP diagnostic requests wait for the required dependency analysis; the synchronous diagnostic API can still return provisional results while background indexing is pending. Missing-header candidates are tracked so file creation/deletion and include-path changes trigger re-evaluation without a source edit. Configuration changes request a diagnostic refresh without restarting the server.

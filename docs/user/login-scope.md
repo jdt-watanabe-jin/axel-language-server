@@ -8,7 +8,7 @@ The server supplies classes, global variables and global functions other than `m
 | asca | `bin/_asca/_login.axl` |
 | spicechart | `bin/_spicechart/_login.axl` |
 
-The client supplies `sxmHome` and `tool` in initialization options and configuration notifications. An empty `sxmHome` disables startup globals. An omitted home preserves the configured home. The server does not search include roots for a substitute startup file or combine the common and tool-specific startup files.
+The client supplies `sxmHome` and `tool` in the `axel` item of the `workspace/configuration` response. An empty `sxmHome` disables startup globals. An omitted home clears the configured home. Each response replaces the complete settings snapshot. The server does not search include roots for a substitute startup file or combine the common and tool-specific startup files.
 
 Completion, hover, definition, references, signature help, semantic tokens and type checking use startup declarations. Class members retain their owning class. Function-local declarations and startup `main` are not exported. Macros and typedef names are not automatically exported; their information can still determine the types of exported declarations. Conditional includes use the startup macro environment independently of subsequent files. Ordinary declarations take precedence over startup declarations. Document symbols continue to describe the document itself.
 

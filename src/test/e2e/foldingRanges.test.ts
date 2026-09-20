@@ -13,7 +13,7 @@ suite('LSP stdio folding ranges', function () {
   async function initialize(foldingRange: FoldingRangeClientCapabilities = {}) {
     const result = await server.request<InitializeResult>('initialize', {
       processId: null, rootUri: null, capabilities: { textDocument: { foldingRange } },
-      initializationOptions: {}
+      configuration: {}
     });
     await server.notify('initialized', {});
     return result;

@@ -22,7 +22,7 @@ suite('LSP system macros', function () {
     const server = startLspServer();
     try {
       await server.request('initialize', {
-        processId: null, rootUri: null, capabilities: {}, initializationOptions: {}
+        processId: null, rootUri: null, capabilities: {}, configuration: {}
       });
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text } });
@@ -38,7 +38,7 @@ suite('LSP system macros', function () {
     const server = startLspServer();
     try {
       const initialized = await server.request<InitializeResult>('initialize', {
-        processId: null, rootUri: null, capabilities: {}, initializationOptions: { tool: 'ismo' }
+        processId: null, rootUri: null, capabilities: {}, configuration: { tool: 'ismo' }
       });
       const provider = initialized.capabilities.semanticTokensProvider;
       assert.ok(provider && 'legend' in provider);
@@ -71,7 +71,7 @@ suite('LSP system macros', function () {
           if (tool === 'ismo') {
             await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text } });
           } else {
-            await server.notify('workspace/didChangeConfiguration', { settings: { tool } });
+            await server.configure( { settings: { tool } });
           }
           await inactive;
         } finally { clearTimeout(timer); }

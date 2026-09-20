@@ -10,6 +10,20 @@ import { getSignatureHelp } from '../../../analyzer/signatureHelp';
 
 suite('Login scope', () => {
   const { createTempDir, createWorkspaceIndex } = useWorkspaceFixtures();
+  test('updates startup declarations when a higher-priority include is created', () => {
+    const root = createTempDir();
+    fs.mkdirSync(path.join(root, 'bin')); fs.mkdirSync(path.join(root, 'lib'));
+    fs.writeFileSync(path.join(root, 'bin/_login.axl'), '#include "api.h"\n');
+    fs.writeFileSync(path.join(root, 'lib/api.h'), 'int previous;\n');
+    const index = createWorkspaceIndex({ sxmHome: root, includeRoots: [path.join(root, 'lib')] });
+    const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
+    index.indexOpenDocument({ uri, version: 1, text: 'void main() {}\n' });
+    assert.strictEqual(index.findVisibleDeclarations(uri, 'previous').length, 1);
+    const header = path.join(root, 'bin/api.h'); fs.writeFileSync(header, 'int current;\n');
+    index.invalidatePaths([pathToFileURL(header).toString()]);
+    assert.strictEqual(index.findVisibleDeclarations(uri, 'current').length, 1);
+    assert.strictEqual(index.findVisibleDeclarations(uri, 'previous').length, 0);
+  });
   test('reuses completed forced-header analysis in the isolated startup index', () => {
     const root = createTempDir();
     fs.mkdirSync(path.join(root, 'bin'));

@@ -17,7 +17,7 @@ suite('Overload LSP agreement', function () {
       declarationFiles:['api.h'],types:{string:'api.h'},analysisOnlyMacros:[]}));
     const server = startLspServer();
     try {
-      await server.request('initialize',{processId:null,rootUri:null,capabilities:{},initializationOptions:{forcedIncludeFiles:[header]}});
+      await server.request('initialize',{processId:null,rootUri:null,capabilities:{},configuration:{forcedIncludeFiles:[header]}});
       await server.notify('initialized',{});
       const uri = pathToFileURL(path.join(root,'main.axl')).toString();
       const textDocument = {uri};

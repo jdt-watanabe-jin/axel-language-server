@@ -19,6 +19,8 @@ export function startLspServer(requestTimeoutMs = 5_000) {
   // Keep startup errors observed even before the first request.
   void closed.catch(() => undefined);
   const connection = createProtocolConnection(new StreamMessageReader(child.stdout), new StreamMessageWriter(child.stdin));
+  let configuration: unknown = {};
+  connection.onRequest('workspace/configuration', () => [configuration]);
   connection.onRequest('workspace/semanticTokens/refresh', () => null);
   connection.onRequest('workspace/diagnostic/refresh', () => null);
   connection.listen();
@@ -46,7 +48,19 @@ export function startLspServer(requestTimeoutMs = 5_000) {
       return connection.onNotification(method, handler);
     },
     request<T>(method: string, params?: object, token: CancellationToken = CancellationToken.None) {
+      if (method === 'initialize') {
+        const input = params as { configuration?: unknown; capabilities?: { workspace?: object } };
+        configuration = input.configuration ?? {};
+        const { configuration: _settings, ...initialize } = input;
+        void _settings;
+        params = { ...initialize, capabilities: { ...input.capabilities, workspace: { ...input.capabilities?.workspace, configuration: true } } };
+      }
       return deadline(connection.sendRequest<T>(method, params, token), method);
+    },
+    rawRequest<T>(method: string, params?: object) { return deadline(connection.sendRequest<T>(method, params), method); },
+    configure(params: { settings?: unknown }) {
+      configuration = params.settings;
+      return connection.sendNotification('workspace/didChangeConfiguration', { settings: null });
     },
     notify(method: string, params?: object) {
       return connection.sendNotification(method, params);

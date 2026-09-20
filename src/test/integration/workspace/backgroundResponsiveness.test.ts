@@ -104,7 +104,7 @@ suite('background dependency responsiveness', () => {
     index.analyzeForegroundDocument(input);
     const pending = index.waitForBackgroundIndexing();
     await new Promise<void>(resolve => setImmediate(resolve));
-    index.configure({ targetPlatform: 'linux-x86' });
+    index.configure({ targetPlatform: 'linux-x86', forcedIncludeFiles: [oldHeader] });
     index.analyzeForegroundDocument(input);
     await pending;
     assert.deepStrictEqual(index.analyzeDiagnosticDocument(input).diagnostics, []);

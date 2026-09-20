@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { CancellationToken, LSPErrorCodes, ResponseError, type DocumentHighlightParams } from 'vscode-languageserver/node';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
-import { registerHandlers } from '../../../lsp/registerHandlers';
+import { registerHandlers } from '../../support/configuredHandlers';
 import { createHandlerConnection, createTestDocument, type TestDocument } from '../../support/handlerFixtures';
 
 suite('Document highlight request lifecycle', () => {

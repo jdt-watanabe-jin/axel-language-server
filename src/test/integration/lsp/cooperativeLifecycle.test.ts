@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
-import { registerHandlers } from '../../../lsp/registerHandlers';
+import { registerHandlers } from '../../support/configuredHandlers';
 import { createHandlerConnection, createTestDocument, type TestDocument } from '../../support/handlerFixtures';
 suite('cooperative document lifecycle', () => {
   test('opening and flushing edits do not fall back to synchronous foreground parsing', async () => {

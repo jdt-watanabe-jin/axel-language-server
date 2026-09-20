@@ -13,23 +13,25 @@ suite('LSP language settings', function () {
     const params = { textDocument: { uri }, position: { line: 0, character: 5 } };
     try {
       await server.request('initialize', { processId: null, rootUri: null, capabilities: {},
-        initializationOptions: { hover: 'disabled', autocomplete: 'disabled' } });
+        configuration: { hover: 'disabled', autocomplete: 'disabled' } });
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', { textDocument: {
         uri, languageId: 'axel', version: 1, text: 'int myValue;\nvoid main() { myValue; }'
       } });
       assert.strictEqual(await server.request('textDocument/hover', params), null);
       assert.deepStrictEqual(await server.request('textDocument/completion', params), []);
-      await server.notify('workspace/didChangeConfiguration', { settings: { hover: 'default', autocomplete: 'disabled' } });
+      await server.configure( { settings: { hover: 'default', autocomplete: 'disabled' } });
       assert.ok(await server.request<Hover>('textDocument/hover', params));
       assert.deepStrictEqual(await server.request('textDocument/completion', params), []);
-      await server.notify('workspace/didChangeConfiguration', { settings: { hover: 'disabled', autocomplete: 'default' } });
+      await server.configure( { settings: { hover: 'disabled', autocomplete: 'default' } });
       assert.strictEqual(await server.request('textDocument/hover', params), null);
       const completions = await server.request<CompletionItem[]>('textDocument/completion', {
         textDocument: { uri }, position: { line: 1, character: 16 }
       });
       assert.ok(completions.some(item => item.label === 'myValue'), JSON.stringify(completions));
-      await server.notify('workspace/didChangeConfiguration', { settings: { hover: 'invalid', autocomplete: null } });
+      await server.configure( { settings: { hover: 'invalid', autocomplete: null } });
+      await assert.rejects(server.request<Hover>('textDocument/hover', params), /configuration unavailable/);
+      await server.configure({ settings: {} });
       assert.ok(await server.request<Hover>('textDocument/hover', params));
     } finally { await server.stop(); }
   });

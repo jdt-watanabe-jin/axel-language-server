@@ -5,7 +5,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { createAxelParser } from '../../../analyzer/axelParser';
-import { registerHandlers } from '../../../lsp/registerHandlers';
+import { registerHandlers } from '../../support/configuredHandlers';
 import { runAnalysisSteps } from '../../../util/analysisSteps';
 import { createHandlerConnection, emptyAnalysis } from '../../support/handlerFixtures';
 
@@ -68,7 +68,7 @@ suite('Folding range syntax-only requests', () => {
       } as never,
       logger: { error: (message: string) => errors.push(message) }
     });
-    initialize({ capabilities: {}, processId: null, rootUri: null, initializationOptions: { errorSquiggles: 'enabled' } }, CancellationToken.None);
+    initialize({ capabilities: { workspace: { configuration: true } }, processId: null, rootUri: null, initializationOptions: { errorSquiggles: 'enabled' } }, CancellationToken.None);
     return {
       workspace, errors,
       diagnostic: () => diagnostic(params),

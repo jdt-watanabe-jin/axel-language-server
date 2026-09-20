@@ -19,7 +19,7 @@ suite('external rename performance', function () {
     const server = startLspServer(120_000);
     try {
       await server.request('initialize', { processId: null, rootUri: null, capabilities: {},
-        initializationOptions: JSON.parse(process.env.AXEL_PERF_SETTINGS ?? '{}') });
+        configuration: JSON.parse(process.env.AXEL_PERF_SETTINGS ?? '{}') });
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text } });
       const start = performance.now();

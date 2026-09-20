@@ -19,7 +19,7 @@ suite('LSP error squiggles', function () {
     fs.rmSync(directory, { recursive: true, force: true });
   });
   async function initialize(settings: object = {}) {
-    await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: settings });
+    await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, configuration: settings });
     await server.notify('initialized', {});
   }
   async function open(name: string, text: string) {
@@ -47,14 +47,14 @@ suite('LSP error squiggles', function () {
     await open('main.axl', '#define __LINE__ 9\nint knownValue;\nvoid main() { unknownValue; }');
     assert.deepStrictEqual(await diagnostics(), []);
     assert.ok(await server.request<Hover>('textDocument/hover', { textDocument: { uri: uri('main.axl') }, position: { line: 1, character: 6 } }));
-    await server.notify('workspace/didChangeConfiguration', { settings: { errorSquiggles: 'enabled' } });
+    await server.configure( { settings: { errorSquiggles: 'enabled' } });
     const items = await eventually(hasUnknown);
     assert.ok(items.some(item => item.severity === 2));
-    await server.notify('workspace/didChangeConfiguration', { settings: { errorSquiggles: 'disabled' } });
+    await server.configure( { settings: { errorSquiggles: 'disabled' } });
     assert.deepStrictEqual(await diagnostics(), []);
   });
 
-  test('default keeps missing-include errors only; enabled and invalid settings select the documented modes', async () => {
+  test('default keeps missing-include errors only and invalid settings fail until corrected', async () => {
     await initialize();
     await open('main.axl', '#include "missing.h"\nvoid main() { unknownValue; }');
     const items = await diagnostics();
@@ -62,9 +62,11 @@ suite('LSP error squiggles', function () {
     assert.ok(items[0].message.includes('missing.h'));
     await open('other.axl', 'void main() { unknownValue; }');
     assert.ok(hasUnknown(await diagnostics('other.axl')), 'one file must not disable diagnostics in another');
-    await server.notify('workspace/didChangeConfiguration', { settings: { errorSquiggles: 'enabled' } });
+    await server.configure( { settings: { errorSquiggles: 'enabled' } });
     assert.ok(hasUnknown(await diagnostics()));
-    await server.notify('workspace/didChangeConfiguration', { settings: { errorSquiggles: 'invalid' } });
+    await server.configure( { settings: { errorSquiggles: 'invalid' } });
+    await assert.rejects(diagnostics(), /configuration unavailable/);
+    await server.configure({ settings: {} });
     assert.strictEqual((await diagnostics()).length, 1);
   });
 
@@ -121,7 +123,7 @@ suite('LSP error squiggles', function () {
     fs.mkdirSync(path.join(directory, 'includes'));
     fs.writeFileSync(forced, '#include <types.h>');
     fs.writeFileSync(path.join(directory, 'includes', 'types.h'), 'int includedValue;');
-    await server.notify('workspace/didChangeConfiguration', { settings: { forcedIncludeFiles: [forced], includeRoots: [path.join(directory, 'includes')] } });
+    await server.configure( { settings: { forcedIncludeFiles: [forced], includeRoots: [path.join(directory, 'includes')] } });
     await eventually(hasUnknown);
   });
 });

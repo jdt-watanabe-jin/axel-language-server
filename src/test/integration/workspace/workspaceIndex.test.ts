@@ -3,8 +3,43 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { useWorkspaceFixtures } from '../../support/workspace';
+import { CancellationTokenSource, LSPErrorCodes } from 'vscode-languageserver/node';
 
 suite('WorkspaceIndex', () => {
+  test('invalidates unchanged sources when a forced header is created', () => {
+    const root = createTempDir();
+    const forced = path.join(root, 'forced'); fs.mkdirSync(forced);
+    const index = createWorkspaceIndex({ forcedIncludeRoots: [forced] });
+    const input = { uri: pathToFileURL(path.join(root, 'main.axl')).toString(), version: 1,
+      text: '#ifdef NEW\nint enabled;\n#else\nint disabled;\n#endif\n' };
+    assert.ok(index.indexOpenDocument(input).declarations.some(item => item.name === 'disabled'));
+    const header = path.join(forced, 'new.h'); fs.writeFileSync(header, '#define NEW 1\n');
+    index.invalidatePaths([pathToFileURL(header).toString()]);
+    assert.ok(index.indexOpenDocument(input).declarations.some(item => item.name === 'enabled'));
+  });
+
+  for (const cancel of [false, true]) {
+  test(`invalidates resolved includes when a higher priority header is created (cancel=${cancel})`, async () => {
+    const root = createTempDir();
+    const lib = path.join(root, 'lib'); fs.mkdirSync(lib);
+    fs.writeFileSync(path.join(lib, 'api.h'), '#define LIB 1\n');
+    const index = createWorkspaceIndex({ includeRoots: [lib] });
+    const input = { uri: pathToFileURL(path.join(root, 'main.axl')).toString(), version: 1,
+      text: '#include "api.h"\n#ifdef LIB\nint old;\n#else\nint fresh;\n#endif\n' };
+    assert.ok(index.indexOpenDocument(input).declarations.some(item => item.name === 'old'));
+    if (cancel) {
+      const cancellation = new CancellationTokenSource();
+      const pending = index.analyzeRequestDocument({ uri: pathToFileURL(path.join(root, 'other.axl')).toString(),
+        version: 1, text: 'void main() {}\n' }, cancellation.token);
+      setImmediate(() => cancellation.cancel());
+      await assert.rejects(pending, { code: LSPErrorCodes.RequestCancelled });
+      cancellation.dispose();
+    }
+    const header = path.join(root, 'api.h'); fs.writeFileSync(header, '');
+    index.invalidatePaths([pathToFileURL(header).toString()]);
+    assert.ok(index.indexOpenDocument(input).declarations.some(item => item.name === 'fresh'));
+  });
+  }
   test('makes declarations from forced include directories visible to lookup', () => {
     const tempDir = createTempDir();
     const forcedDir = path.join(tempDir, 'forced');

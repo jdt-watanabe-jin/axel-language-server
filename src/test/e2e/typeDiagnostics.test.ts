@@ -31,7 +31,7 @@ suite('Type checking: LSP diagnostics', function () {
         start: { line: 0, character: broken.indexOf('0') }, end: { line: 0, character: broken.indexOf('0') + 1 }
       });
       assert.strictEqual(items[0].message, "型'int*'を型'int'の値で初期化できません。");
-      await server.notify('workspace/didChangeConfiguration', { settings: {} });
+      await server.configure( { settings: {} });
       assert.deepStrictEqual(await diagnostics(), items, 'Configuration must retain the connection locale');
       await server.notify('textDocument/didChange', { textDocument: { uri, version: 3 }, contentChanges: [{ text: 'void main(){ int *p=nullptr; }' }] });
       assert.deepStrictEqual(await diagnostics(), []);
@@ -56,7 +56,7 @@ suite('Type checking: LSP diagnostics', function () {
       assert.strictEqual(missingReturn.severity, 1);
       assert.strictEqual(prototype.range.start.line, 0);
       assert.strictEqual(missingReturn.range.start.line, 1);
-      await server.notify('workspace/didChangeConfiguration', { settings: { maxNumberOfProblems: 1 } });
+      await server.configure( { settings: { maxNumberOfProblems: 1 } });
       const limited = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
       assert.ok(limited.kind === 'full');
       assert.strictEqual(limited.items.length, 1);

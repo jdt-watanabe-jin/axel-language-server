@@ -20,7 +20,7 @@ suite('LSP localization', function () {
         const japanese = locale?.startsWith('ja');
         assert.ok(report.items.some(item => item.message === (japanese
           ? "不明な識別子 'missing'。" : "Unknown identifier 'missing'.")), JSON.stringify(report));
-        await server.notify('workspace/didChangeConfiguration', { settings: {} });
+        await server.configure( { settings: {} });
         const after = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });
         assert.deepStrictEqual(after, report, 'configuration changes must preserve locale');
       } finally { await server.stop(); }

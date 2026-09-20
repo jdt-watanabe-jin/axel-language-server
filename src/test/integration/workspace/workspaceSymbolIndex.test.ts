@@ -20,6 +20,13 @@ suite('Workspace Symbol index', () => {
     return { root, file, uri: pathToFileURL(file).toString(), index };
   }
   const names = async (index: WorkspaceSymbolIndex) => (await index.search('', CancellationToken.None)).map(x => x.name);
+  test('does not return cached symbols when configuration pauses a pending search', async () => {
+    const { file, index } = setup(); fs.writeFileSync(file, 'int oldValue;');
+    assert.deepStrictEqual(await names(index), ['oldValue']);
+    const pending = names(index);
+    index.pause();
+    await assert.rejects(pending, (error: unknown) => (error as { code: number }).code === LSPErrorCodes.ContentModified);
+  });
   test('uses unopened files, prioritizes unsaved text and restores disk after close', async () => {
     const { file, uri, index } = setup(); fs.writeFileSync(file, 'int disk;');
     assert.deepStrictEqual(await names(index), ['disk']);

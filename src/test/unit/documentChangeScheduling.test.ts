@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { CancellationToken, CancellationTokenSource, LSPErrorCodes } from 'vscode-languageserver/node';
-import { registerHandlers } from '../../lsp/registerHandlers';
+import { registerHandlers } from '../support/configuredHandlers';
 import { createHandlerConnection, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
 
 suite('document change scheduling', () => {

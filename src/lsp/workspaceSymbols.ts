@@ -17,7 +17,7 @@ export function toLspWorkspaceSymbol(entry: WorkspaceSymbolEntry, supportedKinds
 }
 
 /** Lifecycle hooks are composed with the existing registrations, never overwritten. */
-export function registerWorkspaceSymbolHandler(context: HandlerRegistrationContext) {
+export function registerWorkspaceSymbolHandler(context: HandlerRegistrationContext, foldersChanged: (roots: string[]) => void = () => {}) {
   if (!context.connection.onWorkspaceSymbol) { return undefined; }
   const index = new WorkspaceSymbolIndex(error => context.logger.error(error));
   let roots: string[] = [];
@@ -29,6 +29,7 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
   context.documents.onDidClose(event => index.closeDocument(event.document.uri));
   context.connection.onWorkspaceSymbol(async (params, token, progress) => {
     throwIfCancelled(token);
+    await context.configuration!.ready(token);
     // vscode-languageserver consumes workDoneToken before invoking this handler.
     // The supplied reporter is a no-op when the request did not carry a token.
     const reporting = progressSupported;
@@ -49,7 +50,6 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
       progressSupported = params.capabilities.window?.workDoneProgress === true;
       supportedKinds = params.capabilities.workspace?.symbol?.symbolKind?.valueSet;
       index.setRoots(roots);
-      index.configure(normalizeWorkspaceSymbolSettings(params.initializationOptions, error => context.logger.error(error)));
     },
     start() {
       if (foldersSupported) {
@@ -57,10 +57,12 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
           const removed = new Set(event.removed.map(folder => folder.uri));
           roots = [...new Set([...roots.filter(uri => !removed.has(uri)), ...event.added.map(folder => folder.uri)])];
           index.setRoots(roots);
+          foldersChanged(roots);
         });
       }
-      index.start();
     },
+    pause() { index.pause(); },
+    resume() { index.resume(); },
     configure(settings: unknown) { index.configure(normalizeWorkspaceSymbolSettings(settings, error => context.logger.error(error))); },
     invalidate(uris: readonly string[]) { index.invalidateFiles(uris); },
     dispose() { return index.dispose(); }

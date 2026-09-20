@@ -38,7 +38,7 @@ When several builtin declarations remain compatible, or argument types are unkno
 
 ## Registering analysis declarations
 
-Use the existing `forcedIncludeFiles` configuration to select an analysis header. Place a companion JSON file beside the entry, replacing its last extension with `.analysis.json`: `builtins.h` uses `builtins.analysis.json`. There is no separate type-checking configuration switch. For a generic LSP client, initialization options can contain:
+Use the existing `forcedIncludeFiles` configuration to select an analysis header. Place a companion JSON file beside the entry, replacing its last extension with `.analysis.json`: `builtins.h` uses `builtins.analysis.json`. There is no separate type-checking configuration switch. For a generic LSP client, the `axel` item of the `workspace/configuration` response can contain:
 
 ```json
 {

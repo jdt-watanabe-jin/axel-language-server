@@ -35,7 +35,7 @@ suite('LSP editing latency', function () {
     try {
       await server.request('initialize', {
         processId: null, rootUri: null,
-        capabilities: { textDocument: { hover: { contentFormat: ['markdown'] } } }, initializationOptions: {}
+        capabilities: { textDocument: { hover: { contentFormat: ['markdown'] } } }, configuration: {}
       });
       await server.notify('initialized', {});
       const openStart = performance.now();

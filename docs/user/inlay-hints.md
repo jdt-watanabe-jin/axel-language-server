@@ -1,6 +1,6 @@
 # Parameter-name inlay hints
 
-The server advertises `inlayHintProvider` and serves standard `textDocument/inlayHint` requests. Hints are disabled by default. Send the following top-level object in both `initialize.initializationOptions` and `workspace/didChangeConfiguration.settings`:
+The server advertises `inlayHintProvider` and serves standard `textDocument/inlayHint` requests. Hints are disabled by default. Send the following top-level object in the `axel` item of the `workspace/configuration` response:
 
 ```json
 {
@@ -13,7 +13,7 @@ The server advertises `inlayHintProvider` and serves standard `textDocument/inla
 }
 ```
 
-Both fields accept booleans. Missing or invalid values independently select `enabled: false` and `suppressWhenArgumentContainsName: true`. Configuration notifications supply the complete current settings. Changes take effect without editing documents or restarting the server. Editor visibility settings still apply.
+Both fields accept booleans. Missing values independently select `enabled: false` and `suppressWhenArgumentContainsName: true`. Invalid values reject the complete configuration snapshot. Configuration notifications trigger a new request; its response supplies the complete current settings. Changes take effect without editing documents or restarting the server. Editor visibility settings still apply.
 
 For `void consume(int count)`, a call `consume(10)` receives `count:` before `10`. Each hint uses `InlayHintKind.Parameter` and right padding. Functions and methods in user source, visible includes and built-in declarations are supported. Only named fixed parameters receive hints; omitted parameters, unnamed parameters and variadic arguments do not.
 

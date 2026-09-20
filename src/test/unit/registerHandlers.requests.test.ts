@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { registerHandlers } from '../../lsp/registerHandlers';
+import { registerHandlers } from '../support/configuredHandlers';
 import { createTestDocument, createHandlerConnection } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
   test('returns empty completion list when analysis fails', async () => {

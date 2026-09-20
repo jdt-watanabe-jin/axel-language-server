@@ -35,7 +35,7 @@ import { collectForcedIncludeFiles, type ForcedIncludeOptions } from './forcedIn
 import { resolveInclude, resolveScriptExecution, type IncludeResolution } from './includeResolver';
 import type { WorkspaceDeclarationLookup } from './resolution';
 import { collectSemanticDiagnostics } from './semanticDiagnostics';
-import { mergeWorkspaceIndexOptions } from './workspaceConfig';
+import { normalizeWorkspaceIndexOptions } from './workspaceConfig';
 import { collectIncludeResolutionStatus, type IncludeResolutionStatus } from './includeDiagnostics';
 import { measureDurationMs, NullLogger, type AnalysisLogger } from '../util/logger';
 
@@ -90,6 +90,7 @@ export class WorkspaceIndex {
   private readonly logger: AnalysisLogger;
   private readonly documents = new Map<string, IndexedDocument>();
   private readonly diagnosticIncludeDependencies = new Map<string, Set<string>>();
+  private readonly includeCandidateDependencies = new Map<string, Set<string>>();
   private readonly includeGraph = new Map<string, Set<string>>();
   private readonly definiteIncludeGraph = new Map<string, Set<string>>();
   private readonly reverseIncludeGraph = new Map<string, Set<string>>();
@@ -146,13 +147,7 @@ export class WorkspaceIndex {
   public configure(options: unknown): void {
     this.requestRevision++;
     this.logSystemMacroConfiguration(options);
-    const merged = mergeWorkspaceIndexOptions({
-      sxmHome: this.sxmHome,
-      includeRoots: this.includeRoots,
-      forcedIncludeRoots: this.forcedIncludeRoots,
-      forcedIncludeFiles: this.forcedIncludeFiles,
-      defines: this.defines
-    }, options);
+    const merged = normalizeWorkspaceIndexOptions(options);
 
     this.sxmHome = merged.sxmHome ?? '';
     this.loginGeneration++;
@@ -171,6 +166,12 @@ export class WorkspaceIndex {
 
   public analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
     return this.indexOpenDocument(input);
+  }
+
+  private analysisEnabled = true;
+  public setAnalysisEnabled(enabled: boolean): void {
+    this.analysisEnabled = enabled;
+    if (enabled && (this.activeBackground || this.pendingLoginIndexing || this.pendingBackgroundDocuments.size)) { this.scheduleBackgroundIndexing(); }
   }
 
   /** Requests share caches, but yield between tree passes and dependency I/O. */
@@ -234,6 +235,7 @@ export class WorkspaceIndex {
     const definiteEdges = new Map(this.definiteIncludeGraph);
     const contexts = new Map(this.includeContexts);
     const diagnosticDependencies = new Map(this.diagnosticIncludeDependencies);
+    const candidateDependencies = new Map([...this.includeCandidateDependencies].map(([uri, candidates]) => [uri, new Set(candidates)]));
     const forcedIndexed = this.forcedIncludesIndexed;
     return () => {
       const unchanged = revision === this.requestRevision;
@@ -252,6 +254,8 @@ export class WorkspaceIndex {
         if (context) { this.includeContexts.set(uri, context); }
         const dependencies = diagnosticDependencies.get(uri);
         if (dependencies) { this.diagnosticIncludeDependencies.set(uri, dependencies); }
+        const candidates = candidateDependencies.get(uri);
+        if (candidates) { this.includeCandidateDependencies.set(uri, candidates); }
       }
       this.forcedIncludesIndexed = unchanged && forcedIndexed;
       for (const [uri, filePath] of pending) { this.enqueueBackgroundDocument(uri, filePath); }
@@ -695,6 +699,7 @@ export class WorkspaceIndex {
     this.openInputs.delete(fileIdentity(uri));
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
+    this.includeCandidateDependencies.delete(uri);
     this.documentationCache.clear();
     this.callResolutionCache.clear();
     this.documents.delete(uri);
@@ -705,6 +710,36 @@ export class WorkspaceIndex {
   public invalidateFile(filePath: string): void {
     const uri = pathToFileURL(path.normalize(filePath)).toString();
     this.invalidateUri(uri);
+  }
+
+  /** Include deleted directory descendants and missing dependency candidates without stat. */
+  public invalidatePaths(uris: readonly string[]): void {
+    const candidates = new Set([...this.documents.keys(), ...this.reverseIncludeGraph.keys(),
+      ...this.loginSnapshot?.dependencyUris ?? [], ...this.knownForcedIncludeUris(),
+      ...[...this.diagnosticIncludeDependencies.values(), ...this.includeCandidateDependencies.values()].flatMap(values => [...values])]);
+    const roots = uris.filter(uri => uri.startsWith('file:')).map(uri => fileIdentity(uri));
+    const inside = (file: string, root: string) => {
+      const relative = path.relative(root, file);
+      return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+    };
+    if (this.forcedIncludeRoots.some(root => roots.some(changed => {
+      const key = fileIdentity(pathToFileURL(root).toString());
+      return inside(changed, key) || inside(key, changed);
+    }))) {
+      this.requestRevision++;
+      this.forcedIncludeFileCache = undefined;
+      this.loginGeneration++;
+      this.loginSnapshot = undefined;
+      this.clearCachedAnalysis();
+      return;
+    }
+    for (const candidate of candidates) {
+      const key = fileIdentity(candidate);
+      if (roots.some(root => { const relative = path.relative(root, key); return relative === ''
+        || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)); })) { this.invalidateUri(candidate); }
+    }
+    for (const uri of uris) { this.invalidateUri(uri); }
+    this.forcedIncludeFileCache = undefined;
   }
 
   public invalidateUri(uri: string): void {
@@ -729,7 +764,7 @@ export class WorkspaceIndex {
     const dependents = this.collectDependents(uri);
     // Missing include candidates have no resolved graph edge. Track them so
     // creating a header also invalidates documents waiting for that header.
-    for (const [sourceUri, dependencies] of this.diagnosticIncludeDependencies) {
+    for (const [sourceUri, dependencies] of [...this.diagnosticIncludeDependencies, ...this.includeCandidateDependencies]) {
       if (dependencies.has(uri)) {
         for (const dependentUri of this.collectDependents(sourceUri)) { dependents.add(dependentUri); }
       }
@@ -1036,7 +1071,7 @@ export class WorkspaceIndex {
   }
 
   private scheduleBackgroundIndexing(): void {
-    if (this.backgroundIndexingScheduled) {
+    if (this.backgroundIndexingScheduled || !this.analysisEnabled) {
       return;
     }
 
@@ -1049,6 +1084,7 @@ export class WorkspaceIndex {
   }
 
   private processNextBackgroundDocument(): void {
+    if (!this.analysisEnabled) { this.backgroundIndexingScheduled = false; return; }
     if (this.requestAnalysisActive) {
       setTimeout(() => this.processNextBackgroundDocument(), 5);
       return;
@@ -1496,12 +1532,17 @@ export class WorkspaceIndex {
 
   private resolveInclude(input: Parameters<typeof resolveInclude>[0]): IncludeResolution {
     const cache = this.includeResolutionCache;
-    if (!cache) { return resolveInclude(input); }
     const key = JSON.stringify([input.includingFilePath, input.includeText]);
-    const cached = cache.get(key);
+    const cached = cache?.get(key);
     if (cached) { return cached; }
-    const resolution = resolveInclude(input);
-    cache.set(key, resolution);
+    const sourceUri = pathToFileURL(input.includingFilePath).toString();
+    const candidates = this.includeCandidateDependencies.get(sourceUri) ?? new Set<string>();
+    this.includeCandidateDependencies.set(sourceUri, candidates);
+    const resolution = resolveInclude({ ...input, fileExists: file => {
+      candidates.add(pathToFileURL(file).toString());
+      return input.fileExists ? input.fileExists(file) : fs.existsSync(file);
+    } });
+    cache?.set(key, resolution);
     return resolution;
   }
 
@@ -1522,6 +1563,7 @@ export class WorkspaceIndex {
     this.callResolutionCache.clear();
     this.documents.clear();
     this.diagnosticIncludeDependencies.clear();
+    this.includeCandidateDependencies.clear();
     this.includeGraph.clear();
     this.definiteIncludeGraph.clear();
     this.reverseIncludeGraph.clear();

@@ -8,7 +8,7 @@ Queries match names and qualified names without case sensitivity. The server ran
 
 ## Exclusions
 
-Send this configuration in initialization options and `workspace/didChangeConfiguration.settings`:
+Send this configuration in the `axel` item of the `workspace/configuration` response:
 
 ```json
 {
@@ -18,7 +18,7 @@ Send this configuration in initialization options and `workspace/didChangeConfig
 }
 ```
 
-The default is an empty array. `.git` directories are always excluded; `node_modules` is not special. Patterns apply relative to each workspace root, including open files and descendants of excluded directories. With no roots, the document's parent is the base. `*` matches within one path segment, `?` matches one character, and `**` matches zero or more segments. Use `/` separators. Absolute paths, `..` segments and negative patterns are invalid and logged. Missing or non-array settings use the default; invalid elements are ignored. Reconfiguration replaces the array.
+The default is an empty array. `.git` directories are always excluded; `node_modules` is not special. Patterns apply relative to each workspace root, including open files and descendants of excluded directories. With no roots, the document's parent is the base. `*` matches within one path segment, `?` matches one character, and `**` matches zero or more segments. Use `/` separators. Absolute paths, `..` segments and negative patterns are invalid. Missing settings use the default; a non-array value or invalid element rejects the complete configuration snapshot. Reconfiguration replaces the array.
 
 Editor file/search exclusions and `.gitignore` do not implicitly restrict symbol searches. Symlinks and junctions below workspace roots are not traversed. Only `file:` documents are supported.
 

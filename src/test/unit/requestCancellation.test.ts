@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { CancellationTokenSource, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
-import { registerHandlers } from '../../lsp/registerHandlers';
+import { registerHandlers } from '../support/configuredHandlers';
 import { createHandlerConnection, createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
 
 type Handler = (params: never, token: CancellationTokenSource['token']) => unknown;
@@ -25,7 +25,7 @@ function fixture(fail?: () => void) {
   const params = { textDocument: { uri: 'file:///main.axl' }, position: { line: 0, character: 4 },
     range: { start: { line: 0, character: 0 }, end: { line: 0, character: 10 } },
     context: { includeDeclaration: true, diagnostics: [] }, newName: 'renamed',
-    options: { tabSize: 2, insertSpaces: true }, capabilities: {} };
+    options: { tabSize: 2, insertSpaces: true }, capabilities: { workspace: { configuration: true } } };
   return { handlers, errors, analyses: () => analyses, params: params as never };
 }
 const cancelled = (error: unknown) => error instanceof ResponseError && error.code === LSPErrorCodes.RequestCancelled;

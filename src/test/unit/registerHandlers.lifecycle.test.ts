@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { SEMANTIC_TOKEN_LEGEND } from '../../lsp/semanticTokens';
-import { registerHandlers } from '../../lsp/registerHandlers';
+import { registerHandlers } from '../support/configuredHandlers';
 import { createTestDocument, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
 

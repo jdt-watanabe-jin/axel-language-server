@@ -28,7 +28,7 @@ suite('Login LSP', function () {
       if (event.uris.includes(headerUri)) { dependenciesPublished(); }
     });
     try {
-      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { sxmHome: root, forcedIncludeFiles: [header] } });
+      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, configuration: { sxmHome: root, forcedIncludeFiles: [header] } });
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', { textDocument: { uri, version: 1, languageId: 'axel', text: 'void main() { shared; }' } });
       const position = { textDocument: { uri }, position: { line: 0, character: 15 } };
@@ -51,7 +51,7 @@ suite('Login LSP', function () {
       fs.writeFileSync(header, 'int replaced;');
       await server.notify('workspace/didChangeWatchedFiles', { changes: [{ uri: headerUri, type: 2 }] });
       assert.deepStrictEqual(await server.request('textDocument/definition', position), []);
-      await server.notify('workspace/didChangeConfiguration', { settings: { sxmHome: '' } });
+      await server.configure( { settings: { sxmHome: '' } });
       await server.request('textDocument/hover', position);
       assert.ok(notifications.some(n => n.uris.length === 0));
       assert.ok(!logs.some(log => /operation=(document\.analyze|workspace\.)/.test(log)), logs.join('\n'));

@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 import { CancellationToken, LSPErrorCodes } from 'vscode-languageserver/node';
-import { registerHandlers } from '../../lsp/registerHandlers';
+import { registerHandlers } from '../support/configuredHandlers';
 import { createHandlerConnection, createTestDocument, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
 suite('asynchronous request revisions', () => {
   test('does not publish inactive ranges or a result after a document changes during analysis', async () => {

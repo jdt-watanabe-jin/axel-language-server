@@ -1,85 +1,21 @@
 import * as assert from 'assert';
 import * as path from 'path';
-import { mergeWorkspaceIndexOptions, workspaceIndexOptionsFromEnvironment } from '../../analyzer/workspaceConfig';
+import { normalizeWorkspaceIndexOptions } from '../../analyzer/workspaceConfig';
 
-suite('workspaceIndexOptionsFromEnvironment', () => {
-  test('maps semicolon-separated APP_AXELPATH and SXM_FORCED_INCLUDE_FILES to workspace index options', () => {
-    const includeRoots = [
-      path.join('workspace', 'axel'),
-      path.join('vendor', 'axel')
-    ];
-    const forcedIncludeFiles = [
-      path.join('forced', 'gui.h'),
-      path.join('forced', 'system.h')
-    ];
-
-    const options = withPathDelimiter(':', () => workspaceIndexOptionsFromEnvironment({
-      APP_AXELPATH: includeRoots.join(';'),
-      SXM_FORCED_INCLUDE_FILES: forcedIncludeFiles.join(';')
-    }));
-
-    assert.deepStrictEqual(options, {
-      includeRoots: includeRoots.map((root) => path.normalize(root)),
-      forcedIncludeFiles: forcedIncludeFiles.map((filePath) => path.normalize(filePath))
-    });
+suite('workspace configuration snapshots', () => {
+  test('normalizes and deduplicates only the supplied paths', () => {
+    const options = normalizeWorkspaceIndexOptions({ includeRoots: ['a/b'], forcedIncludeFiles: ['a.h', 'a.h'] });
+    assert.deepStrictEqual(options.includeRoots, [path.normalize('a/b')]);
+    assert.deepStrictEqual(options.forcedIncludeFiles, ['a.h']);
   });
-
-  test('merges configured forced includes with SXM_FORCED_INCLUDE_FILES instead of replacing them', () => {
-    const envForcedIncludeFiles = [
-      path.join('env', 'system.h'),
-      path.join('shared', 'common.h')
-    ];
-    const configuredForcedIncludeFiles = [
-      path.join('workspace', 'project.h'),
-      path.join('shared', 'common.h')
-    ];
-
-    const options = mergeWorkspaceIndexOptions({
-      forcedIncludeFiles: envForcedIncludeFiles
-    }, {
-      forcedIncludeRoots: [path.join('workspace', 'forced')],
-      forcedIncludeFiles: configuredForcedIncludeFiles,
-      maxNumberOfProblems: 25,
-      defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1']
-    });
-
-    assert.deepStrictEqual(options, {
-      includeRoots: [],
-      forcedIncludeRoots: [path.normalize(path.join('workspace', 'forced'))],
-      maxNumberOfProblems: 25,
-      defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1'],
-      forcedIncludeFiles: [
-        path.normalize(path.join('env', 'system.h')),
-        path.normalize(path.join('shared', 'common.h')),
-        path.normalize(path.join('workspace', 'project.h'))
-      ]
-    });
+  test('empty arrays clear all forced includes', () => {
+    assert.deepStrictEqual(normalizeWorkspaceIndexOptions({ forcedIncludeFiles: [] }).forcedIncludeFiles, []);
   });
-
-  test('keeps SXM_FORCED_INCLUDE_FILES when the client sends an empty forcedIncludeFiles array', () => {
-    const envForcedIncludeFile = path.join('env', 'system.h');
-
-    const options = mergeWorkspaceIndexOptions({
-      forcedIncludeFiles: [envForcedIncludeFile]
-    }, {
-      forcedIncludeFiles: []
-    });
-
-    assert.deepStrictEqual(options, {
-      includeRoots: [],
-      forcedIncludeRoots: [],
-      forcedIncludeFiles: [path.normalize(envForcedIncludeFile)]
-    });
+  test('missing fields use defaults without retaining previous values', () => {
+    normalizeWorkspaceIndexOptions({ includeRoots: ['old'], forcedIncludeFiles: ['old.h'], defines: ['OLD'] });
+    const options = normalizeWorkspaceIndexOptions({});
+    assert.deepStrictEqual(options.includeRoots, []);
+    assert.deepStrictEqual(options.forcedIncludeFiles, []);
+    assert.strictEqual(options.defines, undefined);
   });
 });
-
-function withPathDelimiter<T>(delimiter: string, callback: () => T): T {
-  const originalDelimiter = path.delimiter;
-  Object.defineProperty(path, 'delimiter', { value: delimiter });
-
-  try {
-    return callback();
-  } finally {
-    Object.defineProperty(path, 'delimiter', { value: originalDelimiter });
-  }
-}

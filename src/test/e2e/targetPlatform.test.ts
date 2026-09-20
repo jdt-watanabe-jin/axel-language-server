@@ -16,14 +16,14 @@ suite('LSP target platform', function () {
     const uri = pathToFileURL(path.join(directory, 'main.axl')).toString();
     const textDocument = { uri };
     try {
-      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, initializationOptions: { targetPlatform: 'hpux-hppa32' } });
+      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, configuration: { targetPlatform: 'hpux-hppa32' } });
       await server.notify('initialized', {});
       for (const [targetPlatform, unknownName, bit] of [['hpux-hppa32', 'windowsOnly', 0], ['windows-x64', 'unixOnly', 1], ['linux-x86', 'windowsOnly', 0]] as const) {
         const refreshed = new Promise<void>(resolve => server.onDiagnosticRefresh(resolve));
         if (targetPlatform === 'hpux-hppa32') {
         await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text: '#include "platform.h"\nvoid main(){ windowsOnly; unixOnly; }\nint bits = __OS_64bit__;' } });
         } else {
-          await server.notify('workspace/didChangeConfiguration', { settings: { targetPlatform } });
+          await server.configure( { settings: { targetPlatform } });
         }
         await refreshed;
         const report = await server.request<DocumentDiagnosticReport>('textDocument/diagnostic', { textDocument });

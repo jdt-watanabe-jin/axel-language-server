@@ -1,0 +1,11 @@
+# Configuration acquisition
+
+Clients must advertise `workspace.configuration: true`. After `initialized`, the server sends `workspace/configuration` with `{"items":[{"section":"axel"}]}` and no `scopeUri`. Return an array containing exactly one settings object. Settings are shared by the connection.
+
+Each response replaces the complete snapshot. Omitted known properties select their defaults; arrays replace previous arrays. Unknown properties are ignored. Invalid known values, null responses, transport errors and a 5-second timeout make configuration unavailable. Language requests return `RequestFailed` until a later successful acquisition; background analysis pauses while configuration is unavailable. Open-document synchronization continues, including unsaved edits. Cancellation of a waiting language request returns `RequestCancelled` without cancelling shared configuration acquisition.
+
+Send `workspace/didChangeConfiguration` with `{"settings":null}` to trigger acquisition again. Its payload is never applied. The server registers this notification dynamically when supported; otherwise the client sends it through its existing integration. Overlapping notifications discard obsolete responses and acquire the latest snapshot. Unchanged effective settings do not rebuild document analysis. Symbol exclusions and file-operation settings invalidate their own indexes.
+
+There is no compatibility path through initialization options, notification settings, environment variables or a last-known-good snapshot. A client without configuration support is rejected at initialization. The VS Code extension must be updated together with the server.
+
+The object supports `includeRoots`, `forcedIncludeRoots`, `forcedIncludeFiles`, `defines` (string arrays, default empty), `sxmHome` (default empty), `tool` (default `axel`), `targetPlatform` (default `windows-x64`), `internalFeatures` (default `enabled`), and optional positive `maxNumberOfProblems` (default unlimited). Presentation settings are `hover` and `autocomplete` (default `default`), `errorSquiggles` (default `enabledIfIncludesResolve`), [inlayHints](inlay-hints.md), [workspaceSymbols](workspace-symbols.md), and [fileOperations](file-operations.md).
