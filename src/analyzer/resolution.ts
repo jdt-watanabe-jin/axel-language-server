@@ -63,7 +63,7 @@ function visibleIndex(input: DeclarationResolutionInput, listed = input.workspac
 }
 
 export function findLocalDeclaration(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
+  analysis: DeclarationResolutionInput['analysis'],
   name: string,
   position: AnalysisPosition,
   callResolution?: DeclarationCallResolution
@@ -72,7 +72,7 @@ export function findLocalDeclaration(
 }
 
 export function findLocalDeclarations(
-  analysis: Pick<AnalyzedDocument, 'uri' | 'declarations' | 'scopes'>,
+  analysis: DeclarationResolutionInput['analysis'],
   name: string,
   position: AnalysisPosition
 ): AnalysisDeclaration[] {
@@ -91,6 +91,28 @@ export function findLocalDeclarations(
   let scoped = scopeNameIndexes.get(analysis.declarations);
   if (!scoped) { scoped = new WeakMap(); scopeNameIndexes.set(analysis.declarations, scoped); }
   while (scope !== undefined) {
+    const globalScope = scope.parentId === undefined;
+    if (globalScope) {
+      // Out-of-class definitions have a file-level lexical scope, but belong
+      // to their class. Search that class before considering global functions.
+      // GUI event receivers are resolved separately by implicit GUI lookup.
+      const input = { analysis, position, workspaceIndex: {} };
+      const { guiClasses, guiMethods } = analysis;
+      const guiContext = guiClasses && guiMethods && findEnclosingGuiMethodContext({
+        analysis: { ...analysis, guiClasses, guiMethods }, position
+      });
+      let owner = guiContext ? undefined : thisReceiverType(input);
+      const visited = new Set<string>();
+      while (owner !== undefined && !visited.has(owner)) {
+        visited.add(owner);
+        const index = visibleIndex(input);
+        const members = (index.byContainer.get(owner) ?? [])
+          .filter(declaration => declaration.name === name
+            && (declaration.kind === 'function' || declaration.kind === 'method'));
+        if (members.length > 0) { return members; }
+        owner = index.byName.get(owner)?.find(isTypeDeclaration)?.baseName;
+      }
+    }
     let names = scoped.get(scope.declarationIds);
     if (!names) {
       names = new Map();
@@ -103,6 +125,8 @@ export function findLocalDeclarations(
       scoped.set(scope.declarationIds, names);
     }
     const candidates = (names.get(name) ?? [])
+      .filter(item => !globalScope || item.containerName === undefined
+        || (item.kind !== 'function' && item.kind !== 'method'))
       .filter(item => isVisibleAt(item, position, analysis.uri))
       .sort((left, right) => comparePositions(right.selectionRange.start, left.selectionRange.start));
     if (candidates.length > 0) {
