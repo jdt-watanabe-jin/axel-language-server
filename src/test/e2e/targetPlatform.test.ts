@@ -16,7 +16,7 @@ suite('LSP target platform', function () {
     const uri = pathToFileURL(path.join(directory, 'main.axl')).toString();
     const textDocument = { uri };
     try {
-      await server.request('initialize', { processId: null, rootUri: null, capabilities: {}, configuration: { targetPlatform: 'hpux-hppa32' } });
+      await server.request('initialize', { processId: null, rootUri: null, capabilities: { workspace: { diagnostics: { refreshSupport: true } } }, configuration: { targetPlatform: 'hpux-hppa32' } });
       await server.notify('initialized', {});
       for (const [targetPlatform, unknownName, bit] of [['hpux-hppa32', 'windowsOnly', 0], ['windows-x64', 'unixOnly', 1], ['linux-x86', 'windowsOnly', 0]] as const) {
         const refreshed = new Promise<void>(resolve => server.onDiagnosticRefresh(resolve));

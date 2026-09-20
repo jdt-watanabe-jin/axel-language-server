@@ -42,7 +42,7 @@ Formatting intentionally changes indentation only. It does not rewrite expressio
 
 Leading Doxygen comments can provide structured documentation for hover, completion, and signature help. See the [Doxygen comments guide](docs/user/doxygen-comments.md) for supported forms, commands, binding rules, and limits.
 
-See [configuration acquisition](docs/user/configuration.md) and [file operations and include renaming](docs/user/file-operations.md) for the client contract.
+See [configuration acquisition](docs/user/configuration.md), [capability negotiation](docs/developer/protocol-compatibility.md), and [file operations and include renaming](docs/user/file-operations.md) for the client contract.
 
 ## System-defined macros
 

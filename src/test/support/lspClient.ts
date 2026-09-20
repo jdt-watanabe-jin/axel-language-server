@@ -34,7 +34,11 @@ export function startLspServer(requestTimeoutMs = 5_000) {
       clearTimeout(timer);
     }
   }
+  let stopped = false;
   return {
+    onRequest(method: string, handler: (params: unknown) => unknown) {
+      return connection.onRequest(method, handler);
+    },
     onWorkDoneProgress(token: string, handler: (value: WorkDoneProgressBegin | WorkDoneProgressReport | WorkDoneProgressEnd) => void) {
       return connection.onProgress(WorkDoneProgress.type, token, handler);
     },
@@ -66,6 +70,8 @@ export function startLspServer(requestTimeoutMs = 5_000) {
       return connection.sendNotification(method, params);
     },
     async stop() {
+      if (stopped) { return; }
+      stopped = true;
       try {
         await deadline(connection.sendRequest('shutdown'), 'shutdown');
         await connection.sendNotification('exit');

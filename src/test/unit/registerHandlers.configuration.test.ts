@@ -170,6 +170,7 @@ suite('registerHandlers', () => {
     };
 
     const context = {
+      clientCapabilities: { workspace: { semanticTokens: { refreshSupport: true }, diagnostics: { refreshSupport: true } } },
       connection: connection as never,
       documents: documents as never,
       analyzer,

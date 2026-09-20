@@ -4,7 +4,7 @@ import { throwIfCancelled } from '../../util/cancellation';
 
 /** Handler unit tests inject an already-acquired configuration; transport tests use the real manager. */
 export function registerHandlers(context: HandlerRegistrationContext): void {
-  register({ ...context, configuration: context.configuration ?? {
+  register({ clientCapabilities: { workspace: { semanticTokens: { refreshSupport: true }, diagnostics: { refreshSupport: true } } }, ...context, configuration: context.configuration ?? {
     settings: {}, isReady: true,
     start() {}, refresh() {}, dispose() {},
     async ready(token: CancellationToken) { throwIfCancelled(token); }

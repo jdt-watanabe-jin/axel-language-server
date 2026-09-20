@@ -14,6 +14,7 @@ import { createRequestHandler, isCancellationError, throwIfCancelled, rethrowCan
 import { sendLoginDependencies } from './loginDependencies';
 import type {
   Connection,
+  ClientCapabilities,
   CodeActionParams,
   CompletionParams,
   DefinitionParams,
@@ -89,6 +90,7 @@ export interface AnalyzerLike extends
 }
 
 export interface HandlerRegistrationContext {
+  clientCapabilities?: ClientCapabilities;
   connection: Connection;
   documents: TextDocuments<TextDocument>;
   analyzer: AnalyzerLike;
@@ -139,8 +141,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     else { for (const uri of uris) { context.analyzer.invalidateUri?.(uri); } }
     if (!context.configuration?.isReady) { return; }
     sendLoginDependencies(context);
-    void context.connection.languages.semanticTokens.refresh?.();
-    void context.connection.languages.diagnostics.refresh?.();
+    refreshLanguageFeature(context, 'semanticTokens');
+    refreshLanguageFeature(context, 'diagnostics');
     refreshInlayHints();
   };
   const queue = createRequestHandler();
@@ -199,8 +201,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     documentsDirty = false;
     for (const document of context.documents.all()) { void indexDocument(context, document); }
     sendLoginDependencies(context);
-    void context.connection.languages.semanticTokens.refresh?.();
-    void context.connection.languages.diagnostics.refresh?.();
+    refreshLanguageFeature(context, 'semanticTokens');
+    refreshLanguageFeature(context, 'diagnostics');
     refreshInlayHints();
   };
   context.configuration ??= new ConfigurationManager(
@@ -233,6 +235,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     if (params.capabilities?.workspace?.configuration !== true) {
       throw new ResponseError(ErrorCodes.InvalidParams, 'AXEL requires workspace/configuration support.');
     }
+    context.clientCapabilities = params.capabilities;
     dynamicConfiguration = params.capabilities.workspace.didChangeConfiguration?.dynamicRegistration === true;
     projectScope.setRoots(params.workspaceFolders?.map(folder => folder.uri) ?? (params.rootUri ? [params.rootUri] : []));
     workspaceSymbols?.initialize(params);
@@ -730,8 +733,8 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
     if (pending.size === 0) { clearTimeout(timer); timer = undefined; }
     context.analyzer.deleteDocument?.(event.document.uri);
     refreshInlayHints();
-    if (sendLoginDependencies(context)) { context.connection.languages.semanticTokens.refresh?.(); }
-    context.connection.languages.diagnostics.refresh?.();
+    if (sendLoginDependencies(context)) { refreshLanguageFeature(context, 'semanticTokens'); }
+    refreshLanguageFeature(context, 'diagnostics');
   });
 
   context.connection.onShutdown?.(async token => {
@@ -756,8 +759,8 @@ async function indexDocument(context: HandlerRegistrationContext, document: Text
       sendInactiveRanges(context, analysis);
     } else { analyzeForInteractiveRequest(context, input); }
     if (sendLoginDependencies(context)) {
-      context.connection.languages.semanticTokens.refresh?.();
-      context.connection.languages.diagnostics.refresh?.();
+      refreshLanguageFeature(context, 'semanticTokens');
+      refreshLanguageFeature(context, 'diagnostics');
     }
   } catch (error: unknown) {
     if (isCancellationError(error)) {
@@ -795,8 +798,8 @@ function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext, 
     if (!context.configuration?.isReady) { return; }
     refreshInlayHints();
     sendLoginDependencies(context);
-    context.connection.languages.semanticTokens.refresh();
-    context.connection.languages.diagnostics.refresh();
+    refreshLanguageFeature(context, 'semanticTokens');
+    refreshLanguageFeature(context, 'diagnostics');
   });
 }
 
@@ -867,4 +870,11 @@ function rangeRequestDetails(
     endLine: params.range.end.line,
     endCharacter: params.range.end.character
   };
+}
+
+/** Optional server-to-client requests must be negotiated, including background updates. */
+function refreshLanguageFeature(context: HandlerRegistrationContext, feature: 'semanticTokens' | 'diagnostics'): void {
+  if (context.clientCapabilities?.workspace?.[feature]?.refreshSupport !== true) { return; }
+  void Promise.resolve(context.connection.languages[feature].refresh?.())
+    .catch(error => context.logger.error(`${feature} refresh failed: ${getErrorMessage(error)}`));
 }
