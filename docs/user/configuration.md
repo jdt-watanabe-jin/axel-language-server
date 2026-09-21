@@ -8,6 +8,8 @@ Send `workspace/didChangeConfiguration` with `{"settings":null}` to trigger acqu
 
 There is no compatibility path through initialization options, notification settings, environment variables or a last-known-good snapshot. A client without configuration support is rejected at initialization. The VS Code extension must be updated together with the server.
 
+`codeLens: { "enabled": true }` enables both reference and implementation lenses. The default is `false`; non-boolean `enabled` values reject the snapshot. Changes apply without restarting. See [Code Lens](code-lens.md) for scope and client refresh requirements.
+
 The object supports `includeRoots`, `forcedIncludeRoots`, `forcedIncludeFiles`, `defines` (string arrays, default empty), `sxmHome` (default empty), `tool` (default `axel`), `targetPlatform` (default `windows-x64`), `internalFeatures` (default `enabled`), and optional positive `maxNumberOfProblems` (default unlimited). Presentation settings are `hover` and `autocomplete` (default `default`), `errorSquiggles` (default `enabledIfIncludesResolve`), [inlayHints](inlay-hints.md), [fileOperations](file-operations.md). Project collection is configured by `project.include` (default `["**/*"]`) and `project.exclude` (default `[]`); see [workspace symbols](workspace-symbols.md).
 
 `workspaceSymbols.exclude` and `fileOperations.exclude` have been removed. Their presence, even as an empty array or alongside `project`, rejects the entire snapshot. Remove both old keys and choose one shared project scope. Settings apply after successful acquisition without restarting.

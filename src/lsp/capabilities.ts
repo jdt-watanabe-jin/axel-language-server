@@ -25,9 +25,12 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       hoverProvider: true,
-      inlayHintProvider: true,
+      inlayHintProvider: client?.textDocument?.inlayHint?.resolveSupport?.properties?.some(property => ['tooltip', 'label.tooltip', 'label.location'].includes(property))
+        ? { resolveProvider: true } : true,
       completionProvider: {
-        triggerCharacters: COMPLETION_TRIGGER_CHARACTERS
+        triggerCharacters: COMPLETION_TRIGGER_CHARACTERS,
+        ...(client?.textDocument?.completion?.completionItem?.resolveSupport?.properties?.some(property => ['detail', 'documentation'].includes(property))
+          ? { resolveProvider: true } : {})
       },
       signatureHelpProvider: {
         triggerCharacters: ['(', ',']
@@ -49,7 +52,8 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
       documentRangeFormattingProvider: true,
       documentSymbolProvider: true,
       documentLinkProvider: { resolveProvider: true },
-      workspaceSymbolProvider: true,
+      codeLensProvider: { resolveProvider: true },
+      workspaceSymbolProvider: client?.workspace?.symbol?.resolveSupport?.properties?.includes('location.range') ? { resolveProvider: true } : true,
       workspace: { workspaceFolders: { supported: true, changeNotifications: true },
         fileOperations: Object.fromEntries(['willCreate', 'didCreate', 'willRename', 'didRename', 'willDelete', 'didDelete']
           .filter(key => client?.workspace?.fileOperations?.[key as keyof NonNullable<NonNullable<ClientCapabilities['workspace']>['fileOperations']>] === true)

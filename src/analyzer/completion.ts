@@ -31,6 +31,7 @@ import {
 } from './guiResolution';
 
 export interface CompletionInput {
+  deferDocumentation?: boolean;
   locale?: string;
   analysis: AnalyzedDocument;
   text: string;
@@ -554,10 +555,11 @@ function completionFromDeclaration(
   };
 }
 
-function completionDocumentation(
+export function completionDocumentation(
   input: CompletionInput,
   declaration: AnalysisDeclaration
-): Pick<AnalysisCompletionItem, 'documentation' | 'documentationMarkdown'> {
+): Pick<AnalysisCompletionItem, 'documentation' | 'documentationMarkdown' | 'documentationTarget'> {
+  if (input.deferDocumentation) { return { documentationTarget: declaration }; }
   const origin = declarationOrigin(input.analysis.uri, declaration.uri, input.locale);
   const rendered = renderedDocumentationFor(input.analysis, input.workspaceIndex, declaration, input.locale);
   const documentation = [rendered?.plainText ?? declaration.documentation, origin].filter((text) => text !== undefined).join('\n\n');

@@ -180,6 +180,7 @@ export type AnalysisCompletionItemKind =
   | 'event';
 
 export interface AnalysisCompletionItem {
+  documentationTarget?: AnalysisDeclaration;
   documentationMarkdown?: string;
   name: string;
   kind: AnalysisCompletionItemKind;

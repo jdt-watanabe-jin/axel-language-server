@@ -1,5 +1,7 @@
 # LSP capability negotiation
 
+For completion, inlay-hint and workspace-symbol resolve capabilities and Code Lens refresh, see [deferred details](deferred-details.md).
+
 `workspace.configuration` is required. Initialization fails with an explicit error if the client does not advertise it. Configuration changes trigger another configuration request; legacy notification payloads do not become server settings.
 
 Semantic-token and diagnostic refresh requests are sent only when the client advertises `workspace.semanticTokens.refreshSupport` or `workspace.diagnostics.refreshSupport`, respectively. This applies to settings changes, watched files, document lifecycle changes and background indexing. Refresh rejection is logged and does not become an unhandled promise rejection. Inlay-hint refresh already has its own capability check. Clients without refresh support can still request the corresponding document results; the server does not silently enable Push Diagnostics.

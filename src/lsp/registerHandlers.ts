@@ -1,3 +1,5 @@
+import { registerCodeLensHandlers } from './codeLens';
+import { registerDeferredItemHandlers } from './deferredItems';
 import { registerDocumentLinkHandlers } from './documentLinks';
 import { registerNavigationFeatures } from './navigationFeatures';
 import { ProjectScope, normalizeProjectSettings } from '../analyzer/projectScope';
@@ -6,7 +8,7 @@ import { ConfigurationManager, configurationKeys } from './configuration';
 import { registerFileOperations } from './fileOperations';
 import { DidChangeConfigurationNotification, ErrorCodes } from 'vscode-languageserver/node';
 import { registerWorkspaceSymbolHandler } from './workspaceSymbols';
-import { normalizeInlayHintsSettings, toLspInlayHints } from './inlayHints';
+import { normalizeInlayHintsSettings } from './inlayHints';
 import type { InlayHintParams } from 'vscode-languageserver/node';
 import type { FoldingRangeCandidate } from '../analyzer/foldingRanges';
 import { registerFoldingRangeHandler } from './foldingRanges';
@@ -35,7 +37,7 @@ import type {
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { AnalyzeDocumentInput, AnalyzedDocument, AnalysisRange } from '../types/analysis';
 import { getCodeActions, type WorkspaceCodeActionIndex } from '../analyzer/codeActions';
-import { getCompletions, type WorkspaceCompletionIndex } from '../analyzer/completion';
+import { type WorkspaceCompletionIndex } from '../analyzer/completion';
 import { getFormattingEditsSteps } from '../analyzer/formatting';
 import { getHover, type WorkspaceDeclarationIndex } from '../analyzer/hover';
 import { getDefinitions, getReferencesSteps, type WorkspaceNavigationIndex } from '../analyzer/navigation';
@@ -45,7 +47,6 @@ import { getSignatureHelp } from '../analyzer/signatureHelp';
 import { collectSemanticTokens } from '../analyzer/semanticTokens';
 import { createInitializeResult } from './capabilities';
 import { toLspCodeActions } from './codeActions';
-import { toLspCompletionItemForClient } from './completion';
 import { toLspDefinitionLocations } from './definition';
 import { toDocumentDiagnosticReport } from './diagnostics';
 import { toLspDocumentSymbol } from './documentSymbols';
@@ -130,12 +131,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   const typeHierarchy = createTypeHierarchyIndex(context);
   const fileOperations = registerFileOperations(context, uris => invalidateFiles(uris));
   const workspaceSymbols = registerWorkspaceSymbolHandler(context, roots => {
-    projectScope.setRoots(roots); revision++; linkConfigurationRevision++; fileOperations.setRoots(roots); typeHierarchy.invalidate();
+    projectScope.setRoots(roots); revision++; linkConfigurationRevision++; fileOperations.setRoots(roots); typeHierarchy.invalidate(); codeLens?.refresh();
   });
   const updateOpenScope = () => projectScope.setOpenUris((context.documents.all?.() ?? []).map(document => document.uri));
   context.documents.onDidChangeContent(updateOpenScope);
   context.documents.onDidClose(updateOpenScope);
   let revision = 0;
+  let codeLens: ReturnType<typeof registerCodeLensHandlers> | undefined = undefined;
   let linkConfigurationRevision = 0;
   let documentsDirty = false;
   const invalidateRequests = () => { revision++; if (!context.configuration?.isReady) { documentsDirty = true; } };
@@ -179,6 +181,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     runAnalysisStepsAsync(steps, token, validateRequest);
   const analyzeRequest = (context: HandlerRegistrationContext, token: CancellationToken, diagnostic: boolean, input: AnalyzeDocumentInput) =>
     analyzeRequestDocument(context, token, diagnostic, input, validateRequest);
+  const deferredItems = registerDeferredItemHandlers(context, { request }, () => revision);
   let locale: string | undefined;
   let hoverMarkdown = false;
   let completionMarkdown = false;
@@ -187,6 +190,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   let featureSettings: Record<string, unknown> = {};
   let inlayRefreshSupported = false;
   const refreshInlayHints = (): void => {
+    codeLens?.refresh();
     if (inlayRefreshSupported) {
       void context.connection.languages.inlayHint?.refresh().catch(error => context.logger.error(`Inlay hint refresh failed: ${getErrorMessage(error)}`));
     }
@@ -259,7 +263,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onDidChangeConfiguration?.(() => context.configuration!.refresh());
   registerDocumentLinkHandlers(context, () => revision, () => linkConfigurationRevision);
   const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => {
-    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose();
+    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); codeLens?.dispose(); deferredItems.clear();
     return Promise.all([workspaceSymbols?.dispose(), typeHierarchy.dispose()]).then(() => undefined);
   });
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>, flushChanges = true): Promise<T> => {
@@ -279,7 +283,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     }
   };
   context.connection.onDidChangeWatchedFiles(event => invalidateFiles(event.changes.map(change => change.uri)));
-  registerBackgroundRefreshHandlers(context, refreshInlayHints);
+  registerBackgroundRefreshHandlers(context, () => { deferredItems.clear(); refreshInlayHints(); });
   context.connection.onInitialized?.(() => {
     workspaceSymbols?.start();
     if (dynamicConfiguration) {
@@ -304,6 +308,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   });
 
   registerTypeHierarchyHandlers(context, typeHierarchy, { request });
+  codeLens = registerCodeLensHandlers(context, typeHierarchy, { request, analyzeRequest: (token, input) => analyzeRequest(context, token, false, input) }, () => revision);
   registerNavigationFeatures(context, typeHierarchy, { request, analyzeRequest: (token, input) => analyzeRequest(context, token, false, input) }, () => revision);
 
   context.connection.languages.diagnostics.on(request(async (params, token) => {
@@ -379,13 +384,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           version: document.version,
           text
         });
-        return getCompletions({
+        return deferredItems.completions({
           locale,
           analysis,
           text,
           position: params.position,
           workspaceIndex: context.analyzer
-        }).map(item => toLspCompletionItemForClient(item, completionMarkdown));
+        }, completionMarkdown);
       } catch (error: unknown) {
         rethrowCancellation(error);
         throwIfCancelled(token);
@@ -642,10 +647,11 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       try {
         const text = document.getText();
         const analysis = await analyzeRequest(context, token, false, {uri:document.uri,version:document.version,text});
-        return toLspInlayHints(await runRequestSteps(getInlayHintsSteps({
+        return deferredItems.inlayHints(await runRequestSteps(getInlayHintsSteps({
           analysis,text,range:params.range,workspaceIndex:context.analyzer,
-          suppressWhenArgumentContainsName:settings.suppressWhenArgumentContainsName
-        }),token));
+          suppressWhenArgumentContainsName:settings.suppressWhenArgumentContainsName,
+          includeResolveMetadata:deferredItems.inlayResolveEnabled()
+        }),token), analysis, locale);
       } catch (error: unknown) {
         rethrowCancellation(error);
         throwIfCancelled(token);

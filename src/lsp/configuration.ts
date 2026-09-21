@@ -19,7 +19,8 @@ export function configurationKeys(settings: Settings) {
   return {
     analysis: canonical(analysis),
     features: canonical({ workspaceSymbols: settings.workspaceSymbols ?? 'Just My Code', hover: settings.hover ?? 'default', autocomplete: settings.autocomplete ?? 'default',
-      errorSquiggles: settings.errorSquiggles ?? 'enabledIfIncludesResolve', inlayHints: normalizeInlayHintsSettings(settings) }),
+      errorSquiggles: settings.errorSquiggles ?? 'enabledIfIncludesResolve', inlayHints: normalizeInlayHintsSettings(settings),
+      codeLens: { enabled: (settings.codeLens as Settings | undefined)?.enabled === true } }),
     symbols: canonical({ project: normalizeProjectSettings(settings),
       defines: analysis.defines, tool: analysis.tool, targetPlatform: analysis.targetPlatform, internalFeatures: analysis.internalFeatures }),
     files: canonical({ includeRoots: analysis.includeRoots, project: normalizeProjectSettings(settings),
@@ -66,6 +67,11 @@ export function validateSettings(value: unknown): Settings {
       const patterns = (value.project as Settings)[key];
       if (patterns !== undefined && (!Array.isArray(patterns) || !patterns.every(validProjectPattern))) { fail(`project.${key}`); }
     }
+  }
+  if (value.codeLens !== undefined) {
+    if (!object(value.codeLens)) { fail('codeLens'); }
+    const enabled = (value.codeLens as Settings).enabled;
+    if (enabled !== undefined && typeof enabled !== 'boolean') { fail('codeLens.enabled'); }
   }
   if (value.inlayHints !== undefined) {
     if (!object(value.inlayHints)) { fail('inlayHints'); }

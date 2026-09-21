@@ -32,6 +32,7 @@ The server currently supports these Language Server Protocol features:
 - Type Hierarchy from type and variable names, with direct base types and derived types across unopened project files. See [type hierarchy](docs/user/type-hierarchy.md) for supported targets and [implementation](docs/developer/type-hierarchy.md) for resolution, indexing and cancellation.
 - Prepare Rename and Rename for safe resolved symbols, including references in included files when the symbol identity is known.
 - Code actions for deterministic missing-include quick fixes.
+- Lazy completion, inlay-hint and workspace-symbol details, plus opt-in reference and implementation Code Lens. See [Code Lens](docs/user/code-lens.md) and [resolve contracts](docs/developer/deferred-details.md). These features require the linked development build; the extension's pinned `v0.1.0` dependency is not updated.
 - Parameter-name inlay hints for resolved function and method arguments, disabled by default. See [inlay hints](docs/user/inlay-hints.md) for configuration, suppression, overloads and source mapping.
 - Signature help for functions, methods, inherited member calls, `this->` member calls, forced-include functions, function-like macros, dialog-owner methods, and GUI part member calls.
 - Semantic tokens for declarations and references, including functions, variables, parameters, types, enum members, macros, member access, method calls, GUI receiver paths, GUI event declarations, and AXEL execution file names.

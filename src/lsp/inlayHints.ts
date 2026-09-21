@@ -15,5 +15,5 @@ export function normalizeInlayHintsSettings(settings: unknown): InlayHintsSettin
 }
 
 export function toLspInlayHints(hints: AnalysisInlayHint[]): InlayHint[] {
-  return hints.map(hint=>({...hint,kind:InlayHintKind.Parameter,paddingRight:true}));
+  return hints.map(hint=>({position:hint.position,label:hint.label,kind:InlayHintKind.Parameter,paddingRight:true}));
 }

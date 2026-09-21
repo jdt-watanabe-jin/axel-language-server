@@ -1,11 +1,12 @@
-import type { AnalysisPosition, AnalysisRange, AnalyzedDocument } from '../types/analysis';
+import type { AnalysisDeclaration, AnalysisPosition, AnalysisRange, AnalyzedDocument } from '../types/analysis';
 import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import { callTargetDeclarations, findNavigationTargetDeclaration, type WorkspaceNavigationIndex } from './navigation';
 import { acceptedArgumentCounts, comparePositions, contains } from './resolution';
 import { field } from './typeChecking/syntax';
 
-export interface AnalysisInlayHint { position: AnalysisPosition; label: string }
+export interface AnalysisInlayHint { position: AnalysisPosition; label: string; resolveTarget?: { declaration: AnalysisDeclaration; parameter: number } }
 export interface InlayHintsInput {
+  includeResolveMetadata?: boolean;
   analysis: AnalyzedDocument;
   text: string;
   range: AnalysisRange;
@@ -88,8 +89,11 @@ export function* getInlayHintsSteps(input: InlayHintsInput): Generator<AnalysisS
       const span = argumentRange(slot);
       const argumentText = text.slice(offset(span.start),offset(span.end));
       if (input.suppressWhenArgumentContainsName && argumentText.toLowerCase().includes(name.toLowerCase())) { continue; }
-      const hint = {position:valueRange.start,label:name + ':'};
-      hints.set(JSON.stringify(hint),hint);
+      const hint: AnalysisInlayHint = {position:valueRange.start,label:name + ':'};
+      if (input.includeResolveMetadata && candidates.length === 1) {
+        hint.resolveTarget = { declaration: candidates[0], parameter: i };
+      }
+      hints.set(JSON.stringify([hint.position, hint.label]),hint);
     }
   }
   return [...hints.values()].sort((a,b)=>comparePositions(a.position,b.position) || a.label.localeCompare(b.label));
