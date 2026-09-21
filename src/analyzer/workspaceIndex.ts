@@ -1,3 +1,4 @@
+import type { DocumentLinkCandidate } from './documentLinks';
 import { collectSemanticTokens } from './semanticTokens';
 import type { ProjectScope } from './projectScope';
 import type { FoldingRangeCandidate } from './foldingRanges';
@@ -34,7 +35,7 @@ import type {
 } from '../types/analysis';
 import { DocumentAnalyzer } from './documentAnalyzer';
 import { collectForcedIncludeFiles, type ForcedIncludeOptions } from './forcedIncludes';
-import { resolveInclude, resolveScriptExecution, type IncludeResolution } from './includeResolver';
+import { isIncludeFile, resolveInclude, resolveScriptExecution, type IncludeResolution } from './includeResolver';
 import type { WorkspaceDeclarationLookup } from './resolution';
 import { collectSemanticDiagnostics } from './semanticDiagnostics';
 import { normalizeWorkspaceIndexOptions } from './workspaceConfig';
@@ -371,6 +372,21 @@ export class WorkspaceIndex {
     return yield* this.outlineAnalyzer.getDocumentSymbolsSteps({ ...input, tool: this.tool,
       targetPlatform: this.targetPlatform, internalFeatures: this.internalFeatures,
       preprocessorSymbols: defaultPreprocessorSymbols(this.defines).filter(symbol => !isSystemMacroName(symbol.name)) });
+  }
+
+  public *getDocumentLinksSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, DocumentLinkCandidate[], void> {
+    return yield* this.outlineAnalyzer.getDocumentLinksSteps(input);
+  }
+
+  /** Resolve only the selected path; do not index or parse its target. */
+  public resolveDocumentLink(sourceUri: string, candidate: DocumentLinkCandidate): string | undefined {
+    const includingFilePath = filePathFromUri(sourceUri);
+    if (!includingFilePath) { return undefined; }
+    const resolution = candidate.kind === 'script'
+      ? resolveScriptExecution({ includingFilePath, scriptPath: candidate.path, includeRoots: this.includeRoots })
+      : resolveInclude({ includingFilePath,
+          includeText: includeTextForResolution(candidate.path, candidate.includeKind ?? 'expression'), includeRoots: this.includeRoots });
+    return resolution.status === 'resolved' ? resolution.uri : undefined;
   }
 
   public *getSelectionRangesSteps(input: AnalyzeDocumentInput, positions: readonly import('../types/analysis').AnalysisPosition[]): Generator<AnalysisStep, import('./selectionRanges').AnalysisSelectionRange[], void> {
@@ -1585,7 +1601,7 @@ export class WorkspaceIndex {
     this.includeCandidateDependencies.set(sourceUri, candidates);
     const resolution = resolveInclude({ ...input, fileExists: file => {
       candidates.add(pathToFileURL(file).toString());
-      return input.fileExists ? input.fileExists(file) : fs.existsSync(file);
+      return input.fileExists ? input.fileExists(file) : isIncludeFile(file);
     } });
     cache?.set(key, resolution);
     return resolution;

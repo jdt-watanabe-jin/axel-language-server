@@ -84,12 +84,12 @@ suite('Macro include lookup scaling', () => {
     const index=fixtures.createWorkspaceIndex();
     const uri=pathToFileURL(path.join(root,'main.axl')).toString();
     index.analyzeDocument({uri,version:1,text:'#include "value.h"\n'.repeat(20)});
-    const descriptor=Object.getOwnPropertyDescriptor(fs,'existsSync')!;
-    const exists=fs.existsSync;
+    const descriptor=Object.getOwnPropertyDescriptor(fs,'statSync')!;
+    const stat=fs.statSync;
     let checks=0;
-    Object.defineProperty(fs,'existsSync',{...descriptor,value:(file:fs.PathLike)=>{
+    Object.defineProperty(fs,'statSync',{...descriptor,value:(file:fs.PathLike)=>{
       if(String(file)===header) { checks++; }
-      return exists(file);
+      return stat(file);
     }});
     try {
       const macros=index.findVisibleMacroDefinitions(uri,'VALUE');
@@ -99,6 +99,6 @@ suite('Macro include lookup scaling', () => {
       assert.strictEqual(checks,1);
       index.findVisibleMacroDefinitions(uri,'VALUE');
       assert.strictEqual(checks,2,'A later lookup must check the current filesystem again');
-    } finally { Object.defineProperty(fs,'existsSync',descriptor); }
+    } finally { Object.defineProperty(fs,'statSync',descriptor); }
   });
 });

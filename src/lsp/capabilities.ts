@@ -48,6 +48,7 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
       documentSymbolProvider: true,
+      documentLinkProvider: { resolveProvider: true },
       workspaceSymbolProvider: true,
       workspace: { workspaceFolders: { supported: true, changeNotifications: true },
         fileOperations: Object.fromEntries(['willCreate', 'didCreate', 'willRename', 'didRename', 'willDelete', 'didDelete']

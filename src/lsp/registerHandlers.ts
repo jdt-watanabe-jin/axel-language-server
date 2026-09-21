@@ -1,3 +1,4 @@
+import { registerDocumentLinkHandlers } from './documentLinks';
 import { registerNavigationFeatures } from './navigationFeatures';
 import { ProjectScope, normalizeProjectSettings } from '../analyzer/projectScope';
 import { getInlayHintsSteps } from '../analyzer/inlayHints';
@@ -69,6 +70,8 @@ export interface AnalyzerLike extends
   WorkspaceCompletionIndex,
   WorkspaceNavigationIndex,
   WorkspaceCodeActionIndex {
+  getDocumentLinksSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, import('../analyzer/documentLinks').DocumentLinkCandidate[], void>;
+  resolveDocumentLink?(sourceUri: string, candidate: import('../analyzer/documentLinks').DocumentLinkCandidate): string | undefined;
   getDocumentSymbolsSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, import('../types/analysis').AnalysisSymbol[], void>;
   getSelectionRangesSteps?(input: AnalyzeDocumentInput, positions: readonly import('../types/analysis').AnalysisPosition[]): Generator<AnalysisStep, import('../analyzer/selectionRanges').AnalysisSelectionRange[], void>;
   getFoldingRangesSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void>;
@@ -127,12 +130,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   const typeHierarchy = createTypeHierarchyIndex(context);
   const fileOperations = registerFileOperations(context, uris => invalidateFiles(uris));
   const workspaceSymbols = registerWorkspaceSymbolHandler(context, roots => {
-    projectScope.setRoots(roots); revision++; fileOperations.setRoots(roots); typeHierarchy.invalidate();
+    projectScope.setRoots(roots); revision++; linkConfigurationRevision++; fileOperations.setRoots(roots); typeHierarchy.invalidate();
   });
   const updateOpenScope = () => projectScope.setOpenUris((context.documents.all?.() ?? []).map(document => document.uri));
   context.documents.onDidChangeContent(updateOpenScope);
   context.documents.onDidClose(updateOpenScope);
-    let revision = 0;
+  let revision = 0;
+  let linkConfigurationRevision = 0;
   let documentsDirty = false;
   const invalidateRequests = () => { revision++; if (!context.configuration?.isReady) { documentsDirty = true; } };
   const invalidateFiles = (uris: string[]): void => {
@@ -225,7 +229,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
         typeHierarchy.configure(settings);
         appliedKeys = keys;
       },
-    () => { revision++; analysisChanged = false; featuresChanged = false; filesChanged = false;
+    () => { revision++; linkConfigurationRevision++; analysisChanged = false; featuresChanged = false; filesChanged = false;
       context.analyzer.setAnalysisEnabled?.(false); workspaceSymbols?.pause(); fileOperations.pause(); typeHierarchy.pause(); },
     message => {
       context.logger.error(message);
@@ -253,6 +257,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     return createInitializeResult(params.capabilities);
   });
   context.connection.onDidChangeConfiguration?.(() => context.configuration!.refresh());
+  registerDocumentLinkHandlers(context, () => revision, () => linkConfigurationRevision);
   const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => {
     context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose();
     return Promise.all([workspaceSymbols?.dispose(), typeHierarchy.dispose()]).then(() => undefined);

@@ -1,3 +1,4 @@
+import { collectDocumentLinksSteps, type DocumentLinkCandidate } from './documentLinks';
 import { collectSelectionRangesSteps, type AnalysisSelectionRange } from './selectionRanges';
 import { collectFoldingRangesSteps, type FoldingRangeCandidate } from './foldingRanges';
 import { collectHighlightMacrosSteps } from './documentHighlightMacros';
@@ -53,6 +54,7 @@ export class DocumentAnalyzer {
   private readonly parser: Parser;
   private readonly logger: AnalysisLogger;
   private readonly cache = new Map<string, CachedAnalysis>();
+  private readonly linkCache = new Map<string, { version: number; text: string; links: DocumentLinkCandidate[] }>();
   private readonly outlineCache = new Map<string, { key: string; symbols: AnalysisSymbol[] }>();
   private readonly syntaxCache = new Map<string, {version:number; roots:Map<string, Parser.SyntaxNode>}>();
 
@@ -104,6 +106,17 @@ export class DocumentAnalyzer {
       }), evaluation.inactiveRanges);
       this.outlineCache.set(input.uri, { key, symbols });
       return symbols;
+    } finally { this.releaseSyntax(input.uri); }
+  }
+
+  public *getDocumentLinksSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, DocumentLinkCandidate[], void> {
+    const cached = this.linkCache.get(input.uri);
+    if (cached?.version === input.version && cached.text === input.text) { return cached.links; }
+    yield;
+    try {
+      const links = yield* collectDocumentLinksSteps(this.syntaxRoot(input));
+      this.linkCache.set(input.uri, { version: input.version, text: input.text, links });
+      return links;
     } finally { this.releaseSyntax(input.uri); }
   }
 
@@ -301,12 +314,14 @@ export class DocumentAnalyzer {
 
   public clear(uri?: string): void {
     if (uri === undefined) {
+      this.linkCache.clear();
       this.outlineCache.clear();
       this.cache.clear();
       this.syntaxCache.clear();
       return;
     }
 
+    this.linkCache.delete(uri);
     this.outlineCache.delete(uri);
     this.cache.delete(uri);
     this.syntaxCache.delete(uri);

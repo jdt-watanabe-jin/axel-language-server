@@ -38,6 +38,12 @@ interface ParsedIncludeText {
   kind: AnalysisIncludeKind;
 }
 
+/** A directory must not shadow a later file candidate (notably extensionless scripts). */
+export function isIncludeFile(filePath: string): boolean {
+  try { return fs.statSync(filePath).isFile(); }
+  catch { return false; }
+}
+
 export function resolveInclude(input: ResolveIncludeInput): IncludeResolution {
   const parsed = parseIncludeText(input.includeText);
   if (parsed.kind === 'expression') {
@@ -55,7 +61,7 @@ export function resolveInclude(input: ResolveIncludeInput): IncludeResolution {
     kind: parsed.kind,
     includeRoots: input.includeRoots
   });
-  const fileExists = input.fileExists ?? fs.existsSync;
+  const fileExists = input.fileExists ?? isIncludeFile;
   const resolved = candidates.find((candidate) => fileExists(candidate));
 
   if (resolved === undefined) {
@@ -83,7 +89,7 @@ export function resolveScriptExecution(input: Omit<ResolveIncludeInput, 'include
     scriptPath: input.scriptPath,
     includeRoots: input.includeRoots
   });
-  const fileExists = input.fileExists ?? fs.existsSync;
+  const fileExists = input.fileExists ?? isIncludeFile;
   const resolved = candidates.find((candidate) => fileExists(candidate));
 
   if (resolved === undefined) {
@@ -145,9 +151,9 @@ function includeFromNode(node: Parser.SyntaxNode): AnalysisInclude | null {
   };
 }
 
-function scriptExecutionFromNode(node: Parser.SyntaxNode): AnalysisScriptExecution | null {
-  const fileNode = node.namedChildren.find((child) => child.type === 'command_identifier');
-  if (fileNode === undefined) {
+export function scriptExecutionFromNode(node: Parser.SyntaxNode): AnalysisScriptExecution | null {
+  const fileNode = node.namedChildren.find((child) => child.type !== 'comment');
+  if (fileNode?.type !== 'command_identifier') {
     return null;
   }
 
