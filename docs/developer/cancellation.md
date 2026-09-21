@@ -16,6 +16,14 @@ The synchronous APIs remain available for tools and existing callers. Both paths
 
 ## Shared state
 
+Completed visible-URI and declaration collections are cached per source document. Full-context lookups prepare
+forced includes and startup scope before using their cache; cached-only semantic token lookups do not trigger this work.
+Public declaration lists remain independent arrays. Replacing an analyzed document or its include edges invalidates
+derived results for that document and its consumers. Ordinary unrelated edits retain completed derived results.
+Missing include candidates are also dependencies. Changes to forced headers (including transitive or previously
+missing dependencies), builtin catalogs, settings, or startup scope invalidate the shared context. Interrupted broad
+dependency invalidation requeues open documents. Rollback clears all derived collections before restoring valid inputs.
+
 - Request analysis suspends background advancement while it owns the workspace.
 - External edits, close events, settings, and watched-file changes invalidate the request revision. Open-document inputs are updated as soon as a change notification arrives, even when foreground indexing is coalesced.
 - Revision and token checks run before resuming suspended work and before returning results. Include-resolution caches are scoped to each synchronous generator step, never held globally across an `await`.

@@ -85,8 +85,12 @@ export class WorkspaceIndex {
   private readonly typeInputCache = new Map<string, TypeDiagnosticsInput>();
   private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
+  private readonly visibleDeclarationsCache = new Map<string, AnalysisDeclaration[]>();
+  private readonly cachedVisibleDeclarationsCache = new Map<string, AnalysisDeclaration[]>();
+  private readonly definiteVisibleUrisCache = new Map<string, string[]>();
   private readonly derivedCache = new WorkspaceDerivedCache([
-    this.documentationCache, this.callResolutionCache, this.typeInputCache, this.semanticResultCache
+    this.documentationCache, this.callResolutionCache, this.typeInputCache, this.semanticResultCache,
+    this.visibleDeclarationsCache, this.cachedVisibleDeclarationsCache, this.definiteVisibleUrisCache
   ]);
   private readonly analyzer: DocumentAnalyzer;
   private readonly outlineAnalyzer = new DocumentAnalyzer();
@@ -151,7 +155,7 @@ export class WorkspaceIndex {
       visited.add(uri);
       const document = source.documents.get(uri);
       if (!document) { continue; }
-      this.documents.set(uri, { ...document });
+      this.setIndexedDocument(uri, { ...document });
       const includes = new Set(source.includeGraph.get(uri));
       this.replaceIncludeEdges(uri, includes, new Set(source.definiteIncludeGraph.get(uri)));
       pending.push(...includes);
@@ -273,7 +277,7 @@ export class WorkspaceIndex {
       if (active && !active.login) { pending.set(active.uri, active.filePath); }
       this.clearCachedAnalysis();
       for (const [uri, document] of valid) {
-        this.documents.set(uri, document);
+        this.setIndexedDocument(uri, document);
         this.replaceIncludeEdges(uri, edges.get(uri) ?? new Set(), definiteEdges.get(uri) ?? new Set());
         const context = contexts.get(uri);
         if (context) { this.includeContexts.set(uri, context); }
@@ -315,7 +319,7 @@ export class WorkspaceIndex {
     }
 
     const analysis = yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
-    this.documents.set(input.uri, {
+    this.setIndexedDocument(input.uri, {
       analysis,
       version: input.version,
       filePath: filePathFromUri(input.uri),
@@ -456,7 +460,7 @@ export class WorkspaceIndex {
 
     const initialAnalysis = cached?.version === input.version ? cached.analysis
       : yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
-    this.documents.set(input.uri, {
+    this.setIndexedDocument(input.uri, {
       analysis: initialAnalysis,
       version: input.version,
       filePath: filePathFromUri(input.uri),
@@ -474,7 +478,7 @@ export class WorkspaceIndex {
       this.indexingForcedIncludes = forced;
       try { return work(); } finally { this.indexingForcedIncludes = previous; }
     });
-    this.documents.set(input.uri, {
+    this.setIndexedDocument(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
       analysis,
       workspaceDiagnosticsComplete: true
@@ -490,7 +494,7 @@ export class WorkspaceIndex {
       const cached = this.documents.get(indexed.uri);
       if (cached?.workspaceDiagnosticsComplete) { return indexed; }
       const analysis = this.withWorkspaceDiagnostics(indexed);
-      if (cached) { this.documents.set(indexed.uri, { ...cached, analysis, workspaceDiagnosticsComplete: true }); }
+      if (cached) { this.setIndexedDocument(indexed.uri, { ...cached, analysis, workspaceDiagnosticsComplete: true }); }
       return analysis;
     });
   }
@@ -558,12 +562,18 @@ export class WorkspaceIndex {
 
   public listVisibleDeclarations(sourceUri: string): AnalysisDeclaration[] {
     this.ensureForcedIncludesIndexed();
+    // Preparing startup scope can publish new globals and invalidate derived values.
+    this.loginScope(sourceUri);
+    const cached = this.visibleDeclarationsCache.get(sourceUri);
+    if (cached) { return cached.slice(); }
     const declarations = [
       ...(this.documents.get(sourceUri)?.analysis.declarations ?? []),
       ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
-    return uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri)]);
+    const result = uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri)]);
+    this.visibleDeclarationsCache.set(sourceUri, result);
+    return result.slice();
   }
 
   private visibleLoginDeclarations(sourceUri: string, cachedOnly = false): AnalysisDeclaration[] {
@@ -590,6 +600,7 @@ export class WorkspaceIndex {
       forcedIncludeFiles: this.forcedIncludeFiles, forcedIncludeRoots: this.forcedIncludeRoots,
       tool: this.tool, targetPlatform: this.targetPlatform, internalFeatures: this.internalFeatures,
       defines: this.defines, logger: this.logger, openDocumentInput: uri => this.openInputs.get(fileIdentity(uri)) }, this);
+    this.derivedCache.invalidate();
     return this.loginSnapshot;
   }
 
@@ -800,8 +811,7 @@ export class WorkspaceIndex {
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
     this.includeCandidateDependencies.delete(uri);
-    this.derivedCache.invalidate();
-    this.documents.delete(uri);
+    this.deleteIndexedDocument(uri);
     this.replaceIncludeEdges(uri, new Set());
     this.analyzer.clear(uri);
   }
@@ -848,18 +858,17 @@ export class WorkspaceIndex {
       || this.loginSnapshot.dependencyUris.some(dependency => fileIdentity(dependency) === fileIdentity(uri)))) {
       this.loginGeneration++;
       this.loginSnapshot = undefined;
-      this.clearCachedAnalysis();
+      this.clearInvalidatedAnalysis();
       return;
     }
-    this.derivedCache.invalidate();
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
-    this.builtinCatalogCache = undefined;
-    if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().includes(uri)) {
-      this.clearCachedAnalysis();
+    const dependents = this.collectDependents(uri);
+    if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().some(forced => dependents.has(forced))) {
+      this.loginGeneration++;
+      this.loginSnapshot = undefined;
+      this.clearInvalidatedAnalysis();
       return;
     }
-    this.forcedIncludesIndexed = false;
-    const dependents = this.collectDependents(uri);
     // Missing include candidates have no resolved graph edge. Track them so
     // creating a header also invalidates documents waiting for that header.
     for (const [sourceUri, dependencies] of [...this.diagnosticIncludeDependencies, ...this.includeCandidateDependencies]) {
@@ -867,8 +876,16 @@ export class WorkspaceIndex {
         for (const dependentUri of this.collectDependents(sourceUri)) { dependents.add(dependentUri); }
       }
     }
+    // A newly created, previously missing forced dependency has no resolved edge yet.
+    if (this.knownForcedIncludeUris().some(forced => dependents.has(forced))) {
+      this.loginGeneration++;
+      this.loginSnapshot = undefined;
+      this.clearInvalidatedAnalysis();
+      return;
+    }
+    this.invalidateDerivedFor(dependents);
     for (const dependentUri of dependents) {
-      this.documents.delete(dependentUri);
+      this.deleteIndexedDocument(dependentUri);
       this.analyzer.clear(dependentUri);
     }
   }
@@ -919,7 +936,7 @@ export class WorkspaceIndex {
     const text = yield* readAnalysisFile(normalizedPath);
     const input = { uri, version: 0, text, ...this.includeContexts.get(uri) };
     const initialAnalysis = yield* this.analyzer.analyzeDocumentSteps({ ...input, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform }, true, true);
-    this.documents.set(uri, {
+    this.setIndexedDocument(uri, {
       analysis: initialAnalysis,
       filePath: normalizedPath,
       mtimeMs: stat.mtimeMs,
@@ -927,7 +944,7 @@ export class WorkspaceIndex {
     });
     yield* this.indexResolvedIncludesSteps(initialAnalysis, new Set([...visitedUris, uri]), forced, pendingInputs);
     const analysis = yield* this.reanalyzeWithVisibleContextSteps(input, initialAnalysis, forced, pendingInputs);
-    this.documents.set(uri, {
+    this.setIndexedDocument(uri, {
       analysis,
       filePath: normalizedPath,
       mtimeMs: stat.mtimeMs,
@@ -1067,7 +1084,7 @@ export class WorkspaceIndex {
       uncertainNames,
       macroDefinitions
     });
-    this.documents.set(input.uri, {
+    this.setIndexedDocument(input.uri, {
       ...(this.documents.get(input.uri) ?? {}),
       analysis,
       workspaceDiagnosticsComplete: false
@@ -1110,7 +1127,7 @@ export class WorkspaceIndex {
           const context = { macroDefinitions: [...visible.values()], preprocessorSymbols: [...visible.values()].map(macro =>
             ({ name: macro.name, value: macro.parameters ? undefined : macro.replacementText })) };
           if (JSON.stringify(context) !== JSON.stringify(this.includeContexts.get(resolution.uri))) {
-            this.documents.delete(resolution.uri);
+            this.deleteIndexedDocument(resolution.uri);
             this.includeContexts.set(resolution.uri, context);
           }
         }
@@ -1120,9 +1137,10 @@ export class WorkspaceIndex {
         const pending = pendingInputs.get(resolution.uri);
         const indexed = this.documents.get(resolution.uri);
         if (pending && indexed && !indexed.analysis.typeSnapshot) {
-          indexed.analysis = yield* this.analyzer.analyzeDocumentSteps({
+          const analysis = yield* this.analyzer.analyzeDocumentSteps({
             ...pending, tool: this.tool, internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform
           });
+          this.setIndexedDocument(resolution.uri, { ...indexed, analysis });
         }
       }
     }
@@ -1249,11 +1267,11 @@ export class WorkspaceIndex {
     const text = yield* readAnalysisFile(normalizedPath);
     const initialAnalysis = yield* this.analyzer.analyzeDocumentSteps({ uri, version: 0, text, tool: this.tool,
       internalFeatures: this.internalFeatures, targetPlatform: this.targetPlatform });
-    this.documents.set(uri, { analysis: initialAnalysis, filePath: normalizedPath,
+    this.setIndexedDocument(uri, { analysis: initialAnalysis, filePath: normalizedPath,
       mtimeMs: stat.mtimeMs, workspaceDiagnosticsComplete: false });
     this.replaceResolvedIncludeEdgesAndEnqueue(initialAnalysis);
     const analysis = yield* this.reanalyzeWithVisibleContextSteps({ uri, version: 0, text }, initialAnalysis);
-    this.documents.set(uri, { analysis, filePath: normalizedPath, mtimeMs: stat.mtimeMs,
+    this.setIndexedDocument(uri, { analysis, filePath: normalizedPath, mtimeMs: stat.mtimeMs,
       workspaceIndexComplete: true, workspaceDiagnosticsComplete: false });
     this.analyzer.releaseSyntax(uri);
   }
@@ -1271,6 +1289,10 @@ export class WorkspaceIndex {
 
   private replaceIncludeEdges(uri: string, includedUris: Set<string>, definiteUris = includedUris): void {
     const oldEdges = this.includeGraph.get(uri) ?? new Set<string>();
+    const oldDefinite = this.definiteIncludeGraph.get(uri) ?? new Set<string>();
+    if (oldEdges.size === includedUris.size && [...oldEdges].every(edge => includedUris.has(edge))
+      && oldDefinite.size === definiteUris.size && [...oldDefinite].every(edge => definiteUris.has(edge))) { return; }
+    this.invalidateDerivedFor(this.collectDependents(uri));
     for (const includedUri of oldEdges) {
       const dependents = this.reverseIncludeGraph.get(includedUri);
       dependents?.delete(uri);
@@ -1331,12 +1353,16 @@ export class WorkspaceIndex {
   }
 
   private listCachedVisibleDeclarations(sourceUri: string): AnalysisDeclaration[] {
+    const cached = this.cachedVisibleDeclarationsCache.get(sourceUri);
+    if (cached) { return cached; }
     const declarations = [
       ...(this.documents.get(sourceUri)?.analysis.declarations ?? []),
       ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
-    return uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri, true)]);
+    const result = uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri, true)]);
+    this.cachedVisibleDeclarationsCache.set(sourceUri, result);
+    return result;
   }
 
   private isUncertainRange(analysis: AnalyzedDocument, range: AnalysisRange): boolean {
@@ -1346,6 +1372,8 @@ export class WorkspaceIndex {
   // Potential reachability still drives indexing and invalidation. Only an
   // entirely definite include path can establish a declaration as visible.
   private collectDefiniteVisibleUris(sourceUri: string): string[] {
+    const cached = this.definiteVisibleUrisCache.get(sourceUri);
+    if (cached) { return cached; }
     const visible = new Set<string>();
     const visited = new Set<string>();
     const pending = [sourceUri, ...this.knownForcedIncludeUris()];
@@ -1356,7 +1384,9 @@ export class WorkspaceIndex {
       if (uri !== sourceUri) { visible.add(uri); }
       pending.push(...(this.definiteIncludeGraph.get(uri) ?? []));
     }
-    return [...visible].sort();
+    const result = [...visible].sort();
+    this.definiteVisibleUrisCache.set(sourceUri, result);
+    return result;
   }
 
   private collectVisibleUncertainNames(sourceUri: string): string[] {
@@ -1651,6 +1681,37 @@ export class WorkspaceIndex {
     } });
     cache?.set(key, resolution);
     return resolution;
+  }
+
+  private clearInvalidatedAnalysis(): void {
+    this.clearCachedAnalysis();
+    // A broad dependency edit may interrupt background work before its edges
+    // are published. Keep open documents queued so existing waiters settle on
+    // the new generation rather than an empty, provisionally indexed workspace.
+    for (const input of this.openInputs.values()) {
+      this.enqueueBackgroundDocument(input.uri, filePathFromUri(input.uri) ?? input.uri);
+    }
+  }
+
+  private invalidateDerivedFor(uris: Iterable<string>): void {
+    const affected = new Set(uris);
+    if (this.knownForcedIncludeUris().some(uri => affected.has(uri))) {
+      this.derivedCache.invalidate();
+    } else {
+      this.derivedCache.invalidate(affected);
+    }
+  }
+
+  private setIndexedDocument(uri: string, document: IndexedDocument): void {
+    if (this.documents.get(uri)?.analysis !== document.analysis) {
+      this.invalidateDerivedFor(this.collectDependents(uri));
+    }
+    this.documents.set(uri, document);
+  }
+
+  private deleteIndexedDocument(uri: string): void {
+    if (this.documents.has(uri)) { this.invalidateDerivedFor(this.collectDependents(uri)); }
+    this.documents.delete(uri);
   }
 
   private clearCachedAnalysis(): void {
