@@ -65,7 +65,7 @@ Task 1 → Task 2 → Task 3 → Task 4 → Task 5 → Task 6。共有する解�
 - Produces: startLspServer(requestTimeoutMs = 5000, options: {execArgv?: string[]} = {})。既存呼び出しはそのまま動作する。
 - 外部テスト環境変数: AXEL_STARTUP_SAMPLE、AXEL_STARTUP_ROOT、AXEL_STARTUP_SETTINGS、AXEL_STARTUP_ENCODING（既定shift_jis）、AXEL_STARTUP_OUTPUT、AXEL_STARTUP_BASELINE。SAMPLE未指定だけをskipとし、設定不正やファイル不在は失敗させる。
 
-- [ ] **Step 1: 比較ヘルパーのテストを先に追加する。**
+- [x] **Step 1: 比較ヘルパーのテストを先に追加する。**
 
 startupMeasurement.test.tsにassert、Diagnostic型、対象関数をimportし、suite('Startup measurement')内に置く。
 
@@ -84,7 +84,7 @@ test('compares complete diagnostics independently of response order', () => {
 });
 ```
 
-- [ ] **Step 2: 失敗を確認し、ヘルパーを実装する。**
+- [x] **Step 2: 失敗を確認し、ヘルパーを実装する。**
 
 Run: `npm run test:unit -- --grep "Startup measurement"`。最初は未作成モジュールで失敗する。
 
@@ -115,7 +115,7 @@ export function median(values: readonly number[]): number {
 
 digestは診断全体を再帰的にobjectのキー順で正規化し、診断ごとのJSON文字列をsortしてsha256化する。配列内の重複を消さない。range、severity、message、code、relatedInformation、tags、data等を落とさない。中央値は入力をコピーして数値sortし、偶数件は中央2値の平均、空入力はErrorとする。順序だけの差と内容の差を区別できることを上記テストで確認する。
 
-- [ ] **Step 3: 実際のstdio測定を3プロセスで順に実行する外部テストを追加する。**
+- [x] **Step 3: 実際のstdio測定を3プロセスで順に実行する外部テストを追加する。**
 
 suite名は'External startup performance'、timeoutは600000ms。各runは次の順序を守る。
 
@@ -150,7 +150,7 @@ fs、pathToFileURL、assert、performance、FullDocumentDiagnosticReport、start
 
 3回のdigest一致を検証する。出力JSONはschemaVersion=1、Nodeバージョン、入力バイト列とsettingsのsha256、encoding、samples、coldMedianMs、warmMedianMsを持つ。出力先は明示指定された一時ディレクトリとし、ソース本文や診断本文を保存しない。BASELINE指定時は入力・設定・encodingの一致とdiagnostic digest一致をassertし、改善率を出力する。25%は目標として報告し、共有CIの絶対時間制限にしない。
 
-- [ ] **Step 4: 解析対象数と合成fixtureの処理回数を確認するテストを追加する。**
+- [x] **Step 4: 解析対象数と合成fixtureの処理回数を確認するテストを追加する。**
 
 startupPipeline.test.tsのsuite名を'Startup pipeline'とし、useWorkspaceFixtures、WorkspaceIndex、CancellationTokenを使用する。既存loginScope.test.tsの最小GUI構文を使い、自作のGUIクラス、マクロ、段階的include、強制ヘッダー、bin/_login.axlを一時ディレクトリに生成する。実製品ソースは使わない。
 
@@ -165,7 +165,7 @@ assert.deepStrictEqual(repeated, result);
 
 main、headerUri、inputはfixtureで作成した値とする。logger.timingからdocument.analyzeの回数と一意URI数を集計し、入れ子を含む回数であると出力に明記する。実ファイルの文書数も、LSP測定とは別の内部API補助測定でlistVisibleDocumentsを用いて確認する。これをLSPのcoldMsに合算しない。
 
-- [ ] **Step 5: 基準値を保存し、同条件でCPUプロファイルを取得する。**
+- [x] **Step 5: 基準値を保存し、同条件でCPUプロファイルを取得する。**
 
 Run: `npm run test:external -- --grep "External startup performance"`。
 
@@ -173,7 +173,7 @@ Run: `npm run test:external -- --grep "External startup performance"`。
 
 lspClientのspawn引数を`[...(options.execArgv ?? []), path.resolve(__dirname, '../../server.js'), '--stdio']`にする。プロファイル用には別runで--cpu-profと一時ディレクトリを指定する。起動するのは作業領域のout/server.js。通常の3回測定にプロファイラーを混ぜない。関数ごとのself/inclusiveを分け、入れ子の時間を合算しない。
 
-- [ ] **Step 6: ヘルパー・合成テストを成功させ、測定手順を記載してコミットする。**
+- [x] **Step 6: ヘルパー・合成テストを成功させ、測定手順を記載してコミットする。**
 
 Run: `npm run test:unit -- --grep "Startup measurement"`、`npm run test:performance -- --grep "Startup pipeline"`。外部パス未指定のexternalテストはskipになることも確認する。
 Commit: `test: 初期解析の実測と出力比較を追加`。
@@ -184,7 +184,7 @@ Commit: `test: 初期解析の実測と出力比較を追加`。
 
 **Interfaces:** cachedSyntaxNode(root: Parser.SyntaxNode): Parser.SyntaxNodeを維持する。公開オプションを追加しない。
 
-- [ ] **Step 1: childrenを取得済みならnamedChildrenをネイティブから再取得しないテストを書く。**
+- [x] **Step 1: childrenを取得済みならnamedChildrenをネイティブから再取得しないテストを書く。**
 
 ```ts
 test('reuses an already enumerated child array', () => {
@@ -204,7 +204,7 @@ test('reuses an already enumerated child array', () => {
 
 Run: `npm run test:integration -- --grep "Parse-local syntax reads"`。追加テストがnamedReads=1で失敗することを確認する。既存の配列getter回数テストは新しい契約に更新するが、意味の比較は維持する。
 
-- [ ] **Step 2: 取得済み情報だけを使う分岐を追加する。**
+- [x] **Step 2: 取得済み情報だけを使う分岐を追加する。**
 
 Proxy.getのReflect.getより前に置く。
 
@@ -220,11 +220,11 @@ if (key === 'namedChildren' && values.has('children')) {
 
 namedChildrenしか要求されていないときはchildrenを先読みしない。child/namedChildも対応する配列が取得済みならそこから返すが、負数、範囲外、非整数についてはネイティブの挙動を比較してから分岐する。フィールド参照、範囲付きdescendantsOfTypeは既存のネイティブへの委譲を保ち、今回は独自の範囲判定を追加しない。
 
-- [ ] **Step 3: ネイティブとの互換性を表形式のfixtureで比較する。**
+- [x] **Step 3: ネイティブとの互換性を表形式のfixtureで比較する。**
 
 有効文、未完の関数呼び出し、コメントと文字列、匿名記号、欠落ノードを含む入力それぞれでchildren/namedChildren、parent、fieldNameForChild、childForFieldName、descendantsOfTypeの単一種類・複数種類・範囲指定を既存check関数で比較する。呼び出し順children→namedChildrenと逆順を別々のfresh viewで確認する。
 
-- [ ] **Step 4: 小規模と大規模で計測し、採用を判断する。**
+- [x] **Step 4: 小規模と大規模で計測し、採用を判断する。**
 
 Run: `npm run test:integration -- --grep "Parse-local syntax reads"`、`npm run test:performance -- --grep "Syntax snapshot traversal|Startup pipeline"`。Task 1の外部測定を実行し、ネイティブアクセス回数が減っても総時間・メモリが悪化する変更は採用しない。CPUプロファイルで別のアクセスが支配的なら、同じ互換性テストを先に追加した小変更で対処する。
 Commit: `perf: 構文木の取得済み子ノードを再利用`。
@@ -239,7 +239,7 @@ Commit: `perf: 構文木の取得済み子ノードを再利用`。
 - SourceSyntaxFacts.typeSnapshot(replacements: readonly TypeNode[]): TypeSnapshot。既存buildTypeSnapshotを呼ぶ。
 - キャッシュのルートはWeakMap<Parser.SyntaxNode, Map<string, SourceSyntaxFacts>>。rootとuriの両方を区別する。DocumentAnalyzerのclear/releaseSyntaxで既存の強いroot参照を解放する。
 
-- [ ] **Step 1: 文脈が異なっても共有可能な構文情報だけをテストする。**
+- [x] **Step 1: 文脈が異なっても共有可能な構文情報だけをテストする。**
 
 ```ts
 test('shares syntax facts but isolates different source trees', () => {
@@ -256,7 +256,7 @@ test('shares syntax facts but isolates different source trees', () => {
 
 新規テストのsuite名は'Source syntax facts'と'Analysis generation'。Run: `npm run test:integration -- --grep "Source syntax facts|Analysis generation"`。未作成モジュールによる失敗を確認する。
 
-- [ ] **Step 2: 遅延生成する構文情報を実装し、DocumentAnalyzerから使う。**
+- [x] **Step 2: 遅延生成する構文情報を実装し、DocumentAnalyzerから使う。**
 
 内部は次の条件で再利用する。snapshotは完成後だけ保持する。
 
@@ -275,7 +275,7 @@ function typeSnapshot(replacements: readonly TypeNode[]): TypeSnapshot {
 
 macrosとsystemはgetter内の未生成時に既存collectorを1回だけ呼ぶ。collectorの戻り値は内部の共有入力として扱い、フィルター等で新しい配列を作って意味解析へ渡す。evaluation、GUI解析、symbolIndex、highlightMacros、diagnosticsは構文のみでは決まらないので、このモジュールへ移さない。回復ノードが異なるsnapshotは再生成する。
 
-- [ ] **Step 3: 同一version・異なるtextの誤再利用を防ぐ回帰テストを書く。**
+- [x] **Step 3: 同一version・異なるtextの誤再利用を防ぐ回帰テストを書く。**
 
 ```ts
 test('does not reuse results for different text at the same version', () => {
@@ -290,7 +290,7 @@ test('does not reuse results for different text at the same version', () => {
 
 CachedAnalysisにtext: stringを保持し、version、text、analysisContextKey、生成モードの一致でのみ再利用する。cache.setのdependenciesOnly/fullの両経路を更新する。構文世代のrootsは既存どおり実際のtextで分離する。
 
-- [ ] **Step 4: 文脈・位置対応・中断を検証する。**
+- [x] **Step 4: 文脈・位置対応・中断を検証する。**
 
 同じ原文でpreprocessorSymbolsを変えた場合、GUI既知型を変えた場合、undefを挟む再定義、マクロ引数内の参照、条件付きincludeを既存fixtureから選び、fresh DocumentAnalyzerと再利用したanalyzerの診断・宣言・参照・highlightMacrosをdeepStrictEqualする。回復ノードは同じrangeでも別内容を与えsnapshotが共有されないことをassertする。途中まで進めたgenerator.return()後に再要求し、fresh結果と比較する。
 
@@ -303,7 +303,7 @@ Commit: `refactor: 原文の構文情報を解析文脈から分離して再利�
 
 **Interfaces:** WorkspaceDerivedCache constructor(caches: readonly Map<string, unknown>[])、invalidate(uris?: Iterable<string>): void。WorkspaceIndex内部のcache mapは型を維持し、helperは失効だけを担当する。
 
-- [ ] **Step 1: 指定URIだけの失効と全失効をテストする。**
+- [x] **Step 1: 指定URIだけの失効と全失効をテストする。**
 
 ```ts
 test('invalidates selected entries across all registered caches', () => {
@@ -320,7 +320,7 @@ test('invalidates selected entries across all registered caches', () => {
 
 suite名は'Workspace derived cache'。Run: `npm run test:unit -- --grep "Workspace derived cache"`。失敗を確認する。
 
-- [ ] **Step 2: 小さな失効helperを実装する。**
+- [x] **Step 2: 小さな失効helperを実装する。**
 
 ```ts
 export class WorkspaceDerivedCache {
@@ -340,7 +340,7 @@ export class WorkspaceDerivedCache {
 
 Mapはfor-ofで何度も使うのでurisを一度配列化する。documentationCache、callResolutionCache、typeInputCache、semanticResultCacheを登録する。
 
-- [ ] **Step 3: 既存の全clear操作をhelper経由に置き換える。**
+- [x] **Step 3: 既存の全clear操作をhelper経由に置き換える。**
 
 このコミットでは失効範囲を変えない。deleteDocument、invalidateUri、clearCachedAnalysisの各4連clearをderivedCache.invalidate()へ置換する。analysisRollbackは既存どおりclearCachedAnalysisを経由する。builtinCatalogCacheとforcedIncludesIndexedは固有の意味を持つため、この汎用helperへ移さない。
 
@@ -354,7 +354,7 @@ Commit: `refactor: ワークスペースの派生キャッシュ失効を集約`
 **Interfaces:** 公開API変更なし。内部にvisibleDeclarationsCache: Map<string, AnalysisDeclaration[]>、cachedVisibleDeclarationsCache: Map<string, AnalysisDeclaration[]>、definiteVisibleUrisCache: Map<string, string[]>を追加し、Task 4の失効helperに登録する。
 内部メソッドはinvalidateDerivedFor(uris: Iterable<string>): voidとし、呼び出し元が影響範囲を決める。キャッシュ済みだけを見る経路と、login/forced includeを読み込む経路のmapを分離する。
 
-- [ ] **Step 1: 無関係な編集で完成した結果が再利用される回帰テストを書く。**
+- [x] **Step 1: 無関係な編集で完成した結果が再利用される回帰テストを書く。**
 
 ```ts
 test('keeps derived results for an unrelated open document', () => {
@@ -373,7 +373,7 @@ test('keeps derived results for an unrelated open document', () => {
 
 suite名は'Derived cache invalidation'。Run: `npm run test:integration -- --grep "Derived cache invalidation"`。現行の全clearによりidentity比較で失敗することを確認する。
 
-- [ ] **Step 2: 依存関係を変えるすべての書き込みを対応表にして更新する。**
+- [x] **Step 2: 依存関係を変えるすべての書き込みを対応表にして更新する。**
 
 workspaceIndex.tsで次を検索し、各経路を改修する。
 
@@ -395,11 +395,11 @@ rg -n 'documents\.(set|delete|clear)|includeGraph\.(set|clear)|definiteIncludeGr
 
 通常ファイルの変更だけならbuiltinCatalogCacheとforcedIncludesIndexedを維持する。forced includeの推移的な依存先も広域変更と判定する。これを検証できない場合は従来の広域処理を維持し、可視結果の再利用部分だけ先に完成させる。不要な失効を減らすために未知の依存を無視しない。
 
-- [ ] **Step 3: 可視宣言とdefinite URIの計算結果を再利用する。**
+- [x] **Step 3: 可視宣言とdefinite URIの計算結果を再利用する。**
 
 listVisibleDeclarationsではensureForcedIncludesIndexedとloginの準備を済ませてからlookupし、既存sort/uniqueDeclarations結果を格納する。listCachedVisibleDeclarationsは準備を起動せず、別mapで同様に再利用する。collectDefiniteVisibleUrisも順序を維持して格納する。配列を外部呼び出し元が破壊的に変更していないかrgで確認し、既存の公開動作に必要なら公開境界ではコピーし内部共有のみ行う。
 
-- [ ] **Step 4: 失効マトリクスと可視性をfixtureで確認する。**
+- [x] **Step 4: 失効マトリクスと可視性をfixtureで確認する。**
 
 各ケースで変更後のindexと同じ最新入力から作ったfresh indexを比較する。比較対象はlistVisibleDeclarationsの内容、getSemanticTokens、callHierarchyTypeInput由来の型診断。以下をderivedCacheInvalidation.test.tsの個別testにする。
 
@@ -414,7 +414,7 @@ listVisibleDeclarationsではensureForcedIncludesIndexedとloginの準備を済�
 
 既存のrequestAnalysis.test.ts、includeInvalidation.test.ts、fileRename.test.ts、loginScope.test.tsを参照して、キャンセルやファイルイベントを既存APIで発生させる。テスト内でproductionのprivate mapを書き換えない。
 
-- [ ] **Step 5: 定常時の再計算回数を検証し、変更した共有状態を文書化する。**
+- [x] **Step 5: 定常時の再計算回数を検証し、変更した共有状態を文書化する。**
 
 visibleContextReuse.test.tsで、Task 1のfixtureの無変更要求を20回繰り返す。既存テストのnode:test mock.method方式で、宣言収集・sortの入力を作る処理が繰り返し実行されないことを確認する。関連先編集後は再実行されることも確認する。キャンセルの経路では結果の再利用だけで合格にせず、診断内容も比較する。
 
@@ -427,7 +427,7 @@ Commit: `perf: 依存関係に応じて可視解析結果を再利用`。
 
 **Interfaces:** 新しい製品APIなし。テストでWorkspaceIndex.deleteDocument(uri)とDocumentAnalyzer.clear(uri)を用いて世代終了を発生させる。
 
-- [ ] **Step 1: 編集・close後の参照保持を検証する。**
+- [x] **Step 1: 編集・close後の参照保持を検証する。**
 
 新規プロセスを--expose-gc付きで起動する任意のメモリ検証経路を追加する。大規模な合成文書の20世代を解析し、各世代で同じURIをcloseする。解析結果へのテスト側の強参照も破棄する。ヒープ値はGC後に採取する。WeakRefを利用する場合は生成したturn内で回収をassertせず、setImmediateを挟んでGCし、古い結果を保持していないことを確認する。
 
@@ -440,17 +440,17 @@ index.deleteDocument(uri);
 
 GC回収時刻は保証されないため、単一のderef結果を共有CIの必須条件にしない。標準CIではclose後に異なるtextを同一versionで再openしてfresh結果と一致することを必須とし、メモリ検証は前後のヒープ傾向と保持経路を確認する補助検証とする。キャッシュが旧世代を保持する場合は実装を直す。
 
-- [ ] **Step 2: 統合テストを実行する。**
+- [x] **Step 2: 統合テストを実行する。**
 
 Run: `npm run test:ci`。lint、unit、integration、e2e、performanceすべての終了コードを確認する。機能を省略して時間を短縮していないことをTask 1のdigestと合成fixtureで確認する。
 
-- [ ] **Step 3: 実ファイルを3プロセスで測定し、基準値と比較する。**
+- [x] **Step 3: 実ファイルを3プロセスで測定し、基準値と比較する。**
 
 Task 1の同じ環境変数・ファイル・設定を使い、AXEL_STARTUP_BASELINEを基準JSON、OUTPUTを別ファイルにする。入力hashが変わった場合は比較せず、旧版と新版の両方を同じ入力で再測定する。中央値、改善率、warm時間、診断digest一致、内部API補助測定の文書数を記録する。
 
 目標未達なら同条件でプロファイルし、残る支配的処理を報告する。承認済み範囲内の小修正は当該タスクへ戻して検証する。ワーカーや文法変更など新しい設計を必要とする案を無断で混ぜない。
 
-- [ ] **Step 4: ドキュメントと最終差分を確認する。**
+- [x] **Step 4: ドキュメントと最終差分を確認する。**
 
 startup-performance.mdには再現手順、Shift_JIS入力と依存ファイルUTF-8の区別、初回診断という測定境界、CPUプロファイルと通常測定の分離を記載する。個人の実ファイル内容やログ本文は追加しない。実測数値は完了報告へ記載し、一般的な性能保証としてREADMEへ書かない。LSPや設定に変更がないことを確認し、ユーザーマニュアルは変更しない。
 
@@ -470,4 +470,4 @@ Commit: `test: 初期解析改善の統合検証と世代解放を確認`。
 - 再現測定・結果互換性: Task 1・6。メモリ・文書更新: Task 6。
 - Review Focusの5項目は上記の該当タスクにテストを割り当てた。
 - 既存のhelper名は保持し、新設の型・メソッドはInterfacesに定義した。
-- 未実装の計画であり、チェックボックスは実行・検証が終わるまで完了にしない。
+- チェックボックスは実行・検証済みの手順を示す。25%以上の初期解析短縮目標は未達。

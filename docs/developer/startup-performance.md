@@ -29,3 +29,15 @@ CPU profiling adds overhead: never compare a profiled measurement with a normal 
 `npm run test:performance -- --grep "Startup pipeline"` uses portable, generated fixtures for startup scripts,
 forced includes, GUI classes, transitive includes and macros. Its analysis call count includes nested macro analysis;
 it is not the count of distinct documents. No proprietary installation is required by CI.
+
+`npm run test:performance -- --grep "Analysis lifetime"` checks twenty close/reopen generations at the same
+document version against fresh analysis. To inspect retention separately, build first and run a fresh process:
+
+```sh
+npm run build
+node --expose-gc node_modules/mocha/bin/mocha.js --ui tdd out/test/performance/analysisLifetime.test.js
+```
+
+This optional run prints post-GC heap sizes and the number of still-reachable old analysis results.
+Collection happens after yielding to another event-loop turn. GC timing and exact heap sizes are not CI assertions;
+inspect trends and retained references together rather than treating a single heap reading as a leak.

@@ -18,17 +18,24 @@ export interface TypeNode {
 }
 export interface TypeSnapshot { uri: string; root: TypeNode }
 export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacements: readonly TypeNode[] = []): TypeSnapshot {
+  const source = root.text;
+  const sourceStart = root.startIndex;
   function copy(node: Parser.SyntaxNode): TypeNode {
-    const replacement = replacements.find(item => item.start === node.startIndex && item.end >= node.endIndex);
+    const start = node.startIndex, end = node.endIndex;
+    const replacement = replacements.find(item => item.start === start && item.end >= end);
     if (replacement) { return replacement; }
     const children: TypeNode[] = [];
     const fields: Record<string, TypeNode[]> = {};
     const argumentDelimiters: TypeNode[] = [];
     const sourceChildren = node.children;
+    // The binding generates this metadata from the grammar's nodeTypeInfo.
+    // Unknown/recovery node classes lack it: preserve native lookup for those.
+    const fieldNames = (node as Parser.SyntaxNode & { fields?: readonly string[] }).fields;
+    const fieldless = Array.isArray(fieldNames) && fieldNames.length === 0;
     for (let i = 0; i < sourceChildren.length; i++) {
       const child = sourceChildren[i];
       if (replacements.some(item => item.start < child.startIndex && child.endIndex <= item.end)) { continue; }
-      const name = node.fieldNameForChild(i);
+      const name = fieldless ? undefined : node.fieldNameForChild(i);
       if (node.type === 'argument_list' && ['(', ',', ')'].includes(child.type)) { argumentDelimiters.push(copy(child)); }
       // A trailing comma in an unfinished call is retained under a recovery node.
       if (node.type === 'argument_list' && child.type === 'ERROR' && child.text === ',') {
@@ -39,7 +46,7 @@ export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacem
       if (child.isNamed) { children.push(item); }
       if (name) { (fields[name] ??= []).push(item); }
     }
-    return {...(argumentDelimiters.length ? {argumentDelimiters} : {}), ...(node.isMissing ? {missing:true} : {}), ...(isTypedVariadicParameter(node) ? {variadic:true} : {}), kind: node.type, text: node.text, start: node.startIndex, end: node.endIndex,
+    return {...(argumentDelimiters.length ? {argumentDelimiters} : {}), ...(node.isMissing ? {missing:true} : {}), ...(isTypedVariadicParameter(node) ? {variadic:true} : {}), kind: node.type, text: source.slice(start - sourceStart, end - sourceStart), start, end,
       range: {start:{line:node.startPosition.row, character:node.startPosition.column},
         end:{line:node.endPosition.row, character:node.endPosition.column}}, children, fields};
   }
