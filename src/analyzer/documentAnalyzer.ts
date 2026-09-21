@@ -10,11 +10,11 @@ import { conditionalReparse } from './conditionalReparse';
 import { macroReparseSteps } from './macroReparse';
 import { collectSyntaxRecovery } from './syntaxRecovery';
 import { resolveAmbiguousCalls } from './ambiguousCalls';
-import { buildTypeSnapshot } from './typeChecking/syntax';
+import { getSourceSyntaxFacts } from './sourceSyntaxFacts';
 import type * as Parser from 'tree-sitter';
 import { message } from '../i18n/messages';
 import { normalizeTargetPlatform } from './targetPlatform';
-import { collectSystemMacroSyntax, isSystemMacroName, normalizeInternalFeatures, normalizeTool } from './systemMacros';
+import { isSystemMacroName, normalizeInternalFeatures, normalizeTool } from './systemMacros';
 import type {
   AnalysisDiagnostic,
   AnalysisGuiClass,
@@ -35,7 +35,6 @@ import { collectDocumentSymbols } from './documentSymbols';
 import { buildGuiIndex, collectExternalGuiMethods } from './guiIndex';
 import { collectIncludes, collectScriptExecutions } from './includeResolver';
 import { collectMacroInvocations } from './macroInvocation';
-import { collectMacroDefinitions } from './macroIndex';
 import { evaluatePreprocessor } from './preprocessorEvaluation';
 import {
   collectPreprocessorSemanticTokenReferences,
@@ -46,6 +45,7 @@ import { buildSymbolIndex } from './symbolIndex';
 
 interface CachedAnalysis {
   version: number;
+  text: string;
   analysisContextKey: string;
   analysis: AnalyzedDocument;
 }
@@ -141,7 +141,7 @@ export class DocumentAnalyzer {
   private *computeDocumentSteps(input: AnalyzeDocumentInput, expandMacros: boolean, dependenciesOnly: boolean): Generator<AnalysisStep, AnalyzedDocument, void> {
     const analysisContextKey = analysisContextKeyFromInput(input) + String(expandMacros) + String(dependenciesOnly);
     const cached = this.cache.get(input.uri);
-    if (cached?.version === input.version && cached.analysisContextKey === analysisContextKey) {
+    if (cached?.version === input.version && cached.text === input.text && cached.analysisContextKey === analysisContextKey) {
       return cached.analysis;
     }
 
@@ -151,7 +151,9 @@ export class DocumentAnalyzer {
       ? conditionalReparse(input, text => this.parser.parse(text)) : undefined;
     const root = conditional ? this.syntaxRoot(input, conditional.text) : originalRoot;
     yield;
-    const systemSyntax = dependenciesOnly ? {references:[],mutations:[],excludedRanges:[]} : collectSystemMacroSyntax(originalRoot);
+    const syntaxFacts = getSourceSyntaxFacts(root, input.uri);
+    const systemSyntax = dependenciesOnly ? {references:[],mutations:[],excludedRanges:[]}
+      : getSourceSyntaxFacts(originalRoot, input.uri).system;
     yield;
     const guiClasses = buildGuiIndex(root, input.uri, knownGuiClassMapFromInput(input));
     const knownGuiClassNames = new Set([
@@ -162,7 +164,7 @@ export class DocumentAnalyzer {
     const evaluation = conditional?.evaluation ?? evaluatePreprocessor(root, input.preprocessorSymbols, input.tool, input.targetPlatform, input.internalFeatures);
     const { inactiveRanges, uncertainRanges, uncertainNames } = evaluation;
     yield;
-    const macroDefinitions = collectMacroDefinitions(root, input.uri);
+    const macroDefinitions = syntaxFacts.macros;
     const activeMacroDefinitions = macroDefinitions.filter((macro) => !isSystemMacroName(macro.name)
       && !startsInInactiveRange(macro.selectionRange, [...inactiveRanges, ...uncertainRanges]));
     const visibleMacroDefinitions = [
@@ -203,7 +205,7 @@ export class DocumentAnalyzer {
         },false,true));
       }
       if (conditional) { analysis.inactiveRanges=inactiveRanges; }
-      this.cache.set(input.uri,{version:input.version,analysisContextKey,analysis});
+      this.cache.set(input.uri,{version:input.version,text:input.text,analysisContextKey,analysis});
       return analysis;
     }
     yield;
@@ -239,7 +241,7 @@ export class DocumentAnalyzer {
       ]);
     // Macro reparsing only needs source provenance here; build final metadata on demand.
     let analysis: AnalyzedDocument = {
-      ...(!expandMacros ? {typeSnapshot:buildTypeSnapshot(root,input.uri,recoveredStatements.map(statement=>statement.node))} : {}),
+      ...(!expandMacros ? {typeSnapshot:syntaxFacts.typeSnapshot(recoveredStatements.map(statement=>statement.node))} : {}),
       internalFeatures: normalizeInternalFeatures(input.internalFeatures),
       tool: normalizeTool(input.tool),
       targetPlatform: normalizeTargetPlatform(input.targetPlatform),
@@ -291,7 +293,7 @@ export class DocumentAnalyzer {
     }
     analysis = materialized as unknown as AnalyzedDocument;
     yield;
-    analysis.typeSnapshot ??= buildTypeSnapshot(root,input.uri,recoveredStatements.map(statement=>statement.node));
+    analysis.typeSnapshot ??= syntaxFacts.typeSnapshot(recoveredStatements.map(statement=>statement.node));
     if (conditional) {
       analysis.inactiveRanges = inactiveRanges;
       analysis.systemMacroReferences = systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges));
@@ -300,6 +302,7 @@ export class DocumentAnalyzer {
     analysis.documentationBlocks = buildDocumentationBlocks(originalRoot, input.text, analysis);
     this.cache.set(input.uri, {
       version: input.version,
+      text: input.text,
       analysisContextKey,
       analysis
     });
