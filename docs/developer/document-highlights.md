@@ -25,3 +25,11 @@ The extension's `src/test/host/documentHighlights.test.ts` exercises `vscode.exe
 Qualified assignment targets such as `A::value = 1` require the corresponding parser correction. Link and rebuild both repositories; the pinned `tree-sitter-axel#v0.1.0` dependency is also unchanged.
 
 The performance suite fixes 1,000 and 5,000 references, zero dependencies and macros, and ten repeated requests. It reports initial analysis, repeated median/p95, edited analysis, and asynchronous cancellation separately. The test environment budget is 1,000 ms for repeated p95 and cancellation. It is a regression threshold, not an end-user latency guarantee.
+
+## Reuse and invalidation
+
+Completed occurrence groups are cached per analyzed source and workspace. Cursor movement selects from these groups without repeating semantic resolution for every reference. Cache hits require identical source/dependency documents, builtin catalog and startup scope. Results are installed only after collection completes; cancellation during collection cannot retain a partial index. Source edits replace weak cache keys, and dependency/configuration changes invalidate the owning workspace inputs.
+
+The workspace also reuses position-aware call inputs for inlay hints and type navigation. Semantic token results validate the source and ordered visible declaration identities before reuse; they do not force background dependency indexing. Scope lookup uses an immutable interval index with the original end-exclusive containment, smallest-range selection and stable tie order. Regression coverage is in `performance/interactiveReuse.test.ts`, `performance/scopeLookup.test.ts` and `unit/navigationReuse.test.ts` under `src/test/`.
+
+Cold startup still includes parsing external headers and the selected startup script. Measure cold requests separately from repeated requests, and use the same source encoding, settings, request order and dependency state when comparing timings. Syntax-only folding skips single-line subtrees while retaining region markers; `performance/foldingTraversal.test.ts` verifies the traversal budget and the existing folding tests verify ranges.

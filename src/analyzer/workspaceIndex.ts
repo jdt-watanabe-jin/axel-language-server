@@ -1,3 +1,4 @@
+import { collectSemanticTokens } from './semanticTokens';
 import type { ProjectScope } from './projectScope';
 import type { FoldingRangeCandidate } from './foldingRanges';
 import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
@@ -78,6 +79,8 @@ export class WorkspaceIndex {
   private readonly inheritIncludeContext: boolean;
   private readonly dependencyAnalysisOnly: boolean;
   private readonly includeContexts = new Map<string, Pick<AnalyzeDocumentInput, 'macroDefinitions' | 'preprocessorSymbols'>>();
+  private readonly semanticResultCache = new Map<string, {analysis:AnalyzedDocument; declarations:AnalysisDeclaration[]; tokens:ReturnType<typeof collectSemanticTokens>}>();
+  private readonly typeInputCache = new Map<string, TypeDiagnosticsInput>();
   private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
   private readonly analyzer: DocumentAnalyzer;
@@ -328,6 +331,20 @@ export class WorkspaceIndex {
     return status;
   }
 
+  public getSemanticTokens(analysis:AnalyzedDocument):ReturnType<typeof collectSemanticTokens> {
+    // Use only already-indexed declarations, just like semanticTokenWorkspaceIndex.
+    const declarations=this.listCachedVisibleDeclarations(analysis.uri);
+    const cached=this.semanticResultCache.get(analysis.uri);
+    if(cached?.analysis===analysis && cached.declarations.length===declarations.length
+      && declarations.every((declaration,i)=>cached.declarations[i]===declaration))return cached.tokens;
+    const tokens=collectSemanticTokens(analysis,{
+      listVisibleDeclarations:()=>declarations,
+      findVisibleDeclarations:(_uri,name)=>declarations.filter(declaration=>declaration.name===name)
+    });
+    this.semanticResultCache.set(analysis.uri,{analysis,declarations,tokens});
+    return tokens;
+  }
+
   public semanticTokenWorkspaceIndex(_sourceUri: string): WorkspaceDeclarationLookup {
     return {
       findVisibleDeclarations: (uri, name) => this.listCachedVisibleDeclarations(uri)
@@ -556,12 +573,19 @@ export class WorkspaceIndex {
       return document ? [document] : [];
     })];
     const catalog = this.builtinCatalogCache ??= loadBuiltinCatalog(this.forcedIncludeFiles);
+    const cached = this.typeInputCache.get(analysis.uri);
+    if (cached?.analysis === analysis && cached.catalog === catalog && cached.loginScope === loginScope
+      && cached.documents?.length === ordinaryDocuments.length && ordinaryDocuments.every((document, i) => cached.documents![i] === document)) {
+      return cached;
+    }
     const macros = this.collectPositionAwareMacroDefinitions(analysis.uri, true);
-    return {analysis, documents: ordinaryDocuments, loginScope, catalog, resolveMacro: (name, node) => {
+    const result: TypeDiagnosticsInput = {analysis, documents: ordinaryDocuments, loginScope, catalog, resolveMacro: (name, node) => {
       const macro = macros.filter(macro => macro.name === name
         && (!macro.visibilityStart || comparePositions(macro.visibilityStart, node.range.start) <= 0)).at(-1);
       return macro && !('_typeUndef' in macro) ? macro : undefined;
     }};
+    this.typeInputCache.set(analysis.uri, result);
+    return result;
   }
 
   public resolveCallDeclarations(analysis: AnalyzedDocument, position: AnalysisPosition, allowPartialArguments = false): AnalysisDeclaration[] | undefined {
@@ -719,6 +743,8 @@ export class WorkspaceIndex {
     this.includeCandidateDependencies.delete(uri);
     this.documentationCache.clear();
     this.callResolutionCache.clear();
+    this.typeInputCache.clear();
+    this.semanticResultCache.clear();
     this.documents.delete(uri);
     this.replaceIncludeEdges(uri, new Set());
     this.analyzer.clear(uri);
@@ -771,6 +797,8 @@ export class WorkspaceIndex {
     }
     this.documentationCache.clear();
     this.callResolutionCache.clear();
+    this.typeInputCache.clear();
+    this.semanticResultCache.clear();
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
     this.builtinCatalogCache = undefined;
     if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().includes(uri)) {
@@ -1579,6 +1607,8 @@ export class WorkspaceIndex {
 
     this.documentationCache.clear();
     this.callResolutionCache.clear();
+    this.typeInputCache.clear();
+    this.semanticResultCache.clear();
     this.documents.clear();
     this.diagnosticIncludeDependencies.clear();
     this.includeCandidateDependencies.clear();

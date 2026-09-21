@@ -39,6 +39,9 @@ Generator<AnalysisStep, FoldingRangeCandidate[], void> {
     const node = stack.pop()!;
     if (++visited % 256 === 0) { yield; }
 
+    // A subtree on one physical line cannot contain a folding range. Region directives
+    // still participate in pairing even though each marker itself occupies one line.
+    if (node.startPosition.row === node.endPosition.row && node.type !== 'preproc_call') { continue; }
     const candidate = candidateForNode(node, lines, missingEndpointCache, nextSyntaxCache);
     if (candidate !== undefined) { candidates.push(candidate); }
 

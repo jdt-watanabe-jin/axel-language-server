@@ -24,8 +24,9 @@ export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacem
     const children: TypeNode[] = [];
     const fields: Record<string, TypeNode[]> = {};
     const argumentDelimiters: TypeNode[] = [];
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i)!;
+    const sourceChildren = node.children;
+    for (let i = 0; i < sourceChildren.length; i++) {
+      const child = sourceChildren[i];
       if (replacements.some(item => item.start < child.startIndex && child.endIndex <= item.end)) { continue; }
       const name = node.fieldNameForChild(i);
       if (node.type === 'argument_list' && ['(', ',', ')'].includes(child.type)) { argumentDelimiters.push(copy(child)); }

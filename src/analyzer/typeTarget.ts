@@ -26,11 +26,15 @@ export function typeTargetInput(analysis: AnalyzedDocument, workspace: TypeTarge
     ?? { analysis, documents: workspace.listVisibleDocuments?.(analysis.uri) ?? [analysis] };
 }
 
+const targetContexts=new WeakMap<TypeDiagnosticsInput,TypeTargetContext>();
 export function createTypeTargetContext(input: TypeDiagnosticsInput): TypeTargetContext | undefined {
   if (!input.analysis.typeSnapshot) { return undefined; }
-  return { input, types: createTypeCheckingContext(input),
+  const cached=targetContexts.get(input);if(cached)return cached;
+  const result = { input, types: createTypeCheckingContext(input),
     documents: [...new Map([input.analysis, ...input.documents ?? [], ...input.loginScope?.documents ?? []]
       .map(document => [document.uri, document])).values()] };
+  targetContexts.set(input,result);
+  return result;
 }
 
 /** Retains the original shape for type-definition consumers; hierarchy uses only classInfo. */

@@ -48,15 +48,16 @@ function sameOwner(a:FunctionInfo,b:FunctionInfo):boolean {
   return x.uri===y.uri && x.node.start===y.node.start && x.node.end===y.node.end;
 }
 /** Compact callable declaration/body/override relations; no expression evaluation or native trees retained. */
-export function collectFunctionTargets(context:TypeTargetContext):FunctionTargets[] {
+export function collectFunctionTargets(context:TypeTargetContext, names?:ReadonlySet<string>):FunctionTargets[] {
   const groups=new Map<string,{functions:FunctionInfo[];record:FunctionTargets}[]>();
-  const edges=collectOverrides(context.input,context.types);
+  const edges=names?[]:collectOverrides(context.input,context.types);
   const owners=new Map<ClassInfo,boolean>();
   const validOwner=(owner:ClassInfo):boolean=>{
     if(!owners.has(owner))owners.set(owner,!!classRecord(context,owner));
     return owners.get(owner)!;
   };
   for(const fn of context.types.functions){
+    if(names&&!names.has(fn.name))continue;
     if(typeNodeExcluded(context,fn.uri,fn.declarator.range)||(fn.owner&&!validOwner(fn.owner)))continue;
     const signature=functionSignature(fn);
     const declarations=declarationsForFunction(context.input,context.types,fn).map(declarationLocation);
@@ -89,8 +90,9 @@ export function navigationTargets(input:NavigationInput):AnalysisDeclaration[] {
 }
 export function getDeclarations(input:NavigationInput,supplied?:TypeTargetContext, suppliedRecords?:FunctionTargets[]):AnalysisLocation[] {
   const targets=navigationTargets(input);if(!targets.length)return [];
+  if(targets.every(target=>!['function','class','struct','union'].includes(target.kind)))return uniqueLocations(targets.map(declarationLocation));
   const context=supplied??createTypeTargetContext(typeTargetInput(input.analysis,input.workspaceIndex));
-  const records=suppliedRecords??(context?collectFunctionTargets(context):[]);
+  const records=suppliedRecords??(context?collectFunctionTargets(context,new Set(targets.filter(target=>target.kind==='function').map(target=>target.name))):[]);
   if(context && targets.length===1 && ['class','struct','union'].includes(targets[0].kind)){
     const info=resolveTypeTarget(input,context)?.classInfo;
     if(info){

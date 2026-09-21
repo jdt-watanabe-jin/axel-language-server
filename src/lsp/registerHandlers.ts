@@ -80,6 +80,7 @@ export interface AnalyzerLike extends
   analyzeForegroundDocumentAsync?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
   analyzeForegroundDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   indexOpenDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
+  getSemanticTokens?(analysis: AnalyzedDocument): ReturnType<typeof collectSemanticTokens>;
   semanticTokenWorkspaceIndex?(sourceUri: string): WorkspaceDeclarationLookup;
   deleteDocument?(uri: string): void;
   configure?(options: unknown): void;
@@ -298,7 +299,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   });
 
   registerTypeHierarchyHandlers(context, typeHierarchy, { request });
-  registerNavigationFeatures(context, typeHierarchy, { request }, () => revision);
+  registerNavigationFeatures(context, typeHierarchy, { request, analyzeRequest: (token, input) => analyzeRequest(context, token, false, input) }, () => revision);
 
   context.connection.languages.diagnostics.on(request(async (params, token) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }
@@ -694,7 +695,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           version: document.version,
           text: document.getText()
         });
-        return toLspSemanticTokens(collectSemanticTokens(
+        return toLspSemanticTokens(context.analyzer.getSemanticTokens?.(analysis) ?? collectSemanticTokens(
           analysis,
           context.analyzer.semanticTokenWorkspaceIndex?.(document.uri) ?? context.analyzer
         ));

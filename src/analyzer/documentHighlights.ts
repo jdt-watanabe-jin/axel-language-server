@@ -17,6 +17,9 @@ interface HighlightWorkspace extends WorkspaceNavigationIndex {
 }
 interface Occurrence extends AnalysisDocumentHighlight { key: string }
 
+interface CachedOccurrences { documents: readonly AnalyzedDocument[]; catalog: TypeDiagnosticsInput['catalog']; loginScope: TypeDiagnosticsInput['loginScope']; groups: Occurrence[][] }
+const occurrenceCache = new WeakMap<AnalyzedDocument, WeakMap<object, CachedOccurrences>>();
+
 /** Collect only this document's occurrences; external documents supply declaration identity. */
 export function* getDocumentHighlightsSteps(input: NavigationInput): Generator<AnalysisStep, AnalysisDocumentHighlight[], void> {
   yield;
@@ -24,6 +27,13 @@ export function* getDocumentHighlightsSteps(input: NavigationInput): Generator<A
   const source = input.analysis;
   const typeInput = workspace.callHierarchyTypeInput?.(source)
     ?? {analysis:source,documents:workspace.listVisibleDocuments?.(source.uri) ?? []};
+  const dependencies = [typeInput.analysis, ...typeInput.documents ?? [], ...typeInput.loginScope?.documents ?? []];
+  const cache = occurrenceCache.get(source);
+  const previous = cache?.get(workspace);
+  if (previous && previous.catalog === typeInput.catalog && previous.loginScope === typeInput.loginScope
+    && dependencies.length === previous.documents.length && dependencies.every((document, i) => previous.documents[i] === document)) {
+    return selectOccurrences(previous.groups, input.position);
+  }
   const semanticInput = expandedTypeInput(typeInput);
   const analysis = semanticInput.analysis;
   const root = analysis.typeSnapshot?.root;
@@ -79,6 +89,8 @@ export function* getDocumentHighlightsSteps(input: NavigationInput): Generator<A
     }
   }
   const keyOf = (declaration: AnalysisDeclaration): string => declarationKeys.get(declaration.id) ?? declaration.id;
+  const declarationsByKey = new Map<string, AnalysisDeclaration>();
+  for (const declaration of allDeclarations) { const key = keyOf(declaration); if (!declarationsByKey.has(key)) declarationsByKey.set(key, declaration); }
   const unique = (candidates: AnalysisDeclaration[]): AnalysisDeclaration | undefined => {
     const keys = new Set(candidates.map(keyOf));
     return keys.size === 1 ? candidates[0] : undefined;
@@ -122,7 +134,7 @@ export function* getDocumentHighlightsSteps(input: NavigationInput): Generator<A
       const resolved = uniquelyResolvedFunctions(candidates);
       const keys = new Set(resolved.map(fn=>functionKeys.get(fn)).filter((key): key is string=>!!key));
       if (keys.size !== 1) { return undefined; }
-      return allDeclarations.find(declaration=>keyOf(declaration) === [...keys][0]);
+      return declarationsByKey.get([...keys][0]);
     }
     const nav = {analysis,position:reference.range.start,workspaceIndex:semanticWorkspace};
     if (reference.memberAccess) {
@@ -198,8 +210,15 @@ export function* getDocumentHighlightsSteps(input: NavigationInput): Generator<A
     entries.push(occurrence); grouped.set(rangeKey(occurrence.range),entries);
   }
   const unambiguous = [...grouped.values()].filter(group=>new Set(group.map(o=>o.key)).size === 1);
-  const containing = unambiguous.filter(group=>contains(group[0].range,input.position));
-  const at = containing.length ? containing : unambiguous.filter(group=>comparePositions(group[0].range.end,input.position) === 0);
+  const entries = cache ?? new WeakMap<object, CachedOccurrences>();
+  entries.set(workspace, {documents:dependencies, catalog:typeInput.catalog, loginScope:typeInput.loginScope, groups:unambiguous});
+  occurrenceCache.set(source, entries);
+  return selectOccurrences(unambiguous, input.position);
+}
+
+function selectOccurrences(unambiguous: Occurrence[][], position: AnalysisRange['start']): AnalysisDocumentHighlight[] {
+  const containing = unambiguous.filter(group=>contains(group[0].range,position));
+  const at = containing.length ? containing : unambiguous.filter(group=>comparePositions(group[0].range.end,position) === 0);
   const keys = new Set(at.map(group=>group[0].key));
   if (keys.size !== 1) { return []; }
   const target = [...keys][0];

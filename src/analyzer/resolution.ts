@@ -329,13 +329,35 @@ export function isVisibleAt(
     || declaration.uri !== sourceUri || positionBeforeOrEqual(declaration.selectionRange.start, position);
 }
 
-export function findInnermostScope(
-  scopes: AnalysisScope[],
-  position: AnalysisPosition
-): AnalysisScope | undefined {
-  return scopes
-    .filter((scope) => contains(scope.range, position))
-    .sort((left, right) => rangeSize(left.range) - rangeSize(right.range))[0];
+interface ScopeInterval {
+  scope:AnalysisScope; order:number; size:number; start:AnalysisPosition; end:AnalysisPosition;
+  maxEnd:AnalysisPosition; firstStart:AnalysisPosition; left?:ScopeInterval; right?:ScopeInterval;
+}
+const scopeIntervals=new WeakMap<AnalysisScope[],ScopeInterval|undefined>();
+/** Immutable scope ranges form a balanced interval index; ties keep source-array order. */
+export function findInnermostScope(scopes:AnalysisScope[],position:AnalysisPosition):AnalysisScope|undefined {
+  let root=scopeIntervals.get(scopes);
+  if(!scopeIntervals.has(scopes)){
+    const sorted=scopes.map((scope,order)=>({scope,order,size:rangeSize(scope.range),start:scope.range.start,end:scope.range.end}))
+      .sort((a,b)=>comparePositions(a.start,b.start)||a.order-b.order);
+    const build=(start:number,end:number):ScopeInterval|undefined=>{
+      if(start>=end)return undefined;
+      const mid=(start+end)>>>1,entry=sorted[mid];
+      const left=build(start,mid),right=build(mid+1,end);
+      let maxEnd=entry.end;
+      for(const child of [left,right])if(child&&comparePositions(child.maxEnd,maxEnd)>0)maxEnd=child.maxEnd;
+      return {...entry,left,right,maxEnd,firstStart:sorted[start].start};
+    };
+    root=build(0,sorted.length);scopeIntervals.set(scopes,root);
+  }
+  let best:ScopeInterval|undefined;
+  const visit=(node:ScopeInterval|undefined):void=>{
+    if(!node||comparePositions(node.firstStart,position)>0||comparePositions(node.maxEnd,position)<=0)return;
+    if(comparePositions(node.start,position)<=0&&comparePositions(position,node.end)<0
+      &&(!best||node.size<best.size||node.size===best.size&&node.order<best.order))best=node;
+    visit(node.left);visit(node.right);
+  };
+  visit(root);return best?.scope;
 }
 
 export function contains(range: AnalysisRange, position: AnalysisPosition): boolean {

@@ -1,9 +1,12 @@
+import { getDeclarations, getTypeDefinitions } from '../analyzer/navigationTargets';
+import type { AnalyzeDocumentInput, AnalyzedDocument } from '../types/analysis';
 import { CancellationToken, ErrorCodes, LSPErrorCodes, ResponseError, type Position, type TextDocumentPositionParams, type SelectionRangeParams } from 'vscode-languageserver/node';
 import type { TypeHierarchyIndex } from '../analyzer/typeHierarchy/index';
 import type { HandlerRegistrationContext } from './registerHandlers';
 import { cancellationCheckpoint, createRequestHandler, rethrowCancellation, throwIfCancelled } from '../util/cancellation';
 import { runAnalysisStepsAsync } from '../util/analysisSteps';
 interface Lifecycle {
+  analyzeRequest(token:CancellationToken,input:AnalyzeDocumentInput):Promise<AnalyzedDocument>;
   request<P,T>(work:(params:P,token:CancellationToken)=>Promise<T>):(params:P,token?:CancellationToken)=>Promise<T>;
 }
 function positionValid(position:Position):boolean { return !!position && Number.isInteger(position.line) && Number.isInteger(position.character) && position.line>=0 && position.character>=0; }
@@ -15,7 +18,16 @@ export function registerNavigationFeatures(context:HandlerRegistrationContext,in
     register?.call(context.connection,lifecycle.request(async (params:TextDocumentPositionParams,token)=>{
       validDocument(params);if(!positionValid(params.position))throw new ResponseError(ErrorCodes.InvalidParams,'Expected UTF-16 position.');
       const start=Date.now();
-      try { const result=await index.navigate(kind,params.textDocument.uri,params.position,token);
+      try {
+        const document=context.documents.get(params.textDocument.uri);
+        if(!document)return [];
+        const result=kind==='implementation'
+          ? await index.navigate(kind,params.textDocument.uri,params.position,token)
+          : await (async()=>{
+              const analysis=await lifecycle.analyzeRequest(token,{uri:document.uri,version:document.version,text:document.getText()});
+              const input={analysis,position:params.position,workspaceIndex:context.analyzer};
+              return kind==='declaration'?getDeclarations(input):getTypeDefinitions(input);
+            })();
         context.logger.info?.(`[timing] operation=lsp.${kind} uri=${params.textDocument.uri} durationMs=${Date.now()-start}`);return result;
       } catch(error){rethrowCancellation(error);throwIfCancelled(token);if(error instanceof ResponseError)throw error;
         context.logger.error(`${kind} failed: ${String(error)}`);throw new ResponseError(LSPErrorCodes.RequestFailed,'Navigation failed; see server log.');}
