@@ -14,6 +14,12 @@ export function cachedSyntaxNode(root: Parser.SyntaxNode): Parser.SyntaxNode {
     const values=new Map<PropertyKey, unknown>();
     const view=new Proxy(node, {get(target,key) {
       if(values.has(key)) { return values.get(key); }
+      if (key === 'namedChildren' && values.has('children')) {
+        const named = (values.get('children') as Parser.SyntaxNode[]).filter(child => child.isNamed);
+        values.set('namedChildren', named);
+        values.set('namedChildCount', named.length);
+        return named;
+      }
       if (key === 'children' || key === 'namedChildren') {
         const countKey = key === 'children' ? 'childCount' : 'namedChildCount';
         let count = values.get(countKey);
@@ -48,6 +54,9 @@ export function cachedSyntaxNode(root: Parser.SyntaxNode): Parser.SyntaxNode {
             const results = new Map<unknown, unknown>();
             value = (argument: unknown) => {
               if (results.has(argument)) { return results.get(argument); }
+              const children = key === 'child' ? values.get('children') : key === 'namedChild' ? values.get('namedChildren') : undefined;
+              if (Array.isArray(children) && typeof argument === 'number' && Number.isInteger(argument)
+                && argument >= 0 && argument < children.length) { return children[argument]; }
               const result = Reflect.apply(original, target, [argument]) as unknown;
               const mapped = nodeMethods.has(String(key)) ? wrap(result as Parser.SyntaxNode | null) : result;
               results.set(argument, mapped);

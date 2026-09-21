@@ -5,6 +5,58 @@ import { cachedSyntaxNode } from '../../../analyzer/cachedSyntaxNode';
 import { buildSymbolIndex } from '../../../analyzer/symbolIndex';
 
 suite('Parse-local syntax reads', () => {
+  test('reuses an already enumerated child array', () => {
+    const root = createAxelParser().parse('int x; void f(){ x = 1; }').rootNode;
+    const children = root.children;
+    let reads = 0;
+    Object.defineProperty(root, 'namedChildren', { configurable: true,
+      get: () => { reads++; return children.filter(child => child.isNamed); } });
+    const view = cachedSyntaxNode(root);
+    const all = view.children;
+    assert.deepStrictEqual(view.namedChildren, all.filter(child => child.isNamed));
+    assert.strictEqual(reads, 0);
+  });
+  test('reuses indexed children only for valid integer indices in an enumerated array', () => {
+    const root = createAxelParser().parse('int x; int y;').rootNode;
+    const native = root.child.bind(root);
+    let reads = 0;
+    Object.defineProperty(root, 'child', { configurable: true, value: (i: number) => { reads++; return native(i); } });
+    const view = cachedSyntaxNode(root);
+    assert.strictEqual(view.child(0)?.id, view.children[0].id);
+    const before = reads;
+    assert.strictEqual(view.child(1)?.id, view.children[1].id);
+    assert.strictEqual(reads, before);
+    for (const i of [-1, 0.5, 999]) {
+      let expected: Parser.SyntaxNode | null | undefined;
+      try { expected = native(i); } catch { assert.throws(() => view.child(i)); continue; }
+      assert.strictEqual(view.child(i)?.id, expected?.id);
+    }
+  });
+  for (const text of ['int x; void f(){ x = 1; }', 'void f(){ f(1,', '/* doc */ string s = "";', 'class C { int x; };']) {
+    for (const namedFirst of [false, true]) {
+      test(`preserves native children, fields and recovery (${namedFirst}, ${text})`, () => {
+        const root = createAxelParser().parse(text).rootNode;
+        const view = cachedSyntaxNode(root);
+        function check(native: Parser.SyntaxNode, cached: Parser.SyntaxNode): void {
+          if (namedFirst) { assert.deepStrictEqual(cached.namedChildren.map(n => n.id), native.namedChildren.map(n => n.id)); }
+          assert.deepStrictEqual(cached.children.map(n => n.id), native.children.map(n => n.id));
+          assert.deepStrictEqual(cached.namedChildren.map(n => n.id), native.namedChildren.map(n => n.id));
+          assert.deepStrictEqual(cached.startPosition, native.startPosition);
+          assert.deepStrictEqual(cached.endPosition, native.endPosition);
+          assert.strictEqual(cached.isMissing, native.isMissing);
+          assert.strictEqual(cached.parent?.id, native.parent?.id);
+          for (let i = 0; i < native.childCount; i++) {
+            assert.strictEqual(cached.fieldNameForChild(i), native.fieldNameForChild(i));
+            check(native.child(i)!, cached.child(i)!);
+          }
+        }
+        check(root, view);
+        for (const types of ['identifier', ['identifier', 'comment']]) {
+          assert.deepStrictEqual(view.descendantsOfType(types).map(n => n.id), root.descendantsOfType(types).map(n => n.id));
+        }
+      });
+    }
+  }
   test('does not scan every child of a translation unit for nonexistent declarators', () => {
     const root = createAxelParser().parse('int first; int second; void f(){ first = second; }').rootNode;
     const child = root.child.bind(root);
@@ -30,7 +82,7 @@ suite('Parse-local syntax reads', () => {
       assert.deepStrictEqual(view.children.map(child => child.id), expectedChildren.map(child => child.id));
       assert.deepStrictEqual(view.namedChildren.map(child => child.id), expectedNamedChildren.map(child => child.id));
       assert.strictEqual(childrenReads, node.childCount === 0 ? 0 : 1);
-      assert.strictEqual(namedReads, node.namedChildCount === 0 ? 0 : 1);
+      assert.strictEqual(namedReads, 0, 'named children can use the already enumerated children');
     }
   });
   test('does not repeat native child reads for multiple analysis passes', () => {
