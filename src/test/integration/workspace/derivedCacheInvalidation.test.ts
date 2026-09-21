@@ -99,4 +99,21 @@ suite('Derived cache invalidation', () => {
     index.listVisibleDeclarations(input.uri).length = 0;
     assert.strictEqual(index.listVisibleDeclarations(input.uri).filter(d => d.name === 'value').length, 1);
   });
+  test('reloads a failed builtin catalog when an unindexed declaration file is created', () => {
+    const root = createTempDir(), forced = path.join(root, 'entry.h'), missing = path.join(root, 'missing.h');
+    fs.writeFileSync(forced, 'class string {};');
+    fs.writeFileSync(path.join(root, 'entry.analysis.json'), JSON.stringify({ schemaVersion: 1, profile: 'axel-510',
+      declarationFiles: ['entry.h', 'missing.h'], types: { string: 'entry.h' }, analysisOnlyMacros: [] }));
+    const options = { sxmHome: root, forcedIncludeFiles: [forced] };
+    const index = createWorkspaceIndex(options);
+    const input = { uri: pathToFileURL(path.join(root, 'main.axl')).toString(), version: 1, text: 'void main(){}' };
+    const before = index.callHierarchyTypeInput(index.indexOpenDocument(input));
+    assert.strictEqual(before.catalog?.issues?.length, 1);
+    fs.writeFileSync(missing, 'class Other {};');
+    index.invalidateFile(missing);
+    const after = index.callHierarchyTypeInput(index.indexOpenDocument(input));
+    const fresh = createWorkspaceIndex(options);
+    assert.deepStrictEqual(after.catalog, fresh.callHierarchyTypeInput(fresh.indexOpenDocument(input)).catalog);
+    assert.strictEqual(after.catalog?.issues?.length, 0);
+  });
 });

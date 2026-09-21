@@ -23,6 +23,8 @@ derived results for that document and its consumers. Ordinary unrelated edits re
 Missing include candidates are also dependencies. Changes to forced headers (including transitive or previously
 missing dependencies), builtin catalogs, settings, or startup scope invalidate the shared context. Interrupted broad
 dependency invalidation requeues open documents. Rollback clears all derived collections before restoring valid inputs.
+While a builtin catalog has validation errors, file events invalidate the shared context conservatively,
+because the failed catalog may not have published the path of a missing declaration file.
 
 - Request analysis suspends background advancement while it owns the workspace.
 - External edits, close events, settings, and watched-file changes invalidate the request revision. Open-document inputs are updated as soon as a change notification arrives, even when foreground indexing is coalesced.

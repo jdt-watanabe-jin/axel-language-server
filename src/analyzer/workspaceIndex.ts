@@ -862,8 +862,11 @@ export class WorkspaceIndex {
       return;
     }
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
+    // Invalid manifests publish no dependency URIs. A file event may repair a
+    // previously missing declaration that is not reachable through includes.
+    const catalogNeedsRetry = !!this.builtinCatalogCache?.issues?.length;
     const dependents = this.collectDependents(uri);
-    if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().some(forced => dependents.has(forced))) {
+    if (uri.endsWith('.analysis.json') || catalogSource || catalogNeedsRetry || this.knownForcedIncludeUris().some(forced => dependents.has(forced))) {
       this.loginGeneration++;
       this.loginSnapshot = undefined;
       this.clearInvalidatedAnalysis();
