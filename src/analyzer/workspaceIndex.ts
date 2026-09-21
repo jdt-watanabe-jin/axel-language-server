@@ -34,6 +34,7 @@ import type {
   AnalyzedDocument
 } from '../types/analysis';
 import { DocumentAnalyzer } from './documentAnalyzer';
+import { WorkspaceDerivedCache } from './workspaceDerivedCache';
 import { collectForcedIncludeFiles, type ForcedIncludeOptions } from './forcedIncludes';
 import { isIncludeFile, resolveInclude, resolveScriptExecution, type IncludeResolution } from './includeResolver';
 import type { WorkspaceDeclarationLookup } from './resolution';
@@ -84,6 +85,9 @@ export class WorkspaceIndex {
   private readonly typeInputCache = new Map<string, TypeDiagnosticsInput>();
   private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
+  private readonly derivedCache = new WorkspaceDerivedCache([
+    this.documentationCache, this.callResolutionCache, this.typeInputCache, this.semanticResultCache
+  ]);
   private readonly analyzer: DocumentAnalyzer;
   private readonly outlineAnalyzer = new DocumentAnalyzer();
   private includeRoots: string[];
@@ -796,10 +800,7 @@ export class WorkspaceIndex {
     this.invalidateUri(uri);
     this.diagnosticIncludeDependencies.delete(uri);
     this.includeCandidateDependencies.delete(uri);
-    this.documentationCache.clear();
-    this.callResolutionCache.clear();
-    this.typeInputCache.clear();
-    this.semanticResultCache.clear();
+    this.derivedCache.invalidate();
     this.documents.delete(uri);
     this.replaceIncludeEdges(uri, new Set());
     this.analyzer.clear(uri);
@@ -850,10 +851,7 @@ export class WorkspaceIndex {
       this.clearCachedAnalysis();
       return;
     }
-    this.documentationCache.clear();
-    this.callResolutionCache.clear();
-    this.typeInputCache.clear();
-    this.semanticResultCache.clear();
+    this.derivedCache.invalidate();
     const catalogSource = this.builtinCatalogCache?.declarationUris.has(uri);
     this.builtinCatalogCache = undefined;
     if (uri.endsWith('.analysis.json') || catalogSource || this.knownForcedIncludeUris().includes(uri)) {
@@ -1669,10 +1667,7 @@ export class WorkspaceIndex {
       this.analyzer.clear(uri);
     }
 
-    this.documentationCache.clear();
-    this.callResolutionCache.clear();
-    this.typeInputCache.clear();
-    this.semanticResultCache.clear();
+    this.derivedCache.invalidate();
     this.documents.clear();
     this.diagnosticIncludeDependencies.clear();
     this.includeCandidateDependencies.clear();
