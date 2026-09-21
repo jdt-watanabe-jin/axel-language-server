@@ -13,3 +13,9 @@ There is no compatibility path through initialization options, notification sett
 The object supports `includeRoots`, `forcedIncludeRoots`, `forcedIncludeFiles`, `defines` (string arrays, default empty), `sxmHome` (default empty), `tool` (default `axel`), `targetPlatform` (default `windows-x64`), `internalFeatures` (default `enabled`), and optional positive `maxNumberOfProblems` (default unlimited). Presentation settings are `hover` and `autocomplete` (default `default`), `errorSquiggles` (default `enabledIfIncludesResolve`), [inlayHints](inlay-hints.md), [fileOperations](file-operations.md). Project collection is configured by `project.include` (default `["**/*"]`) and `project.exclude` (default `[]`); see [workspace symbols](workspace-symbols.md).
 
 `workspaceSymbols.exclude` and `fileOperations.exclude` have been removed. Their presence, even as an empty array or alongside `project`, rejects the entire snapshot. Remove both old keys and choose one shared project scope. Settings apply after successful acquisition without restarting.
+
+## Recovering from configuration failures
+
+A failed acquisition offers **Retry** and **Open Settings** through a server message request. Retry requests a new snapshot; Open Settings asks the extension to show AXEL settings through `axel/openSettings`. Dismissing the prompt leaves configuration unavailable. Correcting settings and sending the ordinary change notification also recovers without restarting. Repeated failures in the same generation are deduplicated, and actions from obsolete prompts are ignored.
+
+These recovery actions require the linked development server. See [operations and progress](../developer/r4-operations.md) for the protocol contract and dependency status.

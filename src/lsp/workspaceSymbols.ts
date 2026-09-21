@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { progressRequest } from './workProgress';
+import { CancellationToken, WorkspaceFoldersRequest } from 'vscode-languageserver/node';
 import { LSPErrorCodes, ResponseError, SymbolKind, type InitializeParams, type WorkspaceSymbol } from 'vscode-languageserver/node';
 import type { HandlerRegistrationContext } from './registerHandlers';
 import { fileIdentity, filePath } from '../analyzer/projectScope';
@@ -35,6 +37,7 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
   if (!context.connection.onWorkspaceSymbol) { return undefined; }
   const index = new WorkspaceSymbolIndex(error => context.logger.error(error), context.projectScope);
   let roots: string[] = [];
+  let rootsRevision = 0;
   let foldersSupported = false;
   let progressSupported = false;
   let resolveSupported = false;
@@ -42,19 +45,20 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
   context.documents.onDidChangeContent(event => index.updateDocument({ uri: event.document.uri,
     version: event.document.version, text: event.document.getText() }));
   context.documents.onDidClose(event => index.closeDocument(event.document.uri));
-  context.connection.onWorkspaceSymbol(async (params, token, progress) => {
+  const searchHandler = async (params: import('vscode-languageserver/node').WorkspaceSymbolParams, token: CancellationToken, progress?: import('vscode-languageserver/node').WorkDoneProgressReporter) => {
     throwIfCancelled(token);
     await context.configuration!.ready(token);
     // vscode-languageserver consumes workDoneToken before invoking this handler.
     // The supplied reporter is a no-op when the request did not carry a token.
-    const reporting = progressSupported;
-    if (reporting) { progress.begin('Indexing AXEL workspace symbols', 0, undefined, true); }
+    const reporting = !context.progress && progressSupported && progress !== undefined;
+    if (reporting) { progress!.begin('Indexing AXEL workspace symbols', 0, undefined, true); }
     let previousPercent = -1;
     try {
-      const entries = await index.search(params.query, token, reporting ? (completed, total) => {
+      const entries = await index.search(params.query, token, (completed, total) => {
+        context.progress?.report('Indexing workspace symbols', total ? completed / total * 100 : undefined);
         const percent = total ? Math.floor(completed / total * 100) : 100;
-        if (percent !== previousPercent) { previousPercent = percent; progress.report(percent); }
-      } : undefined);
+        if (reporting && percent !== previousPercent) { previousPercent = percent; progress!.report(percent); }
+      });
       if (!resolveSupported) { return entries.map(entry => toLspWorkspaceSymbol(entry, supportedKinds)); }
       const identities = entries.map(symbolIdentity);
       const counts = new Map<string, number>();
@@ -65,8 +69,20 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
         // shared identity cannot safely select one after edits.
         return counts.get(identities[i]) === 1 ? { ...symbol, location: { uri: entry.uri }, data: identities[i] } : symbol;
       });
-    } finally { if (reporting) { progress.done(); } }
-  });
+    } finally { if (reporting) { progress!.done(); } }
+  };
+  if (context.progress) { progressRequest(context, 'workspace/symbol', 'AXEL: Indexing workspace symbols', context.connection.onWorkspaceSymbol, searchHandler, 'workspace-symbols'); }
+  else { context.connection.onWorkspaceSymbol(searchHandler); }
+  const background = () => {
+    if (!context.progress) { void index.resume(); return; }
+    void context.progress.run('AXEL: Indexing workspace symbols', CancellationToken.None, async token => {
+      const subscription = token.onCancellationRequested(() => index.cancelBackground());
+      try { await index.resume((completed, total) => context.progress?.report('Indexing workspace symbols', total ? completed / total * 100 : undefined)); }
+      finally { subscription.dispose(); }
+    }, { key: 'workspace-symbols' }).catch(error => {
+      if (!(error instanceof ResponseError && error.code === LSPErrorCodes.RequestCancelled)) { context.logger.error(String(error)); }
+    });
+  };
   context.connection.onWorkspaceSymbolResolve?.(async (symbol, token) => {
     throwIfCancelled(token);
     await context.configuration!.ready(token);
@@ -86,6 +102,7 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
   });
   return {
     initialize(params: InitializeParams) {
+      rootsRevision++;
       roots = params.workspaceFolders != null ? params.workspaceFolders.map(folder => folder.uri) : params.rootUri ? [params.rootUri] : [];
       foldersSupported = params.capabilities.workspace?.workspaceFolders === true;
       progressSupported = params.capabilities.window?.workDoneProgress === true;
@@ -97,6 +114,7 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
     start() {
       if (foldersSupported) {
         context.connection.workspace.onDidChangeWorkspaceFolders(event => {
+          rootsRevision++;
           const removed = new Set(event.removed.map(folder => folder.uri));
           roots = [...new Set([...roots.filter(uri => !removed.has(uri)), ...event.added.map(folder => folder.uri)])];
           index.setRoots(roots);
@@ -105,7 +123,22 @@ export function registerWorkspaceSymbolHandler(context: HandlerRegistrationConte
       }
     },
     pause() { index.pause(); },
-    resume() { index.resume(); },
+    resume() { background(); },
+    async resyncFolders(token: CancellationToken): Promise<void> {
+      if (!foldersSupported) { return; }
+      const generation = rootsRevision;
+      const folders = await context.connection.sendRequest(WorkspaceFoldersRequest.type, token);
+      throwIfCancelled(token);
+      if (generation !== rootsRevision) { return; }
+      if (folders !== null && (!Array.isArray(folders) || folders.some(folder => typeof folder.uri !== 'string'))) {
+        throw new ResponseError(LSPErrorCodes.RequestFailed, 'Invalid workspace folder response.');
+      }
+      rootsRevision++; roots = (folders ?? []).map(folder => folder.uri);
+      index.setRoots(roots); foldersChanged(roots);
+    },
+    async rebuild(token: CancellationToken): Promise<void> {
+      await index.rebuild(token, (completed, total) => context.progress?.report('Rebuilding workspace symbols', total ? completed / total * 100 : undefined));
+    },
     configure(settings: unknown) { index.configure(normalizeWorkspaceSymbolSettings(settings)); },
     invalidate(uris: readonly string[]) { index.invalidateFiles(uris); },
     dispose() { return index.dispose(); }

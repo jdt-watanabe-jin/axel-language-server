@@ -1,3 +1,4 @@
+import { AXEL_COMMANDS } from './operations';
 import {
   CodeActionKind,
   type InitializeResult,
@@ -25,6 +26,7 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       hoverProvider: true,
+      executeCommandProvider: { commands: AXEL_COMMANDS },
       inlayHintProvider: client?.textDocument?.inlayHint?.resolveSupport?.properties?.some(property => ['tooltip', 'label.tooltip', 'label.location'].includes(property))
         ? { resolveProvider: true } : true,
       completionProvider: {

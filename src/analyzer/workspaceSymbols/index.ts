@@ -6,7 +6,7 @@ import type { WorkspaceSymbolEntry, WorkspaceSymbolSettings } from './model';
 import { ProjectScope, canonicalPath, fileIdentity, filePath } from '../projectScope';
 import { extractWorkspaceSymbols } from './extract';
 import { searchWorkspaceSymbols } from './query';
-import { cancellationCheckpoint, throwIfCancelled } from '../../util/cancellation';
+import { cancellationCheckpoint, isCancellationError, throwIfCancelled } from '../../util/cancellation';
 
 interface CachedSymbols { fingerprint: string; entries: WorkspaceSymbolEntry[] }
 type Progress = (completed: number, total: number) => void;
@@ -19,11 +19,14 @@ export class WorkspaceSymbolIndex {
   private prepared = new Map<string, CachedSymbols>();
   private revision = 0;
   private started = false;
+  private paused = false;
   private pauseGeneration = 0;
   private dirty = false;
   private disposed = false;
   private running?: Promise<void>;
-  private readonly source = new CancellationTokenSource();
+  private source?: CancellationTokenSource;
+  private waiters = 0;
+  private readonly backgroundOwners = new Set<symbol>();
   private readonly listeners = new Set<Progress>();
   constructor(private readonly logError: (message: string) => void, private readonly projectScope = new ProjectScope(logError)) {}
   configure(settings: WorkspaceSymbolSettings): void {
@@ -50,28 +53,50 @@ export class WorkspaceSymbolIndex {
     for (const uri of uris) { const file = filePath(uri); if (file) { this.invalidated.add(file); } }
     this.changed();
   }
-  start(): void { this.started = true; this.dirty = true; this.schedule(); }
-  resume(): void { this.started = true; if (this.dirty) { this.schedule(); } }
-  pause(): void { this.started = false; this.revision++; this.pauseGeneration++; }
-  private changed(): void { this.revision++; this.dirty = true; if (this.started) { this.schedule(); } }
-  private schedule(): void {
-    if (this.running || this.disposed || !this.started) { return; }
-    this.running = this.run().catch(error => {
-      if (!this.disposed) { this.logError(`Workspace symbol index: ${String(error)}`); }
-    }).finally(() => { this.running = undefined; if (this.dirty && !this.disposed) { this.schedule(); } });
+  async start(progress?: Progress): Promise<void> {
+    this.dirty = true;
+    await this.resume(progress);
   }
-  private async run(): Promise<void> {
-    while (this.dirty && !this.disposed && this.started) {
-      await cancellationCheckpoint(this.source.token);
+  cancelBackground(): void { this.started = false; this.backgroundOwners.clear(); this.stopIfUnowned(); }
+  private stopIfUnowned(): void {
+    if (this.backgroundOwners.size === 0 && this.waiters === 0 && this.source) { this.dirty = true; this.source.cancel(); }
+  }
+  async resume(progress?: Progress): Promise<void> {
+    if (progress) { this.listeners.add(progress); }
+    const owner = Symbol(); this.backgroundOwners.add(owner);
+    this.paused = false; this.started = true; if (this.dirty) { this.schedule(); }
+    try { while (this.running) { await this.running; } }
+    finally {
+      if (progress) { this.listeners.delete(progress); }
+      this.backgroundOwners.delete(owner); this.stopIfUnowned();
+    }
+  }
+  pause(): void { this.paused = true; this.started = false; this.backgroundOwners.clear(); this.revision++; this.pauseGeneration++; this.dirty = true; this.source?.cancel(); }
+  private changed(): void {
+    this.revision++; this.dirty = true;
+    if (this.started && this.backgroundOwners.size === 0) { void this.resume(); }
+    else { this.schedule(); }
+  }
+  private schedule(): void {
+    if (this.running || this.disposed || this.paused || (this.backgroundOwners.size === 0 && this.waiters === 0)) { return; }
+    const source = new CancellationTokenSource(); this.source = source;
+    this.running = this.run(source.token).catch(error => {
+      if (!this.disposed && !isCancellationError(error)) { this.logError(`Workspace symbol index: ${String(error)}`); }
+    }).finally(() => { source.dispose(); if (this.source === source) { this.source = undefined; } this.running = undefined; if (this.dirty && !this.disposed) { this.schedule(); } });
+  }
+  private async run(token: CancellationToken): Promise<void> {
+    while (this.dirty && !this.disposed && !this.paused && (this.backgroundOwners.size > 0 || this.waiters > 0)) {
+      await cancellationCheckpoint(token);
       this.dirty = false;
       const revision = this.revision;
-      const next = await this.reconcile();
+      const next = await this.reconcile(token);
+      throwIfCancelled(token);
       if (revision === this.revision) { this.cache = next; this.prepared = new Map(next); }
       else { this.dirty = true; }
     }
   }
-  private async reconcile(): Promise<Map<string, CachedSymbols>> {
-    const token = this.source.token; const settings = this.settings;
+  private async reconcile(token: CancellationToken): Promise<Map<string, CachedSymbols>> {
+    const settings = this.settings;
     const previous = this.prepared; const opened = [...this.open.values()];
     const invalidated = [...this.invalidated]; this.invalidated.clear();
     for (const file of invalidated) {
@@ -92,7 +117,7 @@ export class WorkspaceSymbolIndex {
     for (const listener of this.listeners) { listener(0, candidates.size); }
     for (const [key, candidate] of candidates) {
       await cancellationCheckpoint(token);
-      if (settings !== this.settings || !this.started) { return result; }
+      if (settings !== this.settings) { return result; }
       try {
         const stat = candidate.input ? undefined : await fs.stat(candidate.file);
         const fingerprint = candidate.input ? `open:${candidate.input.uri}:${candidate.input.version}:${candidate.input.text}`
@@ -121,14 +146,20 @@ export class WorkspaceSymbolIndex {
     }
     return result;
   }
-  async search(query: string, token: CancellationToken, progress?: Progress): Promise<WorkspaceSymbolEntry[]> {
+  async rebuild(token: CancellationToken, progress?: Progress): Promise<void> {
+    throwIfCancelled(token);
+    this.cache = new Map(); this.prepared = new Map();
+    this.revision++; this.dirty = true;
+    await this.waitForScan(token, progress);
+  }
+  private async waitForScan(token: CancellationToken, progress?: Progress): Promise<void> {
     const pauseGeneration = this.pauseGeneration;
     throwIfCancelled(token);
     if (this.disposed) { throw new ResponseError(LSPErrorCodes.RequestCancelled, 'Workspace index disposed.'); }
     if (progress) { this.listeners.add(progress); }
     // A joined scan may have enumerated before this request. Reconcile once more
     // so missed events that predate the request are visible; extraction is reused.
-    this.started = true;
+    this.paused = false; this.waiters++;
     this.dirty = true;
     this.schedule();
     let subscription: { dispose(): void } | undefined;
@@ -139,15 +170,18 @@ export class WorkspaceSymbolIndex {
       while (this.running) { await Promise.race([this.running, cancelled]); }
       throwIfCancelled(token);
       if (pauseGeneration !== this.pauseGeneration) { throw new ResponseError(LSPErrorCodes.ContentModified, 'Configuration changed during symbol search.'); }
-      const revision = this.revision;
-      const entries = [...this.cache.values()].flatMap(item => item.entries);
-      const result = await searchWorkspaceSymbols(entries, query, token);
-      if (revision !== this.revision) { throw new ResponseError(LSPErrorCodes.ContentModified, 'Workspace changed during symbol search.'); }
-      return result;
-    } finally { subscription?.dispose(); if (progress) { this.listeners.delete(progress); } }
+    } finally { subscription?.dispose(); if (progress) { this.listeners.delete(progress); } this.waiters--; this.stopIfUnowned(); }
+  }
+  async search(query: string, token: CancellationToken, progress?: Progress): Promise<WorkspaceSymbolEntry[]> {
+    await this.waitForScan(token, progress);
+    const revision = this.revision;
+    const entries = [...this.cache.values()].flatMap(item => item.entries);
+    const result = await searchWorkspaceSymbols(entries, query, token);
+    if (revision !== this.revision) { throw new ResponseError(LSPErrorCodes.ContentModified, 'Workspace changed during symbol search.'); }
+    return result;
   }
   async dispose(): Promise<void> {
-    this.disposed = true; this.dirty = false; this.source.cancel();
-    await this.running; this.source.dispose(); this.cache.clear(); this.prepared.clear(); this.open.clear(); this.listeners.clear();
+    this.disposed = true; this.dirty = false; this.source?.cancel();
+    await this.running; this.cache.clear(); this.prepared.clear(); this.open.clear(); this.listeners.clear();
   }
 }

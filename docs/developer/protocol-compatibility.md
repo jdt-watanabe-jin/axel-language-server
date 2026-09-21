@@ -19,6 +19,14 @@ npm run test:ci
 
 The extension's R0 baseline separately tests VS Code 1.82.0 and its reference Host version, checks real-client Open/Change/Save/Close transmission, and provides a repeatable stdio performance harness with process memory and build fingerprints. Those results apply to the linked development server. They do not update the extension's pinned published dependency.
 
+## Operations and long-running work
+
+The command allowlist is `axel.rebuildIndex`, `axel.applyQuickFix`, and `axel.showSource`. Versioned edit application requires `workspace.applyEdit` and `workspace.workspaceEdit.documentChanges`; source display checks `window.showDocument.support`. Clients without these optional capabilities still receive ordinary language features and explicit command fallback results.
+
+`window.workDoneProgress` enables delayed server-created progress; supplied `workDoneToken` values are retained. Cancellation uses `window/workDoneProgress/cancel` or ordinary request cancellation. Explicit rebuild queries `workspace/workspaceFolders` only when supported and discards a stale response after a folder-change notification. Recovery uses `window/showMessageRequest`; editor-specific settings navigation is delegated through `axel/openSettings`.
+
+See [server operations and progress](r4-operations.md) for complete contracts, supported scopes, and dependency availability.
+
 ## Document outline analysis policy
 
 The `axel` configuration snapshot accepts `workspaceSymbols: "Just My Code" | "All"`, defaulting to `"Just My Code"`. Despite the historical setting name, it controls `textDocument/documentSymbol`, not `workspace/symbol` collection. The removed object-form `workspaceSymbols.exclude` remains a configuration error.

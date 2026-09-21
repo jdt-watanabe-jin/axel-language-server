@@ -51,7 +51,7 @@ suite('Workspace Symbol LSP', function () {
       assert.strictEqual((await server.request<WorkspaceSymbol[]>('workspace/symbol', { query: '' })).length, 200);
     } finally { source.dispose(); await server.stop(); }
   });
-  test('ends work-done progress on success and cancellation', async () => {
+  test('delays supplied-token progress and closes any displayed work on cancellation', async () => {
     const root = createTempDir();
     for (let i = 0; i < 100; i++) { fs.writeFileSync(path.join(root, `${i}.axl`), `int item${i};`); }
     const server = startLspServer(); const source = new CancellationTokenSource();
@@ -65,14 +65,16 @@ suite('Workspace Symbol LSP', function () {
       await server.request('initialize', { processId: null, rootUri: pathToFileURL(root).toString(),
         capabilities: { window: { workDoneProgress: true } } });
       await server.notify('initialized', {});
-      await assert.rejects(server.request('workspace/symbol', { query: '', workDoneToken: 'cancel' }, source.token),
-        (e: unknown) => (e as { code: number }).code === LSPErrorCodes.RequestCancelled);
-      assert.strictEqual(events.filter(event => event.token === 'cancel').at(-1)?.value.kind, 'end');
+      const pending = server.request('workspace/symbol', { query: '', workDoneToken: 'cancel' }, source.token);
+      source.cancel();
+      await assert.rejects(pending, (e: unknown) => (e as { code: number }).code === LSPErrorCodes.RequestCancelled);
+      const cancelled = events.filter(event => event.token === 'cancel');
+      if (cancelled.some(event => event.value.kind === 'begin')) { assert.strictEqual(cancelled.at(-1)?.value.kind, 'end'); }
+      const started = Date.now();
       assert.strictEqual((await server.request<WorkspaceSymbol[]>('workspace/symbol', { query: '', workDoneToken: 'complete' })).length, 100);
       const completed = events.filter(event => event.token === 'complete');
-      assert.strictEqual(completed[0].value.kind, 'begin');
-      assert.ok(completed.some(event => event.value.kind === 'report'));
-      assert.strictEqual(completed.at(-1)?.value.kind, 'end');
+      if (Date.now() - started < 1000) { assert.deepStrictEqual(completed, [], 'fast work must not flash progress'); }
+      else if (completed.length) { assert.strictEqual(completed.at(-1)?.value.kind, 'end'); }
     } finally { source.dispose(); await server.stop(); }
   });
 });

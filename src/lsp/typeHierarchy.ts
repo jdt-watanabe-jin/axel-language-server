@@ -3,6 +3,7 @@ import { ErrorCodes, LSPErrorCodes, ResponseError, SymbolKind, type Cancellation
 import { TypeHierarchyIndex } from '../analyzer/typeHierarchy/index';
 import type { AnalysisTypeHierarchyItem } from '../analyzer/typeHierarchy/model';
 import type { HandlerRegistrationContext } from './registerHandlers';
+import { progressRequest } from './workProgress';
 import { rethrowCancellation, throwIfCancelled } from '../util/cancellation';
 
 export function createTypeHierarchyIndex(context: HandlerRegistrationContext): TypeHierarchyIndex {
@@ -29,16 +30,19 @@ export function registerTypeHierarchyHandlers(context: HandlerRegistrationContex
       throw new ResponseError(LSPErrorCodes.RequestFailed, 'Type hierarchy indexing failed; see server log.');
     }
   };
-  hierarchy.onPrepare(lifecycle.request(async (params: TypeHierarchyPrepareParams, token) => {
+  progressRequest<TypeHierarchyPrepareParams, TypeHierarchyItem[] | null>(context, 'textDocument/prepareTypeHierarchy',
+    'AXEL: Prepare type hierarchy', handler => hierarchy.onPrepare(handler), lifecycle.request(async (params: TypeHierarchyPrepareParams, token) => {
     if (!params?.textDocument || typeof params.textDocument.uri !== 'string' || !validPosition(params.position)) {
       throw new ResponseError(ErrorCodes.InvalidParams, 'Expected document URI and UTF-16 position.');
     }
     return run(() => index.prepare(params.textDocument.uri, params.position, token), token);
   }));
-  hierarchy.onSupertypes(lifecycle.request(async (params: TypeHierarchySupertypesParams, token) => {
+  progressRequest<TypeHierarchySupertypesParams, TypeHierarchyItem[] | null>(context, 'typeHierarchy/supertypes',
+    'AXEL: Find supertypes', handler => hierarchy.onSupertypes(handler), lifecycle.request(async (params: TypeHierarchySupertypesParams, token) => {
     validateItem(params); return run(() => index.supertypes(params.item.data, token), token);
   }));
-  hierarchy.onSubtypes(async (params: TypeHierarchySubtypesParams, token, progress) => {
+  progressRequest<TypeHierarchySubtypesParams, TypeHierarchyItem[] | null>(context, 'typeHierarchy/subtypes',
+    'AXEL: Index type hierarchy', () => hierarchy.onSubtypes(async (params: TypeHierarchySubtypesParams, token, progress) => {
     return lifecycle.request(async (request: TypeHierarchySubtypesParams, cancellation) => {
       validateItem(request);
       progress.begin('Indexing AXEL type hierarchy', 0, undefined, true);
@@ -48,7 +52,12 @@ export function registerTypeHierarchyHandlers(context: HandlerRegistrationContex
         }), cancellation);
       } finally { progress.done(); }
     })(params, token);
-  });
+  }), lifecycle.request(async (params: TypeHierarchySubtypesParams, token) => {
+    validateItem(params);
+    return run(() => index.subtypes(params.item.data, token, (completed, total) => {
+      context.progress?.report(`Indexed ${completed} of ${total} source files`, total ? Math.floor(completed / total * 100) : 100);
+    }), token);
+  }));
 }
 function validPosition(position: unknown): boolean {
   if (!position || typeof position !== 'object') { return false; }

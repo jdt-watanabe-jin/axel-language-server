@@ -1,3 +1,7 @@
+
+import { WorkProgress, progressRequest } from './workProgress';
+import { registerOperationHandlers } from './operations';
+import { WorkDoneProgress, WorkDoneProgressCreateRequest, WorkDoneProgressCancelNotification } from 'vscode-languageserver/node';
 import { registerCodeLensHandlers } from './codeLens';
 import { registerDeferredItemHandlers } from './deferredItems';
 import { registerDocumentLinkHandlers } from './documentLinks';
@@ -89,15 +93,19 @@ export interface AnalyzerLike extends
   deleteDocument?(uri: string): void;
   configure?(options: unknown): void;
   setAnalysisEnabled?(enabled: boolean): void;
+  rebuildAnalysis?(token: CancellationToken): void | Promise<void>;
   setProjectScope?(scope: ProjectScope): void;
   invalidateUri?(uri: string): void;
   invalidatePaths?(uris: readonly string[]): void;
   onBackgroundIndexingComplete?(listener: () => void): void;
+  onBackgroundIndexingActivity?(listener: (active: boolean) => void): () => void;
+  cancelBackgroundIndexing?(): void;
   getLoginDependencies?(cachedOnly?: boolean): { generation: number; uris: string[] };
   getAnalyzedDocument?(uri: string): AnalyzedDocument | undefined;
 }
 
 export interface HandlerRegistrationContext {
+  progress?: import('./workProgress').WorkProgress;
   clientCapabilities?: ClientCapabilities;
   connection: Connection;
   documents: TextDocuments<TextDocument>;
@@ -126,6 +134,25 @@ interface RefactorHandlerConnection {
 }
 
 export function registerHandlers(context: HandlerRegistrationContext): void {
+  const progress = context.progress ??= new WorkProgress({
+    supported: () => context.clientCapabilities?.window?.workDoneProgress === true,
+    create: token => context.connection.sendRequest(WorkDoneProgressCreateRequest.type, { token }),
+    send: (token, value) => context.connection.sendProgress(WorkDoneProgress.type, token, value),
+    error: message => context.logger.error(message)
+  });
+  let operations: ReturnType<typeof registerOperationHandlers> | undefined = undefined;
+  let finishBackground: (() => void) | undefined;
+  const stopBackgroundObserver = context.analyzer.onBackgroundIndexingActivity?.(active => {
+    if (!active) { finishBackground?.(); finishBackground = undefined; return; }
+    if (finishBackground) { return; }
+    const waiting = new Promise<void>(resolve => { finishBackground = resolve; });
+    void progress.run('AXEL: Analyzing documents and dependencies', CancellationToken.None, async token => {
+      const subscription = token.onCancellationRequested(() => context.analyzer.cancelBackgroundIndexing?.());
+      try { await waiting; } finally { subscription.dispose(); }
+    }, { key: 'analysis' }).catch(error => {
+      if (!isCancellationError(error)) { context.logger.error(String(error)); }
+    });
+  });
   const projectScope = context.projectScope ??= new ProjectScope(message => context.logger.error(message));
   context.analyzer.setProjectScope?.(projectScope);
   const typeHierarchy = createTypeHierarchyIndex(context);
@@ -204,6 +231,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   let featuresChanged = false;
   let filesChanged = false;
   const refresh = () => {
+    operations?.recover('configuration');
     if (!context.configuration!.isReady) { return; }
     context.analyzer.setAnalysisEnabled?.(true);
     if (filesChanged) { fileOperations.configure(); } else { fileOperations.resume(); }
@@ -237,7 +265,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       context.analyzer.setAnalysisEnabled?.(false); workspaceSymbols?.pause(); fileOperations.pause(); typeHierarchy.pause(); },
     message => {
       context.logger.error(message);
-      void context.connection.sendNotification('window/showMessage', { type: 1, message }).catch(() => {});
+      if (operations) { operations.reportError('configuration', message, async () => { context.configuration!.refresh(); }); }
+      else { void context.connection.sendNotification('window/showMessage', { type: 1, message }).catch(() => {}); }
     },
     5_000, refresh
   );
@@ -263,7 +292,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onDidChangeConfiguration?.(() => context.configuration!.refresh());
   registerDocumentLinkHandlers(context, () => revision, () => linkConfigurationRevision);
   const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => {
-    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); codeLens?.dispose(); deferredItems.clear();
+    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); codeLens?.dispose(); deferredItems.clear(); progress.dispose(); operations?.dispose(); stopBackgroundObserver?.(); finishBackground?.();
     return Promise.all([workspaceSymbols?.dispose(), typeHierarchy.dispose()]).then(() => undefined);
   });
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>, flushChanges = true): Promise<T> => {
@@ -285,6 +314,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onDidChangeWatchedFiles(event => invalidateFiles(event.changes.map(change => change.uri)));
   registerBackgroundRefreshHandlers(context, () => { deferredItems.clear(); refreshInlayHints(); });
   context.connection.onInitialized?.(() => {
+    context.connection.onNotification?.(WorkDoneProgressCancelNotification.type, params => progress.cancel(params.token));
     workspaceSymbols?.start();
     if (dynamicConfiguration) {
       void context.connection.client.register(DidChangeConfigurationNotification.type, undefined)
@@ -307,11 +337,40 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     analyzeRequest: (token, input) => analyzeRequest(context, token, false, input)
   });
 
+  const rebuildIndex = async (token: CancellationToken): Promise<unknown> => {
+    try {
+    await context.configuration!.ready(token);
+    await workspaceSymbols?.resyncFolders(token);
+    revision++;
+    return await request(async (_params: undefined, cancellation) => {
+      progress.report('Rebuilding workspace symbols');
+      typeHierarchy.invalidate(); deferredItems.clear();
+      await workspaceSymbols?.rebuild(cancellation);
+      progress.report('Rebuilding open documents and dependencies');
+      await context.analyzer.rebuildAnalysis?.(cancellation);
+      validateRequest();
+      for (const document of context.documents.all()) {
+        await analyzeRequest(context, cancellation, true, { uri: document.uri, version: document.version, text: document.getText() });
+      }
+      validateRequest();
+      refreshLanguageFeature(context, 'semanticTokens'); refreshLanguageFeature(context, 'diagnostics'); refreshInlayHints();
+      operations?.recover('index');
+      return { rebuilt: true, documents: context.documents.all().length };
+    })(undefined, token);
+    } catch (error) {
+      if (!isCancellationError(error)) { operations?.reportError('index', String(error), () =>
+        progress.run('AXEL: Rebuilding analysis indexes', CancellationToken.None, cancellation => rebuildIndex(cancellation))); }
+      throw error;
+    }
+  };
+  operations = registerOperationHandlers(context, { request, revision: () => revision, rebuildIndex,
+    analyzeRequest: (token, input) => analyzeRequest(context, token, true, input) });
+
   registerTypeHierarchyHandlers(context, typeHierarchy, { request });
   codeLens = registerCodeLensHandlers(context, typeHierarchy, { request, analyzeRequest: (token, input) => analyzeRequest(context, token, false, input) }, () => revision);
   registerNavigationFeatures(context, typeHierarchy, { request, analyzeRequest: (token, input) => analyzeRequest(context, token, false, input) }, () => revision);
 
-  context.connection.languages.diagnostics.on(request(async (params, token) => {
+  progressRequest(context, 'textDocument/diagnostic', 'AXEL: Analyzing documents and dependencies', context.connection.languages.diagnostics.on, request(async (params: import('vscode-languageserver/node').DocumentDiagnosticParams, token) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }
     const document = context.documents.get(params.textDocument.uri);
     return measureRequest(token, 'lsp.diagnostics', documentRequestDetails(params, document), async () => {
@@ -427,7 +486,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     });
   }));
 
-  context.connection.onReferences(request(async (params: ReferenceParams, token) => {
+  progressRequest(context, 'textDocument/references', 'AXEL: Finding references', context.connection.onReferences, request(async (params: ReferenceParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
     return measureRequest(token, 'lsp.references', {
       ...positionRequestDetails(params, document),
@@ -693,7 +752,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     }, !local);
   }));
 
-  context.connection.languages.semanticTokens.on(request(async (params: SemanticTokensParams, token) => {
+  progressRequest(context, 'textDocument/semanticTokens/full', 'AXEL: Analyzing documents and dependencies', context.connection.languages.semanticTokens.on, request(async (params: SemanticTokensParams, token) => {
     const document = context.documents.get(params.textDocument.uri);
     return measureRequest(token, 'lsp.semanticTokens', documentRequestDetails(params, document), async () => {
       if (document === undefined) {
@@ -771,7 +830,13 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
   return flush;
 }
 
-async function indexDocument(context: HandlerRegistrationContext, document: TextDocument, token: CancellationToken = CancellationToken.None): Promise<void> {
+async function indexDocument(context: HandlerRegistrationContext, document: TextDocument, token: CancellationToken = CancellationToken.None, tracked = false): Promise<void> {
+  if (context.progress && !tracked) {
+    try { await context.progress.run('AXEL: Analyzing documents and dependencies', token,
+      cancellation => indexDocument(context, document, cancellation, true), { key: 'analysis' }); }
+    catch (error) { if (!isCancellationError(error)) { context.logger.error(String(error)); } }
+    return;
+  }
   if (!context.configuration?.isReady) { return; }
   try {
     const input = { uri: document.uri, version: document.version, text: document.getText() };
@@ -787,7 +852,7 @@ async function indexDocument(context: HandlerRegistrationContext, document: Text
     }
   } catch (error: unknown) {
     if (isCancellationError(error)) {
-      if (error instanceof ResponseError && error.code === LSPErrorCodes.ContentModified && token === CancellationToken.None) {
+      if (error instanceof ResponseError && error.code === LSPErrorCodes.ContentModified && !token.isCancellationRequested) {
         // A notification has no requester to retry it. Keep open documents indexed after overlapping changes.
         setImmediate(() => {
           const latest = context.documents.get(document.uri);

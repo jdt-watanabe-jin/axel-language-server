@@ -108,10 +108,13 @@ export class WorkspaceIndex {
   private forcedIncludesIndexed = false;
   private readonly pendingBackgroundDocuments = new Map<string, string>();
   private backgroundIndexingScheduled = false;
+  private backgroundScheduleGeneration = 0;
+  private backgroundActivity = false;
+  private readonly backgroundActivityListeners = new Set<(active: boolean) => void>();
   private backgroundGeneration = 0;
   private pendingLoginIndexing = false;
   private backgroundStepping = false;
-  private activeBackground: { uri: string; filePath: string; generation: number; login?: boolean; resolutions: Map<string, IncludeResolution>; steps: Generator<AnalysisStep, void, void> } | undefined;
+  private activeBackground: { uri: string; filePath: string; generation: number; rollback: () => void; login?: boolean; resolutions: Map<string, IncludeResolution>; steps: Generator<AnalysisStep, void, void> } | undefined;
   private readonly backgroundWaiters: (() => void)[] = [];
   private readonly backgroundCompleteListeners: (() => void)[] = [];
 
@@ -172,6 +175,15 @@ export class WorkspaceIndex {
     this.clearCachedAnalysis();
   }
 
+  /** Invalidate all derived state while retaining authoritative open document inputs. */
+  public async rebuildAnalysis(token: CancellationToken): Promise<void> {
+    throwIfCancelled(token);
+    this.requestRevision++;
+    this.loginGeneration++; this.loginSnapshot = undefined;
+    this.forcedIncludeFileCache = undefined;
+    this.clearCachedAnalysis();
+  }
+
   public analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
     return this.indexOpenDocument(input);
   }
@@ -179,6 +191,7 @@ export class WorkspaceIndex {
   private analysisEnabled = true;
   public setAnalysisEnabled(enabled: boolean): void {
     this.analysisEnabled = enabled;
+    if (!enabled) { this.setBackgroundActivity(false); }
     if (enabled && (this.activeBackground || this.pendingLoginIndexing || this.pendingBackgroundDocuments.size)) { this.scheduleBackgroundIndexing(); }
   }
 
@@ -237,7 +250,7 @@ export class WorkspaceIndex {
   }
 
   /** Roll back provisional writes without dropping unrelated, valid reference-search documents. */
-  private analysisRollback(revision: number): () => void {
+  private analysisRollback(revision: number, reschedule = true): () => void {
     const documents = new Map([...this.documents].map(([uri, document]) => [uri, { ...document }]));
     const edges = new Map(this.includeGraph);
     const definiteEdges = new Map(this.definiteIncludeGraph);
@@ -266,6 +279,7 @@ export class WorkspaceIndex {
         if (candidates) { this.includeCandidateDependencies.set(uri, candidates); }
       }
       this.forcedIncludesIndexed = unchanged && forcedIndexed;
+      if (!reschedule) { return; }
       for (const [uri, filePath] of pending) { this.enqueueBackgroundDocument(uri, filePath); }
       for (const open of this.openInputs.values()) {
         if (!this.documents.has(open.uri)) { this.enqueueBackgroundDocument(open.uri, filePathFromUri(open.uri) ?? open.uri); }
@@ -283,6 +297,7 @@ export class WorkspaceIndex {
   }
 
   public analyzeForegroundDocument(input: AnalyzeDocumentInput): AnalyzedDocument {
+    this.interruptBackgroundAnalysis();
     this.updateOpenDocument(input);
     return measureDurationMs(this.logger, 'workspace.foreground', { uri: input.uri, version: input.version },
       () => runAnalysisSteps(this.foregroundDocumentSteps(input)));
@@ -362,6 +377,30 @@ export class WorkspaceIndex {
     return new Promise((resolve) => {
       this.backgroundWaiters.push(resolve);
     });
+  }
+
+  public onBackgroundIndexingActivity(listener: (active: boolean) => void): () => void {
+    this.backgroundActivityListeners.add(listener);
+    if (this.backgroundActivity) { listener(true); }
+    return () => { this.backgroundActivityListeners.delete(listener); };
+  }
+
+  private setBackgroundActivity(active: boolean): void {
+    if (this.backgroundActivity === active) { return; }
+    this.backgroundActivity = active;
+    for (const listener of this.backgroundActivityListeners) { listener(active); }
+  }
+
+  public cancelBackgroundIndexing(): void {
+    this.backgroundScheduleGeneration++;
+    this.backgroundGeneration++;
+    const active = this.activeBackground;
+    this.activeBackground = undefined;
+    if (active && !this.backgroundStepping) { active.steps.return(); active.rollback(); }
+    this.pendingBackgroundDocuments.clear(); this.pendingLoginIndexing = false;
+    this.backgroundIndexingScheduled = false;
+    this.setBackgroundActivity(false);
+    for (const waiter of this.backgroundWaiters.splice(0)) { waiter(); }
   }
 
   public onBackgroundIndexingComplete(listener: () => void): void {
@@ -1137,38 +1176,47 @@ export class WorkspaceIndex {
     }
 
     this.backgroundIndexingScheduled = true;
-    setImmediate(() => this.processNextBackgroundDocument());
+    const generation = this.backgroundScheduleGeneration;
+    this.setBackgroundActivity(true);
+    setImmediate(() => this.processNextBackgroundDocument(generation));
   }
 
   private interruptBackgroundAnalysis(): void {
-    if (this.activeBackground && !this.backgroundStepping) { this.backgroundGeneration++; }
+    if (this.activeBackground && !this.backgroundStepping) {
+      const active = this.activeBackground;
+      const pending = new Map(this.pendingBackgroundDocuments);
+      const loginPending = this.pendingLoginIndexing || active.login === true;
+      this.activeBackground = undefined; active.steps.return(); active.rollback();
+      for (const [uri, file] of pending) { this.pendingBackgroundDocuments.set(uri, file); }
+      if (!active.login) { this.pendingBackgroundDocuments.set(active.uri, active.filePath); }
+      this.pendingLoginIndexing = loginPending;
+    }
   }
 
-  private processNextBackgroundDocument(): void {
-    if (!this.analysisEnabled) { this.backgroundIndexingScheduled = false; return; }
+  private processNextBackgroundDocument(generation: number): void {
+    if (generation !== this.backgroundScheduleGeneration) { return; }
+    if (!this.analysisEnabled) { this.backgroundIndexingScheduled = false; this.setBackgroundActivity(false); return; }
     if (this.requestAnalysisActive) {
-      setTimeout(() => this.processNextBackgroundDocument(), 5);
+      setTimeout(() => this.processNextBackgroundDocument(generation), 5);
       return;
     }
     if (this.activeBackground && this.activeBackground.generation !== this.backgroundGeneration) {
-      const stale = this.activeBackground;
-      stale.steps.return();
-      if (stale.login) { this.pendingLoginIndexing = true; }
-      else { this.pendingBackgroundDocuments.set(stale.uri, stale.filePath); }
-      this.activeBackground = undefined;
+      // Roll back before taking the replacement job's snapshot: an obsolete
+      // provisional document must never become its committed starting state.
+      this.interruptBackgroundAnalysis();
     }
     if (!this.activeBackground && this.pendingLoginIndexing) {
       this.pendingLoginIndexing = false;
       const entry = resolveLoginPath(this.sxmHome, this.tool);
       if (entry) { this.activeBackground = { uri: pathToFileURL(entry).toString(), filePath: entry,
-        generation: this.backgroundGeneration, login: true, resolutions: new Map(), steps: this.backgroundLoginSteps() }; }
+        generation: this.backgroundGeneration, rollback: this.analysisRollback(this.requestRevision, false), login: true, resolutions: new Map(), steps: this.backgroundLoginSteps() }; }
     }
     if (!this.activeBackground) {
       const next = this.pendingBackgroundDocuments.entries().next();
       if (!next.done) {
         const [uri, filePath] = next.value;
         this.pendingBackgroundDocuments.delete(uri);
-        this.activeBackground = { uri, filePath, generation: this.backgroundGeneration, resolutions: new Map(),
+        this.activeBackground = { uri, filePath, generation: this.backgroundGeneration, rollback: this.analysisRollback(this.requestRevision, false), resolutions: new Map(),
           steps: this.indexSingleBackgroundDiskDocumentSteps(uri, filePath) };
       }
     }
@@ -1187,7 +1235,7 @@ export class WorkspaceIndex {
     }
     this.backgroundIndexingScheduled = false;
     if (this.activeBackground || this.pendingLoginIndexing || this.pendingBackgroundDocuments.size > 0) { this.scheduleBackgroundIndexing(); }
-    else { this.resolveBackgroundWaiters(); }
+    else { this.setBackgroundActivity(false); this.resolveBackgroundWaiters(); }
   }
 
   private *indexSingleBackgroundDiskDocumentSteps(uri: string, filePath: string): Generator<AnalysisStep, void, void> {
