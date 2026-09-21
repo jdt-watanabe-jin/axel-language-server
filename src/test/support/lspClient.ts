@@ -4,8 +4,8 @@ import { CancellationToken, createProtocolConnection, StreamMessageReader, Strea
   type WorkDoneProgressBegin, type WorkDoneProgressReport, type WorkDoneProgressEnd } from 'vscode-languageserver/node';
 
 // Real stdio transport and production entry point; no analyzer or handler doubles.
-export function startLspServer(requestTimeoutMs = 5_000) {
-  const child = spawn(process.execPath, [path.resolve(__dirname, '../../server.js'), '--stdio'], {
+export function startLspServer(requestTimeoutMs = 5_000, options: { execArgv?: string[] } = {}) {
+  const child = spawn(process.execPath, [...options.execArgv ?? [], path.resolve(__dirname, '../../server.js'), '--stdio'], {
     windowsHide: true,
     env: { ...process.env, APP_AXELPATH: '', SXM_FORCED_INCLUDE_FILES: '' },
     stdio: ['pipe', 'pipe', 'pipe']

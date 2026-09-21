@@ -111,6 +111,8 @@ See [testing strategy](docs/testing/strategy.md) for localization verification.
 
 ## Development
 
+See [initial analysis performance](docs/developer/startup-performance.md) for reproducible real-workspace measurements.
+
 See [request cancellation and cooperative analysis](docs/developer/cancellation.md) for cancellation errors, asynchronous execution, cache consistency, and limitations.
 
 See [type-checking architecture and verification](docs/developer/type-checking.md) for the type model, builtin registration, corpus, and optional runtime tests.
