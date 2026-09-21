@@ -185,8 +185,8 @@ export function resolveTypeTarget(input: NavigationInput, supplied?: TypeTargetC
     if (!selected) { return undefined; }
     const scope = scopeFor(ctx, selected);
     const classInfo = uniqueClassReference(ctx, selected, scope);
-    return classInfo ? { declaration, type: resolveType(ctx, selected, scope),
-      aliases: aliasChain(context, selected, scope), classInfo } : undefined;
+    const aliases = aliasChain(context, selected, scope);
+    return classInfo || aliases.length ? { declaration, type: resolveType(ctx, selected, scope), aliases, classInfo } : undefined;
   }
   if (['class', 'struct', 'union'].includes(declaration.kind)) {
     let info = ctx.classes.find(candidate => {

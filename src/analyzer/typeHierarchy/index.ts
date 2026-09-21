@@ -7,10 +7,12 @@ import { ProjectScope, canonicalPath, fileIdentity, filePath } from '../projectS
 import { WorkspaceIndex } from '../workspaceIndex';
 import { normalizeWorkspaceIndexOptions } from '../workspaceConfig';
 import { createTypeTargetContext, resolveTypeTarget, type TypeTargetContext } from '../typeTarget';
+import { abstractTypes, collectFunctionTargets, getDeclarations, getTypeDefinitions, navigationTargets, declarationLocation, locationKey, uniqueLocations, type FunctionTargets } from '../navigationTargets';
+import type { AnalysisLocation } from '../navigation';
 import { classKey, collectTypeHierarchy } from './semantics';
 import type { AnalysisTypeHierarchyItem, TypeHierarchyData, TypeHierarchyRecord } from './model';
 
-interface Bundle { sourceUri: string; records: TypeHierarchyRecord[]; stamps: Map<string, string> }
+interface Bundle { abstractTypes: Set<string>; sourceUri: string; functions: FunctionTargets[]; records: TypeHierarchyRecord[]; stamps: Map<string, string> }
 interface ActiveContext { bundle: Bundle; context: TypeTargetContext; analysis: AnalyzedDocument; workspace: WorkspaceIndex }
 type Progress = (completed: number, total: number) => void;
 function changed(): ResponseError<void> { return new ResponseError(LSPErrorCodes.ContentModified, 'Type hierarchy context changed.'); }
@@ -127,7 +129,8 @@ export class TypeHierarchyIndex {
       }
       if (stamp !== await this.stamp(uri) || generation !== this.generation) { throw changed(); }
       stamps.set(input.uri, stamp);
-      const bundle: Bundle = { sourceUri: input.uri, records, stamps };
+      const functions = collectFunctionTargets(context);
+      const bundle: Bundle = { sourceUri: input.uri, records, functions, abstractTypes: abstractTypes(records, functions), stamps };
       const value: ActiveContext = { bundle, context, analysis, workspace };
       this.cache.set(identity(uri), bundle);
       this.active.delete(identity(uri)); this.active.set(identity(uri), value);
@@ -204,6 +207,76 @@ export class TypeHierarchyIndex {
     const record = bundle.records.find(record => record.key === known.key);
     if (!record) { this.handles.delete(item.session); return undefined; }
     return { bundle, record };
+  }
+
+  async navigate(kind: 'declaration' | 'typeDefinition' | 'implementation', uri: string, position: AnalysisPosition, token: CancellationToken): Promise<AnalysisLocation[]> {
+    if (!this.opened().some(input => identity(input.uri) === identity(uri))) { return []; }
+    const bundle = await this.load(uri, token, true);
+    const current = this.active.get(identity(uri));
+    if (!current || current.bundle !== bundle) { throw changed(); }
+    const input = { analysis: current.analysis, position, workspaceIndex: current.workspace };
+    if (kind === 'declaration') { return getDeclarations(input, current.context, bundle.functions); }
+    if (kind === 'typeDefinition') { return getTypeDefinitions(input, current.context); }
+    const target = resolveTypeTarget(input, current.context);
+    const typeKey = target?.classInfo && classKey(target.classInfo);
+    const targets = navigationTargets(input);
+    const memberKeys = new Set(targets.map(target => locationKey(declarationLocation(target))));
+    const sourceFunctions = bundle.functions.filter(record => record.members.some(member => memberKeys.has(locationKey(member))));
+    if (!typeKey && !sourceFunctions.length) { return []; }
+    // Metadata and conditional context must agree with the source request, just like subtype navigation.
+    const generation = this.generation;
+    const bundles = await this.snapshot(token);
+    if (generation !== this.generation) { throw changed(); }
+    const results: AnalysisLocation[] = [];
+    const sourceType = typeKey && bundle.records.find(record => record.key === typeKey);
+    if (sourceType) {
+      const signature = await variant(sourceType, bundle, token);
+      for (const candidate of bundles) {
+        await cancellationCheckpoint(token);
+        const base = candidate.records.find(record => record.key === sourceType.key);
+        if (!base || await variant(base, candidate, token) !== signature) { continue; }
+        const reachable = new Set([base.key]);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const record of candidate.records) {
+            if (!reachable.has(record.key) && record.bases.some(key => reachable.has(key))) { reachable.add(record.key); changed = true; }
+          }
+          await cancellationCheckpoint(token);
+        }
+        results.push(...candidate.records.filter(record => record.key !== base.key && record.defined && !candidate.abstractTypes.has(record.key) && reachable.has(record.key)
+          && this.scope.contains(record.uri)).map(record => ({uri:record.uri,range:record.selectionRange})));
+      }
+    } else {
+      const known = new Set(sourceFunctions.flatMap(record => record.members.map(locationKey)));
+      const signatures = new Set(sourceFunctions.map(record => record.signature));
+      const owners = bundle.records.filter(record => sourceFunctions.some(fn => fn.owner === record.key));
+      const records: FunctionTargets[] = [...bundle.functions];
+      for (const candidate of bundles) {
+        await cancellationCheckpoint(token);
+        let compatible = true;
+        for (const owner of owners) {
+          const other = candidate.records.find(record => record.key === owner.key);
+          if (!other || await variant(other, candidate, token) !== await variant(owner, bundle, token)) { compatible = false; break; }
+        }
+        if (compatible) { records.push(...candidate.functions.filter(record => signatures.has(record.signature))); }
+      }
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const record of records) {
+          if (!record.members.some(member => known.has(locationKey(member))) && !record.bases.some(base => known.has(locationKey(base)))) { continue; }
+          for (const member of record.members) { const key = locationKey(member); if (!known.has(key)) { known.add(key); changed = true; } }
+        }
+        await cancellationCheckpoint(token);
+      }
+      for (const record of records) {
+        if (record.members.some(member => known.has(locationKey(member)))) { results.push(...record.definitions.filter(location => this.scope.contains(location.uri))); }
+      }
+    }
+    throwIfCancelled(token);
+    if (generation !== this.generation) { throw changed(); }
+    return uniqueLocations(results);
   }
 
   async prepare(uri: string, position: AnalysisPosition, token: CancellationToken): Promise<AnalysisTypeHierarchyItem[] | null> {

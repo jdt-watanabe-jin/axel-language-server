@@ -1,3 +1,4 @@
+import { collectSelectionRangesSteps, type AnalysisSelectionRange } from './selectionRanges';
 import { collectFoldingRangesSteps, type FoldingRangeCandidate } from './foldingRanges';
 import { collectHighlightMacrosSteps } from './documentHighlightMacros';
 import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
@@ -104,6 +105,12 @@ export class DocumentAnalyzer {
       this.outlineCache.set(input.uri, { key, symbols });
       return symbols;
     } finally { this.releaseSyntax(input.uri); }
+  }
+
+  public *getSelectionRangesSteps(input: AnalyzeDocumentInput, positions: readonly AnalysisPosition[]): Generator<AnalysisStep, AnalysisSelectionRange[], void> {
+    yield;
+    try { return yield* collectSelectionRangesSteps(this.syntaxRoot(input), positions, input.text); }
+    finally { this.releaseSyntax(input.uri); }
   }
 
   public analyzeDocument(input: AnalyzeDocumentInput, expandMacros = true, dependenciesOnly = false): AnalyzedDocument {

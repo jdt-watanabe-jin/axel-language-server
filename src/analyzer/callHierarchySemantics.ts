@@ -137,7 +137,7 @@ function declarationName(node: TypeNode | undefined): TypeNode | undefined {
   return declarationName(field(node,'declarator'));
 }
 
-function collectOverrides(input: TypeDiagnosticsInput, ctx: TypeContext): SemanticCallData['overrides'] {
+export function collectOverrides(input: TypeDiagnosticsInput, ctx: TypeContext): SemanticCallData['overrides'] {
   const result: SemanticCallData['overrides'] = [];
   const seen = new Set<string>();
   for (const derived of ctx.functions) {
@@ -182,7 +182,7 @@ function isVirtualMethod(ctx: TypeContext, fn: FunctionInfo, seen: Set<FunctionI
   return overriddenBaseMethods(ctx,fn.owner,fn,new Set()).some(candidate=>isVirtualMethod(ctx,candidate,seen));
 }
 
-function declarationsForFunction(input: TypeDiagnosticsInput, ctx: TypeContext,
+export function declarationsForFunction(input: TypeDiagnosticsInput, ctx: TypeContext,
   fn: FunctionInfo): AnalysisDeclaration[] {
   const documents = originalDocuments(input);
   const document = documents.find(candidate => candidate.uri === fn.uri);

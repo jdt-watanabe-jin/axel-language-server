@@ -24,6 +24,7 @@ The server currently supports these Language Server Protocol features:
 - Hover for declarations, visible references, members, macros, built-ins, include paths, AXEL execution file references, GUI classes, GUI parts, and GUI receiver paths.
 - Completion for AXEL declaration keywords, visible symbols, enum members, macros, built-ins, include paths, AXEL execution files, inherited members, `this->` members, static members, GUI parts, and GUI events.
 - Go to Definition for local declarations, declarations visible through resolved includes, include paths, AXEL execution files, static members, inherited members, `this->` members, GUI parts, and GUI event handlers.
+- Go to Declaration, Type Definition and Implementation, plus syntax-based Selection Range. See [navigation and selection](docs/user/navigation.md) for typedef traversal, virtual overrides, project scope and limits.
 - Find References for resolved symbol identities across the current document, resolved includes, dependent documents, and forced includes.
 - Document highlights for the same resolved symbol within the requesting document, classified as Text, Read, or Write. See the [document highlight guide](docs/developer/document-highlights.md) for request behavior and testing.
 - Call Hierarchy for resolved calls and unambiguous function references, with incoming and outgoing exploration across the current analysis index. See the [call hierarchy implementation guide](docs/developer/call-hierarchy.md) for ownership, virtual dispatch, caching, and limits.

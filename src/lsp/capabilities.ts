@@ -33,6 +33,10 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
         triggerCharacters: ['(', ',']
       },
       definitionProvider: true,
+      declarationProvider: true,
+      typeDefinitionProvider: true,
+      implementationProvider: true,
+      selectionRangeProvider: true,
       referencesProvider: true,
       documentHighlightProvider: true,
       renameProvider: {

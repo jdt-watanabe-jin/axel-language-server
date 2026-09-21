@@ -356,6 +356,10 @@ export class WorkspaceIndex {
       preprocessorSymbols: defaultPreprocessorSymbols(this.defines).filter(symbol => !isSystemMacroName(symbol.name)) });
   }
 
+  public *getSelectionRangesSteps(input: AnalyzeDocumentInput, positions: readonly import('../types/analysis').AnalysisPosition[]): Generator<AnalysisStep, import('./selectionRanges').AnalysisSelectionRange[], void> {
+    return yield* this.outlineAnalyzer.getSelectionRangesSteps(input, positions);
+  }
+
   public *getFoldingRangesSteps(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void> {
     return yield* this.analyzer.getFoldingRangesSteps(input);
   }

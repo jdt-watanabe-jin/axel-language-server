@@ -24,8 +24,8 @@ suite('LSP capability negotiation', function () {
             fileOperations: { willRename: supported, didRename: supported } } }
         });
         assert.strictEqual(initialized.capabilities.definitionProvider, true);
-        assert.strictEqual(initialized.capabilities.typeDefinitionProvider, undefined);
-        assert.strictEqual(initialized.capabilities.selectionRangeProvider, undefined);
+        assert.strictEqual(initialized.capabilities.typeDefinitionProvider, true);
+        assert.strictEqual(initialized.capabilities.selectionRangeProvider, true);
         assert.strictEqual(Boolean(initialized.capabilities.workspace?.fileOperations?.willRename), supported);
         assert.strictEqual(Boolean(initialized.capabilities.workspace?.fileOperations?.didRename), supported);
         assert.strictEqual(initialized.capabilities.workspace?.fileOperations?.willDelete, undefined);

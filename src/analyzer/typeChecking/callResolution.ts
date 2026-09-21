@@ -2,6 +2,7 @@ import type { AnalysisDeclaration, AnalysisPosition } from '../../types/analysis
 import { contains } from '../resolution';
 import { isBuiltinDeclarationSource } from './builtinCatalog';
 import { createTypeCheckingContext, type TypeDiagnosticsInput } from './diagnostics';
+import { sameFunctionSignature } from './model';
 import { scopeFor } from './declarations';
 import { compatibleOverloads, evaluateExpression } from './expressions';
 import { callArguments, descendants, field, type TypeNode } from './syntax';
@@ -39,9 +40,9 @@ export function createCallResolver(input: TypeDiagnosticsInput): (position: Anal
     const callee = evaluateExpression(ctx, functionNode, scope);
     const candidates = callee.type.candidates ?? (callee.type.call ? [callee.type.call] : []);
     const builtin = candidates.every(fn => isBuiltinDeclarationSource(ctx.catalog, fn.uri));
-    // Named receivers retain declaration lookup. Expression receivers need the
-    // inferred result type even for ordinary methods, whose identity remains arity-based.
-    if (!candidates.length || (!builtin && !allowPartialArguments && !hasExpressionReceiver(functionNode))) {
+    // Member calls use the inferred receiver type, including typedefs and expression receivers.
+    // Ordinary AXEL call identity remains arity-based.
+    if (!candidates.length || (!builtin && !allowPartialArguments && functionNode.kind !== 'field_expression')) {
       results.set(call, undefined); return undefined;
     }
     const values = callArguments(call).filter(arg => !(allowPartialArguments && arg.kind === 'ERROR' && arg.text === ',')).map(arg => evaluateExpression(ctx, arg, scope));
@@ -50,7 +51,12 @@ export function createCallResolver(input: TypeDiagnosticsInput): (position: Anal
       : {viable: candidates.filter(fn => (allowPartialArguments || values.length >= fn.required)
         && (fn.variadic || values.length <= fn.parameters.length)), uncertain: []};
     const remaining = new Set([...viable, ...uncertain]);
-    const declarations = candidates.filter(fn => remaining.has(fn)).flatMap(fn => {
+    const matching = candidates.filter(fn => remaining.has(fn));
+    // A method prototype and its body denote one target; preserve Definition/References identity.
+    const preferred = matching.filter(fn => fn.node.kind === 'function_definition' || !matching.some(other =>
+      other.node.kind === 'function_definition' && other.owner === fn.owner && other.instancePath === fn.instancePath
+      && other.variadic === fn.variadic && sameFunctionSignature(other, fn)));
+    const declarations = preferred.flatMap(fn => {
       const document = documents.find(document => document.uri === fn.uri);
       const range = document?.expandedSource?.sourceRange(fn.node.range) ?? fn.node.range;
       return document?.declarations.filter(declaration => declaration.kind === 'function'
@@ -60,12 +66,4 @@ export function createCallResolver(input: TypeDiagnosticsInput): (position: Anal
     results.set(call, result);
     return result;
   };
-}
-
-function hasExpressionReceiver(node: TypeNode): boolean {
-  if (node.kind !== 'field_expression') { return false; }
-  const receiver = field(node, 'argument');
-  if (!receiver) { return false; }
-  if (receiver.kind === 'field_expression') { return hasExpressionReceiver(receiver); }
-  return !['identifier', 'class_name', 'this', 'qualified_identifier'].includes(receiver.kind);
 }

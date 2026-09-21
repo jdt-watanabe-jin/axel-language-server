@@ -1,3 +1,4 @@
+import { registerNavigationFeatures } from './navigationFeatures';
 import { ProjectScope, normalizeProjectSettings } from '../analyzer/projectScope';
 import { getInlayHintsSteps } from '../analyzer/inlayHints';
 import { ConfigurationManager, configurationKeys } from './configuration';
@@ -69,6 +70,7 @@ export interface AnalyzerLike extends
   WorkspaceNavigationIndex,
   WorkspaceCodeActionIndex {
   getDocumentSymbolsSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, import('../types/analysis').AnalysisSymbol[], void>;
+  getSelectionRangesSteps?(input: AnalyzeDocumentInput, positions: readonly import('../types/analysis').AnalysisPosition[]): Generator<AnalysisStep, import('../analyzer/selectionRanges').AnalysisSelectionRange[], void>;
   getFoldingRangesSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void>;
   updateOpenDocument?(input: AnalyzeDocumentInput): void;
   analyzeRequestDocument?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
@@ -296,6 +298,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   });
 
   registerTypeHierarchyHandlers(context, typeHierarchy, { request });
+  registerNavigationFeatures(context, typeHierarchy, { request }, () => revision);
 
   context.connection.languages.diagnostics.on(request(async (params, token) => {
     if (featureSettings.errorSquiggles === 'disabled') { return toDocumentDiagnosticReport([]); }

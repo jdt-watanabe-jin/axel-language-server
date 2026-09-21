@@ -1,6 +1,6 @@
 # Type hierarchy implementation
 
-`src/analyzer/typeTarget.ts` resolves a source position to its declaration and static type using the existing navigation and type-checking context. It preserves pointer/reference/array shape and the typedef declaration chain for future Type Definition consumers. Hierarchy alone unwraps the shape to a class. Inheritance clauses require an actual class type, so pointer typedefs do not create inheritance edges. Ambiguous names are rejected at the usage site rather than accepting the first navigation candidate.
+`src/analyzer/typeTarget.ts` resolves a source position to its declaration and static type using the existing navigation and type-checking context. It preserves pointer/reference/array shape and the typedef declaration chain for Type Definition navigation. Hierarchy alone unwraps the shape to a class. Inheritance clauses require an actual class type, so pointer typedefs do not create inheritance edges. Ambiguous names are rejected at the usage site rather than accepting the first navigation candidate.
 
 `src/analyzer/typeHierarchy/semantics.ts` extracts physical declaration ranges and direct explicit inheritance edges. Structural keys combine canonical file identity, lexical scope, name and declaration kind. Function scope identity includes its declarator to distinguish local classes in overloaded functions. Forward declarations collapse only when a unique matching definition is visible. Source mapping, inactive/uncertain branches, syntax recovery and duplicate declarations restrict extraction to definite, navigable declarations.
 
@@ -11,3 +11,13 @@ Subtypes use the common `ProjectScope`. A reachable-graph signature separates va
 Background construction is shared. Canceling a waiting request does not cancel work needed by another request; disposal cancels the shared lifetime. Open-document versions and contents take precedence over disk metadata. `src/lsp/typeHierarchy.ts` uses the existing lifecycle queue, validates request envelopes and maps analyzer results to standard LSP items. Valid items with no adjacent types return an empty list; stale or invalid opaque data returns null.
 
 Semantic tests are in `src/test/integration/features/typeHierarchy.test.ts`, protocol tests in `src/test/e2e/typeHierarchy.test.ts`, and cache/cancellation/diamond regressions in `src/test/performance/typeHierarchy.test.ts`. The extension repository tests the three standard VS Code hierarchy commands against this server. See [user behavior](../user/type-hierarchy.md) and [cancellation](cancellation.md).
+
+## R1 navigation reuse
+
+`navigationTargets.ts` extracts compact method prototype/body/override relations from the existing type context and call-hierarchy semantics. Function signature keys follow AXEL type equality, including its reference and const treatment; owner validation is cached per type. The hierarchy bundle stores these records for repeated Declaration and Implementation requests. Pure virtual declarations are detected from the syntax tree's zero initializer; inherited obligations and semantic override edges determine which derived classes are concrete. No additional project scanner is introduced.
+
+`TypeHierarchyIndex.navigate` resolves Declaration and Type Definition in the requesting context. Implementation reuses the shared project snapshot, dependency stamps, cancellation and generation checks, and rejects incompatible owner variants before following override edges. Existing method Definition navigation uses inferred receiver types (including aliases) and merges prototypes with their corresponding bodies, preserving body priority.
+
+`src/lsp/navigationFeatures.ts` registers the four providers. The three semantic navigation requests share the existing lifecycle queue. Selection uses `DocumentAnalyzer.getSelectionRangesSteps` through the syntax-only analyzer and a separate request queue; it checks cancellation and the lifecycle revision without waiting for foreground semantic analysis. Its ranges are clipped to physical line lengths, excluding CRLF terminators.
+
+See [navigation behavior and tests](../user/navigation.md).
