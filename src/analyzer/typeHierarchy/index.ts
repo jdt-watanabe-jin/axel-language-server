@@ -24,6 +24,7 @@ export class TypeHierarchyIndex {
   private settings: unknown = {};
   private generation = 0;
   private enabled = false;
+  private projectIndexRequested = false;
   private disposed = false;
   private dirty = true;
   private running?: Promise<Bundle[]>;
@@ -63,7 +64,7 @@ export class TypeHierarchyIndex {
   }
 
   private schedule(): void {
-    if (!this.enabled || !this.dirty || this.running || this.disposed) { return; }
+    if (!this.projectIndexRequested || !this.enabled || !this.dirty || this.running || this.disposed) { return; }
     const running = this.build(); this.running = running;
     void running.catch(error => {
       if (!this.disposed && (error as { code?: number }).code !== LSPErrorCodes.ContentModified) {
@@ -163,6 +164,9 @@ export class TypeHierarchyIndex {
   }
   private async snapshot(token: CancellationToken, progress?: Progress): Promise<Bundle[]> {
     throwIfCancelled(token);
+    // Local prepare/supertypes need only their source context. Start whole-project
+    // indexing on the first subtype/implementation search, then retain background updates.
+    this.projectIndexRequested = true;
     if (progress) { this.progress.add(progress); }
     try {
       // Reconcile metadata even if a client missed a watched-file notification.

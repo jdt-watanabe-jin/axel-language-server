@@ -11,4 +11,6 @@ Declaration and type resolution use visible includes and shared startup declarat
 
 The `workspaceSymbols` outline mode does not restrict these navigation operations. Selection always uses original source syntax. These APIs are available in the linked development build; this does not update the extension's pinned Git dependency or publish a release.
 
+The shared project index is built on demand for Implementation and subtype searches, including implementation-count Code Lens resolution. The first such search may wait for indexing; the server does not prebuild this index at startup. Subsequent searches reuse it, with background updates after edits.
+
 Protocol and semantic regression tests are in `src/test/e2e/r1Navigation.test.ts` and `src/test/integration/features/r1Navigation.test.ts`. Selection scheduling is covered by `src/test/unit/r1SelectionScheduling.test.ts`.

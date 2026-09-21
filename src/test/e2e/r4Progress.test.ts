@@ -10,12 +10,25 @@ suite('R4 progress over stdio', function () {
   this.timeout(30000);
   test('shows shared slow diagnostic/token work once, cancels it and serves subsequent requests', async () => {
     const root = createTempDir();
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 3; i++) {
       fs.writeFileSync(path.join(root, 'header' + i + '.h'),
-        (i < 299 ? '#include "header' + (i + 1) + '.h"\n' : '') + 'int value' + i + ';');
+        (i < 2 ? '#include "header' + (i + 1) + '.h"\n' : '') + 'int value' + i + ';');
     }
     const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
-    const server = startLspServer(20000);
+    // Control slow I/O instead of relying on unrelated background CPU work to
+    // push a fixture past the production progress delay. Parsing stays real.
+    const slowRead = path.join(root, 'slow-read.cjs');
+    fs.writeFileSync(slowRead, `
+      const fs = require('fs');
+      const read = fs.promises.readFile.bind(fs.promises);
+      fs.promises.readFile = async (...args) => {
+        if (require('path').basename(String(args[0])) === 'header0.h') {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        return read(...args);
+      };
+    `);
+    const server = startLspServer(20000, { execArgv: ['--require', slowRead] });
     const events: {kind: string}[] = [];
     let creates = 0;
     server.onRequest('window/workDoneProgress/create', (params: unknown) => {
@@ -30,7 +43,7 @@ suite('R4 progress over stdio', function () {
       await server.request('initialize', { processId: null, rootUri: null, capabilities: { window: { workDoneProgress: true } } });
       await server.notify('initialized', {});
       await server.notify('textDocument/didOpen', { textDocument: { uri, version: 1, languageId: 'axel',
-        text: '#include "header0.h"\nint main(){return value299;}' } });
+        text: '#include "header0.h"\nint main(){return value2;}' } });
       const started = Date.now();
       const results = await Promise.allSettled([
         server.request('textDocument/diagnostic', { textDocument: {uri} }),
