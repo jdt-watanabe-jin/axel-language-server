@@ -1072,7 +1072,7 @@ export class WorkspaceIndex {
     const preprocessorSymbols = [...input.preprocessorSymbols ?? [], ...this.collectVisiblePreprocessorSymbols(input.uri)];
     const uncertainNames = this.collectVisibleUncertainNames(input.uri);
     const macroDefinitions = [...input.macroDefinitions ?? [], ...this.collectPositionAwareMacroDefinitions(input.uri)]
-      .filter((macro) => macro.uri !== input.uri);
+      .filter((macro) => documentUriIdentity(macro.uri) !== documentUriIdentity(input.uri));
     if (knownGuiClasses.length === 0 && preprocessorSymbols.length === 0 && macroDefinitions.length === 0 && uncertainNames.length === 0) {
       return initialAnalysis.typeSnapshot ? initialAnalysis : yield* this.analyzer.analyzeDocumentSteps({
         ...input,tool:this.tool,internalFeatures:this.internalFeatures,targetPlatform:this.targetPlatform
@@ -1344,7 +1344,7 @@ export class WorkspaceIndex {
 
     while (pending.length > 0) {
       const uri = pending.pop();
-      if (uri === undefined || uri === sourceUri || visibleUris.has(uri)) {
+      if (uri === undefined || documentUriIdentity(uri) === documentUriIdentity(sourceUri) || visibleUris.has(uri)) {
         continue;
       }
 
@@ -1384,7 +1384,7 @@ export class WorkspaceIndex {
       const uri = pending.pop();
       if (uri === undefined || visited.has(uri)) { continue; }
       visited.add(uri);
-      if (uri !== sourceUri) { visible.add(uri); }
+      if (documentUriIdentity(uri) !== documentUriIdentity(sourceUri)) { visible.add(uri); }
       pending.push(...(this.definiteIncludeGraph.get(uri) ?? []));
     }
     const result = [...visible].sort();
@@ -1899,6 +1899,14 @@ function uniqueDeclarations(declarations: AnalysisDeclaration[]): AnalysisDeclar
     if (!unique.has(declaration.id)) { unique.set(declaration.id, declaration); }
   }
   return [...unique.values()];
+}
+
+/** Compare URI spelling without filesystem I/O in visibility and macro traversal. */
+function documentUriIdentity(uri: string): string {
+  try {
+    const filename = path.normalize(fileURLToPath(uri));
+    return process.platform === 'win32' ? filename.toLowerCase() : filename;
+  } catch { return uri; }
 }
 
 function fileIdentity(uri: string): string {

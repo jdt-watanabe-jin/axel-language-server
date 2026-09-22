@@ -115,8 +115,10 @@ export function registerDeferredItemHandlers(context: HandlerRegistrationContext
           const parameter = declaration.signature?.parameters[target.parameter];
           const bound = boundDocumentationFor(analysis, context.analyzer, declaration);
           const description = bound && renderParameterDocumentation(bound, target.parameter, locale);
-          const tooltip = [parameter?.label, description?.plainText ?? parameter?.documentation].filter(Boolean).join('\n\n');
-          if (properties.includes('tooltip') && tooltip) { result.tooltip = tooltip; }
+          // Label locations supply the declaration hover in the editor; add only its parameter description.
+          const tooltip = [properties.includes('label.location') ? undefined : parameter?.label,
+            description?.plainText ?? parameter?.documentation].filter(Boolean).join('\n\n');
+          if (properties.includes('tooltip') && !properties.includes('label.tooltip') && tooltip) { result.tooltip = tooltip; }
           if (properties.includes('label.tooltip') || properties.includes('label.location')) {
             const part: { value: string; tooltip?: string; location?: { uri: string; range: typeof declaration.selectionRange } } = { value: hint.label };
             if (properties.includes('label.tooltip') && tooltip) { part.tooltip = tooltip; }

@@ -13,6 +13,8 @@ These contracts describe the local development build. They do not update the VS 
 
 Completion, inlay-hint and workspace-symbol `resolveProvider` capabilities are advertised only when supported properties are negotiated. Code Lens advertises its resolver independently of the default-off setting. Clients without detail negotiation retain eager completion and complete workspace-symbol locations, and the existing name-only inlay hints.
 
+Inlay parameter descriptions are emitted once: `label.tooltip` takes precedence over the hint-level `tooltip`. When `label.location` is negotiated, the tooltip adds the parameter description without repeating the declaration label supplied by the editor's location hover. Without navigation support, it includes the parameter label as well.
+
 ## Identity and invalidation
 
 `src/lsp/deferredItems.ts` binds completion and inlay items to bounded server-held snapshots. Client-supplied names or targets do not choose a declaration. Invalid identity data is rejected; source versions, workspace revisions, settings changes and background index invalidation prevent reuse of stale details. Clients receiving `ContentModified` request a new list. Completion resolution does not change labels, filtering, sorting, insertion text or edits. Internal declaration metadata never appears in the protocol payload.
