@@ -75,9 +75,9 @@ node out/server.js --stdio
 
 ```json
 {
-  "includeRoots": ["D:/sdk/include"],
+  "includeRoots": [],
   "forcedIncludeFiles": ["D:/analysis/builtins.h"],
-  "sxmHome": "D:/sdk",
+  "sxmHome": "D:/jedat/sx-meister",
   "tool": "asca",
   "project": { "exclude": ["**/generated/**"] },
   "inlayHints": { "parameterNames": { "enabled": true } },
@@ -128,15 +128,15 @@ node out/server.js --stdio
 
 | 対象・処理 | 実測値 |
 | --- | ---: |
-| 実 SDK：17,272 行・約 564 KB のヘッダーと起動スクリプト・強制 include を含む初回診断 | 約 20.49 秒 |
+| 実 SXM_USERHOME：17,272 行・約 564 KB のヘッダーと起動スクリプト・強制 include を含む初回診断 | 約 20.49 秒 |
 | 同じ文書を変更せず直後に再診断 | 約 3.40 ms |
-| 同 SDK 条件の最大 RSS（別の単発測定、プロセス全体） | 約 2.35 GB |
+| 同 SXM_USERHOME 条件の最大 RSS（別の単発測定、プロセス全体） | 約 2.35 GB |
 | 合成ソース：4,000 宣言の文書解析 | 約 282 ms |
 | 同合成ソースの編集・再解析 5 回の合計 | 約 1.41 秒 |
 
-実 SDK は `tool: asca`、`errorSquiggles: enabled` で計測。対象ヘッダーは Shift_JIS でデコードし、ディスク上の依存ファイルは通常の UTF-8 読み込みを使用しました。初回は `didOpen` から最初の診断応答までで、プロセス起動・VS Code 描画・全バックグラウンド処理の完了を含みません。OS のファイルキャッシュは消去していません。合成ケースは Ryzen 5 PRO 8600GE 上の解析 API の計測で、LSP 往復時間ではありません。
+実 SXM_USERHOME は `tool: asca`、`errorSquiggles: enabled` で計測。対象ヘッダーは Shift_JIS でデコードし、ディスク上の依存ファイルは通常の UTF-8 読み込みを使用しました。初回は `didOpen` から最初の診断応答までで、プロセス起動・VS Code 描画・全バックグラウンド処理の完了を含みません。OS のファイルキャッシュは消去していません。合成ケースは Ryzen 5 PRO 8600GE 上の解析 API の計測で、LSP 往復時間ではありません。
 
-大規模 SDK では初回の依存解析に時間とメモリを要し、変更のない再要求にはキャッシュが有効です。解析は協調的に分割されますが、ネイティブ parse など同期処理も残るため応答時間の上限は保証しません。Tree-sitter の incremental parsing と意味解析の差分更新は未導入です。上記は特定入力での参考値であり、任意の大規模 workspace や編集時の速度を保証するものではありません。
+大規模 SXM_USERHOME では初回の依存解析に時間とメモリを要し、変更のない再要求にはキャッシュが有効です。解析は協調的に分割されますが、ネイティブ parse など同期処理も残るため応答時間の上限は保証しません。Tree-sitter の incremental parsing と意味解析の差分更新は未導入です。上記は特定入力での参考値であり、任意の大規模 workspace や編集時の速度を保証するものではありません。
 
 ## 開発・検証
 
@@ -146,6 +146,6 @@ npm run test:ci           # lint と上記テスト、性能回帰テスト
 npm run benchmark        # 合成ケースを3プロセスで計測し JSON を標準出力
 ```
 
-実 SDK などローカル環境を要する検証は `npm run test:external` で実行します。必要な環境変数は [外部テスト](src/test/external) を参照してください。合成ベンチマークの実行コードは [scripts](scripts)、性能回帰テストは [src/test/performance](src/test/performance) にあります。
+実 SXM_USERHOME などローカル環境を要する検証は `npm run test:external` で実行します。必要な環境変数は [外部テスト](src/test/external) を参照してください。合成ベンチマークの実行コードは [scripts](scripts)、性能回帰テストは [src/test/performance](src/test/performance) にあります。
 
 実装は [src/lsp](src/lsp) が LSP の窓口、[src/analyzer](src/analyzer) が解析と索引管理を担当します。AXEL 構文・構文木の変更は `tree-sitter-axel`、エディター固有の UI は VS Code 拡張で扱います。
