@@ -1,154 +1,151 @@
 # AXEL Language Server
 
-Performance development: [architecture, benchmarks and profiling](docs/developer/performance.md).
+AXEL ソース向けの Language Server Protocol（LSP）サーバーです。[VS Code 拡張](https://github.com/jdt-watanabe-jin/axel-extension)などのクライアントから利用し、[tree-sitter-axel](https://github.com/jdt-watanabe-jin/tree-sitter-axel) による構文解析と、TypeScript で実装した意味解析を提供します。AXEL プログラム自体は実行しません。
 
-Startup language support: [shared globals from _login.axl](docs/user/login-scope.md).
+この README は現在のソースの実装を説明します。拡張が固定参照するサーバーの `v0.1.0` と同じ機能を保証するものではありません。利用時は対応するサーバー・パーサー・クライアントのビルドを組み合わせてください。
 
-AXEL Language Server is a standalone Language Server Protocol server for AXEL source files.
+## 対応機能
 
-The package entry point is:
+機能名と分類は [LSP 3.18 仕様](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.18/specification/)に合わせています。以下は実装済み機能の概要です。
 
-```text
-out/server.js
-```
+### Language Features
 
-## Supported LSP Features
+| 機能 | できること |
+| --- | --- |
+| Go to Declaration / Go to Definition | シンボルの宣言・定義、include・実行ファイルの参照先へ移動 |
+| Go to Type Definition / Go to Implementation | 型宣言、関数・メソッドの実装、仮想メソッドの override などへ移動 |
+| Find References | 解決できたシンボルの参照箇所を検索 |
+| Call Hierarchy / Type Hierarchy | 呼び出し元・呼び出し先、基底型・派生型を表示 |
+| Hover / Completion / Signature Help | 可視シンボル、マクロ、組み込み宣言、継承・static メンバー、GUI 部品・イベントなどの情報表示・補完・引数支援。include・実行ファイルのパスにも対応 |
+| Document Highlight / Document Link | 同一シンボルの読み書きを強調し、リテラル include・`@` によるスクリプト参照をリンク表示 |
+| Document Symbol | クラス外メソッド定義や GUI イベントを含む文書の構造を表示 |
+| Folding Range / Selection Range | ブロック・コメント・プリプロセッサ・region の折りたたみ、構文に沿った選択範囲の拡張 |
+| Semantic Tokens | 宣言・参照・マクロ・GUI 要素などを意味に応じて色分け |
+| Inlay Hint / Code Lens | 引数名ヒント、参照数・実装数を表示（どちらも既定では無効） |
+| Pull Diagnostics | 構文エラー、重複宣言、未解決の名前・include・実行ファイル、型不整合、一部の GUI 誤用を検出。文書単位の診断に対応 |
+| Code Action | 追加先を確定できる include の Quick Fix を提示 |
+| Document Formatting / Document Range Formatting / Document on Type Formatting | 文書全体・指定範囲、改行・`}` 入力時のインデントを整形 |
+| Prepare Rename / Rename | 改名可能な対象を確認し、解決できたシンボルを改名 |
 
-The server currently supports these Language Server Protocol features:
+### Workspace Features
 
-- Workspace symbols across open and unopened AXEL files, with live exclusions, background indexing and cancellation. See [workspace symbols](docs/user/workspace-symbols.md) for scope, settings and navigation behavior.
-- Text document synchronization for AXEL source files.
-- Diagnostics:
-  - syntax diagnostics from `tree-sitter-axel`
-  - type diagnostics for the verified AXEL 510 runtime profile; see the [type-checking guide](docs/user/type-checking.md) for registration and limits
-  - semantic diagnostics for duplicate declarations, unresolved references, unresolved includes, unresolved AXEL execution files, and selected GUI misuse warnings
-- Document symbols for functions, variables, typedefs, enums and enum members, class members, macros, includes, GUI parts, and resolved GUI event handlers. See [document symbols](docs/user/document-symbols.md) for external method grouping and navigation limits.
-- Hover for declarations, visible references, members, macros, built-ins, include paths, AXEL execution file references, GUI classes, GUI parts, and GUI receiver paths.
-- Completion for AXEL declaration keywords, visible symbols, enum members, macros, built-ins, include paths, AXEL execution files, inherited members, `this->` members, static members, GUI parts, and GUI events.
-- Go to Definition for local declarations, declarations visible through resolved includes, include paths, AXEL execution files, static members, inherited members, `this->` members, GUI parts, and GUI event handlers.
-- Go to Declaration, Type Definition and Implementation, plus syntax-based Selection Range. See [navigation and selection](docs/user/navigation.md) for typedef traversal, virtual overrides, project scope and limits.
-- Document Link and lazy resolve for literal include paths and @ script calls. See [document links](docs/developer/document-links.md) for scope, lifecycle and tests.
-- Find References for resolved symbol identities across the current document, resolved includes, dependent documents, and forced includes.
-- Document highlights for the same resolved symbol within the requesting document, classified as Text, Read, or Write. See the [document highlight guide](docs/developer/document-highlights.md) for request behavior and testing.
-- Call Hierarchy for resolved calls and unambiguous function references, with incoming and outgoing exploration across the current analysis index. See the [call hierarchy implementation guide](docs/developer/call-hierarchy.md) for ownership, virtual dispatch, caching, and limits.
-- Type Hierarchy from type and variable names, with direct base types and derived types across unopened project files. See [type hierarchy](docs/user/type-hierarchy.md) for supported targets and [implementation](docs/developer/type-hierarchy.md) for resolution, indexing and cancellation.
-- Prepare Rename and Rename for safe resolved symbols, including references in included files when the symbol identity is known.
-- Code actions for deterministic missing-include quick fixes.
-- Explicit index rebuilding, versioned Quick Fix application, source opening, recovery actions and delayed cancellable progress. See [server operations](docs/developer/r4-operations.md) for arguments, client capabilities and linked-development availability.
-- Lazy completion, inlay-hint and workspace-symbol details, plus opt-in reference and implementation Code Lens. See [Code Lens](docs/user/code-lens.md) and [resolve contracts](docs/developer/deferred-details.md). These features require the linked development build; the extension's pinned `v0.1.0` dependency is not updated.
-- Parameter-name inlay hints for resolved function and method arguments, disabled by default. See [inlay hints](docs/user/inlay-hints.md) for configuration, suppression, overloads and source mapping.
-- Signature help for functions, methods, inherited member calls, `this->` member calls, forced-include functions, function-like macros, dialog-owner methods, and GUI part member calls.
-- Semantic tokens for declarations and references, including functions, variables, parameters, types, enum members, macros, member access, method calls, GUI receiver paths, GUI event declarations, and AXEL execution file names.
-- Document and range formatting for conservative leading indentation based on structural braces.
-- Syntax-based folding ranges for AXEL bodies, block comments, preprocessor branches and macros, and regions. See the [folding ranges guide](docs/user/folding-ranges.md) for boundaries and exclusions.
+| 機能 | できること |
+| --- | --- |
+| Workspace Symbol | 未オープンファイルを含むプロジェクト内のシンボルを検索 |
+| Configuration / Did Change Configuration | クライアントから設定を取得し、変更時に再取得して反映 |
+| Workspace Folders / Did Change Workspace Folders | workspace フォルダーの取得・追加・削除を解析対象に反映 |
+| Did Change Watched Files | 監視対象ファイルの変更を解析・索引に反映 |
+| Will Create Files / Did Create Files / Will Rename Files / Did Rename Files / Will Delete Files / Did Delete Files | 作成・改名・削除の通知で解析を更新。改名前にはリテラル include パスの更新を提案。作成前・削除前の追加編集はなし |
+| Execute Command / Apply Edit | インデックス再構築、Quick Fix の適用依頼、ソース表示などを実行 |
 
-Functions and methods can be resolved before their declaration or definition within their owning scope. Hover, definition navigation, references, completion, and signature help use this lookup; variables retain their declaration-order visibility and normal scope shadowing.
+### Window Features
 
-Formatting intentionally changes indentation only. It does not rewrite expression spacing, comments, or documents with syntax errors or unbalanced braces.
+| 機能 | できること |
+| --- | --- |
+| Show Message / Show Message Request | エラー通知や再試行・設定表示の選択肢を提示 |
+| Show Document | 指定したソース位置をクライアントで開く |
+| Log Message | サーバーの処理・エラーログをクライアントへ送信 |
+| Work Done Progress Create / Work Done Progress Cancel | 対応クライアントに解析・検索などの進捗を表示し、キャンセルを受け付ける |
 
-Leading Doxygen comments can provide structured documentation for hover, completion, and signature help. See the [Doxygen comments guide](docs/user/doxygen-comments.md) for supported forms, commands, binding rules, and limits.
+このほか、Document Synchronization の Did Open / Did Change / Did Close による文書同期（差分更新）と、Cancel Request によるリクエストのキャンセルに対応します。詳細情報の resolve や表示の refresh は、各機能とクライアントの対応状況に応じて利用します。
 
-See [configuration acquisition](docs/user/configuration.md), [capability negotiation](docs/developer/protocol-compatibility.md), and [file operations and include renaming](docs/user/file-operations.md) for the client contract.
+Doxygen 形式の先行コメント（`/** */`、`/*! */`、`///`、`//!`）から説明・引数・戻り値などを Hover、補完詳細、Signature Help に表示します。Doxygen の実行や文書生成は行いません。診断などの表示言語は `initialize.locale` が `ja` / `ja-*` なら日本語、それ以外は英語です。
 
-## System-defined macros
+### 解析範囲と制約
 
-Return `tool` in the `axel` item of the `workspace/configuration` response (see [configuration](docs/user/configuration.md)):
+- include、強制 include、条件付きコンパイル、オブジェクト形式・関数形式のマクロを解析します。`tool`・`targetPlatform` に応じたシステムマクロも提供し、非アクティブ範囲は `axel/inactiveRanges` で通知します。
+- `sxmHome` があれば `_login.axl` とその依存先のクラス・グローバル変数・`main` 以外のグローバル関数を共有します。起動ファイルは `axel` / `ismo` で `bin/_login.axl`、`asca` で `bin/_asca/_login.axl`、`spicechart` で `bin/_spicechart/_login.axl`。起動時の実行状態や初期値は再現しません。
+- 型検査は Windows の AXEL 510 / SX-Meister 20.0.0 で検証した規則が基準です。初期化、代入、呼び出し、戻り値、演算子、条件、キャスト、ポインター、配列などを検査します。未確定の条件や回復不能な構文に依存する診断は抑制するため、診断がないことはコンパイル成功を保証しません。
+- Find References・Call Hierarchy・参照数 Code Lens は現在の解析インデックスを対象とし、未オープンの全ファイルの検索を保証しません。Workspace Symbol、Go to Implementation、派生型・実装数の検索は `project` の対象ファイルも収集します。Go to Implementation・派生型用インデックスは初回要求時に構築します。
+- プロジェクト検索対象は workspace 内の `.axl`・`.h`・`.hh`。workspace がなければ開いているファイルが対象です。`.git` とルート配下のシンボリックリンクは走査せず、`.gitignore` やエディターの除外設定は自動適用しません。除外した依存ファイルも型解決には使われます。
+- 整形は行頭のインデントを扱い、式の空白配置などは変更しません。文書・範囲整形は構文エラーや不整合な括弧がある場合には適用しません。Rename や include 更新も曖昧な対象を推測して編集しません。
+- 未保存の文書を優先します。ディスクから読み込む依存ファイルは UTF-8 として扱います。
 
-```json
-{ "tool": "ismo" }
-```
+## 利用と設定
 
-Accepted values are `axel`, `ismo`, `asca`, and `spicechart`. Omitted values select `axel`; invalid values reject the configuration snapshot. Changing the configuration invalidates analysis and refreshes diagnostics, inactive ranges, and semantic tokens without restarting the server.
-
-`__AXEL__` is always defined as the integer `1`, regardless of Tool. `__AXELVERSION__` is always defined as the integer `510`, preserving the former IntelliSense header value; no header include is required.
-
-`__FILE__` is the absolute source path and `__LINE__` is the one-based source line. In a function-like macro body, the expansion uses the invocation location; tokens written in arguments keep their original locations. Strings and comments are not substituted.
-
-`__DATE__`, `__TIME__`, and `__TIMESTAMP__` are defined string macros whose runtime formats are `yy/mm/dd`, `hh:mm:ss`, and `yy/mm/dd hh:mm:ss`. Hover explains that their values are unavailable while editing; expansion leaves these names symbolic. The server never substitutes its current time or a file modification time.
-
-`__AXELCONSOLE__` is always defined as an integer: `1` for Tool `axel`, and `0` for every other supported Tool. Its value follows Tool configuration changes without a document edit or server restart.
-
-`__AXEL_INTERNAL__` is always defined as an integer. Pass `internalFeatures` in the `axel` configuration response: `enabled` selects `1`, and `disabled` selects `0`. Omitted values select `enabled`; invalid values reject the configuration snapshot. Changes refresh analysis without editing the document or restarting the server. Use `#if __AXEL_INTERNAL__` to select a branch by value; `#ifdef __AXEL_INTERNAL__` is true for both settings.
-
-Tool `ismo` defines only `__APP_LEDIT__=1`, `asca` defines only `__APP_SEDIT__=1`, and `spicechart` defines only `__APP_SCHART__=1`. Tool `axel` defines none of these application macros. A non-selected macro is undefined, not defined as zero.
-
-The twenty-three names are reserved by analysis: explicit `defines`, source definitions, and `#undef` cannot change them. Source mutations produce warnings; configuration attempts are logged. These source-position and reservation rules are the current analysis policy; compatibility with every proprietary runtime version has not been verified.
-
-Hover, completion, diagnostics, and conditional evaluation share these definitions. System macros have no source definition or rename target, and no references list or function signature. Unknown runtime conditions retain possible branches instead of marking one inactive. Uncertain declarations are not treated as definitely visible; diagnostics depending only on their uncertainty are suppressed. Correlations between separate unknown branches are not evaluated.
-
-### Target platform
-
-Pass `targetPlatform` alongside `tool` in the `axel` configuration response. It selects the analysis target independently of the server host and Tool; it does not change the execution environment. Omitted values select `windows-x64`; invalid values reject the configuration snapshot. Changes invalidate document and include analysis and refresh diagnostics, inactive ranges, and semantic tokens without a restart.
-
-| Value | OS | CPU | Pointer bytes |
-| --- | --- | --- | --- |
-| `windows-x86` | Windows | x86 | 4 |
-| `windows-x64` | Windows | x86_64 | 8 |
-| `linux-x86` | Linux | x86 | 4 |
-| `linux-x64` | Linux | x86_64 | 8 |
-| `solaris-x86` | Solaris | x86 | 4 |
-| `solaris-x64` | Solaris | x86_64 | 8 |
-| `solaris-sparc32` | Solaris | SPARC | 4 |
-| `solaris-sparc64` | Solaris | SPARC | 8 |
-| `hpux-hppa32` | HP-UX | HPPA | 4 |
-| `hpux-hppa64` | HP-UX | HPPA | 8 |
-
-The platform macros are always defined integers, including those whose value is zero:
-
-- `__OS_WINDOWS__`, `__OS_LINUX__`, `__OS_SOLARIS__`, `__OS_HPUX__`: selected OS is 1, others are 0.
-- `__OS_UNIX__`: 0 on Windows, 1 otherwise.
-- `__CPU_x86__`, `__CPU_x86_64__`, `__CPU_HPPA__`, `__CPU_SPARC__`: selected CPU is 1, others are 0.
-- `__OS_32bit__`, `__OS_64bit__`: selected pointer size is 1, the other is 0.
-
-No helper header is required. These are reserved system macros; use `#if` to test their value, since `#ifdef` is always true. The mapping is maintained in `src/analyzer/targetPlatform.ts`; keep extension setting choices consistent when adding platforms.
-## Localization
-
-The server uses the client's `initialize.locale`: `ja` and `ja-*` (case insensitive) select Japanese; omitted or other locales use English. Missing translations fall back to their English templates. Locale belongs to the connection and is retained across configuration changes. Reconnect after changing the client's display language.
-
-Localized text includes syntax/semantic/include/execution-file diagnostics, built-in hover and completion documentation, generated Doxygen section headings, definition origins, macro expansion annotations, path/GUI completion descriptions, and include quick-fix titles. Identifiers, signatures, source comments, paths, edits, and external output remain unchanged. Doxygen parameter descriptions are also available in signature help. Developer logs remain English.
-
-Translations live in `src/i18n/ja.ts`. `message()` adds structured descriptors to diagnostics while retaining canonical English analysis messages; the LSP adapter formats them for the session locale. `translate()` formats server-owned hover/completion text at presentation time. Keep argument placeholders consistent; do not translate by matching completed diagnostic strings. Compiled dictionaries ship under `out/i18n/`.
-
-See [testing strategy](docs/testing/strategy.md) for localization verification.
-
-## Development
-
-See [initial analysis performance](docs/developer/startup-performance.md) for reproducible real-workspace measurements.
-
-See [request cancellation and cooperative analysis](docs/developer/cancellation.md) for cancellation errors, asynchronous execution, cache consistency, and limitations.
-
-See [type-checking architecture and verification](docs/developer/type-checking.md) for the type model, builtin registration, corpus, and optional runtime tests.
-
-Install dependencies:
+依存関係をインストールしてビルドし、LSP クライアントから起動します。
 
 ```sh
 npm install
-```
-
-Build:
-
-```sh
 npm run build
+node out/server.js --stdio
 ```
 
-Run tests:
+クライアントは `workspace.configuration: true` を宣言する必要があります。`initialized` 後の `workspace/configuration`（`section: "axel"`）に、設定オブジェクトを1つ含む配列で応答してください。以下は配列内に入れる設定オブジェクトの例です。VS Code の設定キーとは異なります。
+
+```json
+{
+  "includeRoots": ["D:/sdk/include"],
+  "forcedIncludeFiles": ["D:/analysis/builtins.h"],
+  "sxmHome": "D:/sdk",
+  "tool": "asca",
+  "project": { "exclude": ["**/generated/**"] },
+  "inlayHints": { "parameterNames": { "enabled": true } },
+  "codeLens": { "enabled": true }
+}
+```
+
+| 主な設定 | 用途・既定値 |
+| --- | --- |
+| `includeRoots` | include の検索先。既定 `[]` |
+| `forcedIncludeFiles` / `forcedIncludeRoots` | 強制 include のファイル／再帰収集するディレクトリ。各 `[]` |
+| `sxmHome` / `defines` | 起動スクリプトの基点／追加マクロ定義。空文字列／`[]` |
+| `tool` | `axel`（既定）、`ismo`、`asca`、`spicechart` |
+| `targetPlatform` | 解析対象の OS・CPU。既定 `windows-x64`。選択肢は [targetPlatform.ts](src/analyzer/targetPlatform.ts) を参照 |
+| `internalFeatures` | `__AXEL_INTERNAL__` の値。`enabled`（既定）で 1、`disabled` で 0 |
+| `hover` / `autocomplete` | 各 `default`（有効）または `disabled` |
+| `errorSquiggles` | `enabledIfIncludesResolve`（既定）、`enabled`、`disabled`。既定では依存 include が解決しない文書は include 解決エラーのみ表示 |
+| `maxNumberOfProblems` | 診断件数の正の上限値。省略時は上限なし |
+| `project.include` / `project.exclude` | 共通のプロジェクト検索範囲。`["**/*"]`／`[]`。相対パスで `/` 区切りの `*`・`?`・`**` に対応 |
+| `workspaceSymbols` | Document Symbol の表示モード。既定 `Just My Code`、または `All`。Workspace Symbol の検索範囲は `project` で指定 |
+| `inlayHints.parameterNames.enabled` | 引数名ヒント。既定 `false`。同階層の `suppressWhenArgumentContainsName` は既定 `true` |
+| `codeLens.enabled` | 参照数・実装数の表示。既定 `false` |
+| `fileOperations.updateIncludesOnRename` | ファイル改名時の include 更新。既定 `true`。編集の適用・ファイル移動はクライアントが実施 |
+
+設定は接続単位の完全なスナップショットで、省略項目は既定値に戻ります。変更時は `workspace/didChangeConfiguration` を通知し、再取得後に再起動なしで反映します。通知の設定ペイロードや環境変数は代替設定元になりません。不正値・取得失敗時は設定が利用不能となり、再取得に成功するまで設定を必要とする言語要求が失敗します。旧 `workspaceSymbols.exclude`・`fileOperations.exclude` は使用できません。
+
+外部ヘッダーや解析用 JSON の変更も `workspace/didChangeWatchedFiles` で通知してください。起動スクリプトの監視対象は `axel/loginDependencies` で通知します。更新・追加表示・ファイル操作の利用には、それぞれ対応するクライアント機能が必要です。
+
+### 組み込み API の解析用宣言
+
+解析専用の宣言ヘッダーは `forcedIncludeFiles` に登録し、隣に同名の `.analysis.json`（例: `builtins.h` → `builtins.analysis.json`）を配置します。
+
+```json
+{
+  "schemaVersion": 1,
+  "profile": "axel-510",
+  "declarationFiles": ["builtins.h"],
+  "types": {},
+  "analysisOnlyMacros": []
+}
+```
+
+`declarationFiles` に解析専用として扱うファイルを明示し、必要に応じて `types` に組み込み型と宣言元の対応を登録します（[スキーマと検証処理](src/analyzer/typeChecking/builtinCatalog.ts)）。ファイルは JSON の配置先配下にある必要があります。強制 include に追加するだけでは、組み込み型の特殊規則や解析専用プロトタイプの許可は有効になりません。
+
+## 性能の目安
+
+2026-09-22 の既存測定結果です。Windows x64 / Node.js v25.8.1 で独立したプロセスで3回計測した中央値を示します（RSS は別計測）。
+
+| 対象・処理 | 実測値 |
+| --- | ---: |
+| 実 SDK：17,272 行・約 564 KB のヘッダーと起動スクリプト・強制 include を含む初回診断 | 約 20.49 秒 |
+| 同じ文書を変更せず直後に再診断 | 約 3.40 ms |
+| 同 SDK 条件の最大 RSS（別の単発測定、プロセス全体） | 約 2.35 GB |
+| 合成ソース：4,000 宣言の文書解析 | 約 282 ms |
+| 同合成ソースの編集・再解析 5 回の合計 | 約 1.41 秒 |
+
+実 SDK は `tool: asca`、`errorSquiggles: enabled` で計測。対象ヘッダーは Shift_JIS でデコードし、ディスク上の依存ファイルは通常の UTF-8 読み込みを使用しました。初回は `didOpen` から最初の診断応答までで、プロセス起動・VS Code 描画・全バックグラウンド処理の完了を含みません。OS のファイルキャッシュは消去していません。合成ケースは Ryzen 5 PRO 8600GE 上の解析 API の計測で、LSP 往復時間ではありません。
+
+大規模 SDK では初回の依存解析に時間とメモリを要し、変更のない再要求にはキャッシュが有効です。解析は協調的に分割されますが、ネイティブ parse など同期処理も残るため応答時間の上限は保証しません。Tree-sitter の incremental parsing と意味解析の差分更新は未導入です。上記は特定入力での参考値であり、任意の大規模 workspace や編集時の速度を保証するものではありません。
+
+## 開発・検証
 
 ```sh
-npm test
+npm test                  # unit・integration・LSP の E2E（ビルドを含む）
+npm run test:ci           # lint と上記テスト、性能回帰テスト
+npm run benchmark        # 合成ケースを3プロセスで計測し JSON を標準出力
 ```
 
-Run lint:
+実 SDK などローカル環境を要する検証は `npm run test:external` で実行します。必要な環境変数は [外部テスト](src/test/external) を参照してください。合成ベンチマークの実行コードは [scripts](scripts)、性能回帰テストは [src/test/performance](src/test/performance) にあります。
 
-```sh
-npm run lint
-```
-
-### Hover and completion settings
-
-Pass `hover` and `autocomplete` at the top level of the `axel` configuration response. Each accepts `"default"` (enabled, the default) or `"disabled"`. A disabled hover returns `null`; disabled completion returns an empty list, including manually requested completion. Other language features remain enabled. Changes apply to subsequent requests without restarting, and omitted values select `"default"`; invalid values reject the configuration snapshot. These settings do not control snippets or word suggestions supplied by the editor.
-
-### Diagnostic display settings
-
-Pass `errorSquiggles` alongside `hover` and `autocomplete` in the `axel` configuration response. It accepts `enabled`, `disabled`, and `enabledIfIncludesResolve` (the default for omitted values). `disabled` returns an empty full diagnostic report, clearing errors and warnings in both editor squiggles and the Problems panel. It does not disable parsing or other language features. `enabled` returns normal diagnostics regardless of missing includes.
-
-`enabledIfIncludesResolve` checks each document independently, including transitive and forced includes, using parsed syntax and the existing include resolver. Inactive includes are excluded. If an include cannot resolve, only include-resolution errors are returned; errors in a nested include are anchored at the requesting document遯ｶ蜀ｱ include, and forced-include errors at its start. Unsupported include expressions also count as unresolved. LSP diagnostic requests wait for the required dependency analysis; the synchronous diagnostic API can still return provisional results while background indexing is pending. Missing-header candidates are tracked so file creation/deletion and include-path changes trigger re-evaluation without a source edit. Configuration changes request a diagnostic refresh without restarting the server.
+実装は [src/lsp](src/lsp) が LSP の窓口、[src/analyzer](src/analyzer) が解析と索引管理を担当します。AXEL 構文・構文木の変更は `tree-sitter-axel`、エディター固有の UI は VS Code 拡張で扱います。
