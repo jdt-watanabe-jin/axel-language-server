@@ -237,7 +237,7 @@ export class DocumentAnalyzer {
       ]);
     // Macro reparsing only needs source provenance here; build final metadata on demand.
     let analysis: AnalyzedDocument = {
-      ...(!expandMacros ? {typeSnapshot:syntaxFacts.typeSnapshot(recoveredStatements.map(statement=>statement.node))} : {}),
+      ...(!expandMacros ? {typeSnapshot:yield* syntaxFacts.typeSnapshotSteps(recoveredStatements.map(statement=>statement.node))} : {}),
       internalFeatures: normalizeInternalFeatures(input.internalFeatures),
       tool: normalizeTool(input.tool),
       targetPlatform: normalizeTargetPlatform(input.targetPlatform),
@@ -292,7 +292,7 @@ export class DocumentAnalyzer {
     }
     analysis = materialized as unknown as AnalyzedDocument;
     yield;
-    analysis.typeSnapshot ??= syntaxFacts.typeSnapshot(recoveredStatements.map(statement=>statement.node));
+    analysis.typeSnapshot ??= yield* syntaxFacts.typeSnapshotSteps(recoveredStatements.map(statement=>statement.node));
     if (conditional) {
       analysis.inactiveRanges = inactiveRanges;
       analysis.systemMacroReferences = systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges));

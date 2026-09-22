@@ -1,3 +1,4 @@
+import { MutationJournal, JournalMap, JournalSet, type AnalysisTransaction } from '../util/mutationJournal';
 import { rebindAnalysis } from './analysisIdentity';
 import type { DocumentLinkCandidate } from './documentLinks';
 import { collectSemanticTokens } from './semanticTokens';
@@ -70,6 +71,7 @@ interface IndexedDocument {
 }
 
 export class WorkspaceIndex {
+  private activeMutationJournal?: MutationJournal;
   private projectScope?: ProjectScope;
   public setProjectScope(scope: ProjectScope): void { this.projectScope = scope; this.requestRevision++; }
   private requestAnalysisActive = false;
@@ -83,7 +85,7 @@ export class WorkspaceIndex {
   private readonly openDocumentInput?: (uri: string) => AnalyzeDocumentInput | undefined;
   private readonly inheritIncludeContext: boolean;
   private readonly dependencyAnalysisOnly: boolean;
-  private readonly includeContexts = new Map<string, Pick<AnalyzeDocumentInput, 'macroDefinitions' | 'preprocessorSymbols'>>();
+  private readonly includeContexts = new JournalMap<string, Pick<AnalyzeDocumentInput, 'macroDefinitions' | 'preprocessorSymbols'>>(() => this.activeMutationJournal);
   private readonly semanticResultCache = new Map<string, {analysis:AnalyzedDocument; declarations:AnalysisDeclaration[]; tokens:ReturnType<typeof collectSemanticTokens>}>();
   private readonly typeInputCache = new Map<string, TypeDiagnosticsInput>();
   private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
@@ -108,12 +110,12 @@ export class WorkspaceIndex {
   private internalFeatures: string;
   private maxNumberOfProblems: number | undefined;
   private readonly logger: AnalysisLogger;
-  private readonly documents = new Map<string, IndexedDocument>();
-  private readonly diagnosticIncludeDependencies = new Map<string, Set<string>>();
-  private readonly includeCandidateDependencies = new Map<string, Set<string>>();
-  private readonly includeGraph = new Map<string, Set<string>>();
-  private readonly definiteIncludeGraph = new Map<string, Set<string>>();
-  private readonly reverseIncludeGraph = new Map<string, Set<string>>();
+  private readonly documents = new JournalMap<string, IndexedDocument>(() => this.activeMutationJournal);
+  private readonly diagnosticIncludeDependencies = new JournalMap<string, Set<string>>(() => this.activeMutationJournal);
+  private readonly includeCandidateDependencies = new JournalMap<string, Set<string>>(() => this.activeMutationJournal);
+  private readonly includeGraph = new JournalMap<string, Set<string>>(() => this.activeMutationJournal);
+  private readonly definiteIncludeGraph = new JournalMap<string, Set<string>>(() => this.activeMutationJournal);
+  private readonly reverseIncludeGraph = new JournalMap<string, Set<string>>(() => this.activeMutationJournal);
   private includeResolutionCache: Map<string, IncludeResolution> | undefined;
   private completedDiskDocuments: Map<string, IndexedDocument> | undefined;
   private readonly completedDiskTransactions = new WeakMap<Map<string, IncludeResolution>, Map<string, IndexedDocument>>();
@@ -129,7 +131,7 @@ export class WorkspaceIndex {
   private pendingLoginIndexing = false;
   private backgroundStepping = false;
   private backgroundChanged = false;
-  private activeBackground: { uri: string; filePath: string; generation: number; rollback: () => void; login?: boolean; resolutions: Map<string, IncludeResolution>; steps: Generator<AnalysisStep, void, void> } | undefined;
+  private activeBackground: { uri: string; filePath: string; generation: number; rollback: AnalysisTransaction; login?: boolean; resolutions: Map<string, IncludeResolution>; steps: Generator<AnalysisStep, void, void> } | undefined;
   private readonly backgroundWaiters: (() => void)[] = [];
   private readonly backgroundCompleteListeners: ((changed: boolean) => void)[] = [];
 
@@ -256,57 +258,57 @@ export class WorkspaceIndex {
           if (generation !== this.requestRevision) {
             throw new ResponseError(LSPErrorCodes.ContentModified, 'Workspace changed during analysis.');
           }
-        }, work => this.withIncludeResolutionCache(work, resolutions));
+        }, work => rollback.run(() => this.withIncludeResolutionCache(work, resolutions)));
       } catch (error) {
         rollback();
         throw error;
-      } finally { this.requestAnalysisActive = false; }
+      } finally { rollback.commit(); this.requestAnalysisActive = false; }
     } finally { release(); }
   }
 
-  /** Roll back provisional writes without dropping unrelated, valid reference-search documents. */
-  private analysisRollback(revision: number, reschedule = true): () => void {
-    const documents = new Map([...this.documents].map(([uri, document]) => [uri, { ...document }]));
-    const edges = new Map(this.includeGraph);
-    const definiteEdges = new Map(this.definiteIncludeGraph);
-    const contexts = new Map(this.includeContexts);
-    const diagnosticDependencies = new Map(this.diagnosticIncludeDependencies);
-    const candidateDependencies = new Map([...this.includeCandidateDependencies].map(([uri, candidates]) => [uri, new Set(candidates)]));
+  /** Record only writes by this job; external edits are not transaction writes. */
+  private analysisRollback(revision: number, reschedule = true): AnalysisTransaction {
+    const journal = new MutationJournal();
     const forcedIndexed = this.forcedIncludesIndexed;
-    return () => {
-      const unchanged = revision === this.requestRevision;
-      // A traversal can already have rewritten dependency edges, so identity is not enough
-      // to prove a snapshot survived an external invalidation. Rebuild after any revision change.
-      const valid = unchanged ? [...documents] : [];
-      const pending = new Map(this.pendingBackgroundDocuments);
-      const active = this.activeBackground;
-      const loginPending = this.pendingLoginIndexing || active?.login === true;
-      if (active && !active.login) { pending.set(active.uri, active.filePath); }
-      const reusedOpens = new Map(this.reusedDependencyOpens);
-      this.clearCachedAnalysis();
-      if (unchanged) {
-        for (const [uri, text] of reusedOpens) {
-          if (documents.has(uri)) { this.reusedDependencyOpens.set(uri, text); }
+    const rollback = (() => {
+      const changed = [...new Set([...journal.keys(this.documents), ...journal.keys(this.includeGraph),
+        ...journal.keys(this.definiteIncludeGraph), ...journal.keys(this.includeContexts)])];
+      if (revision === this.requestRevision) {
+        const affected = new Set(changed.flatMap(uri => [...this.collectDependents(uri)]));
+        journal.rollback();
+        for (const uri of changed) {
+          for (const dependent of this.collectDependents(uri)) { affected.add(dependent); }
+          this.analyzer.clear(uri);
+          this.outlineAnalyzer.clear(uri);
+          this.reusedDependencyOpens.delete(uri);
+        }
+        this.invalidateDerivedFor(affected);
+        this.builtinCatalogCache = undefined;
+        this.forcedIncludesIndexed = forcedIndexed;
+      } else {
+        // An external edit invalidates the old generation. Never undo that edit.
+        journal.clear();
+        const pending = new Map(this.pendingBackgroundDocuments);
+        const loginPending = this.pendingLoginIndexing;
+        this.clearCachedAnalysis();
+        if (reschedule) {
+          for (const [uri, filePath] of pending) { this.enqueueBackgroundDocument(uri, filePath); }
+          if (loginPending) { this.pendingLoginIndexing = true; this.scheduleBackgroundIndexing(); }
         }
       }
-      for (const [uri, document] of valid) {
-        this.setIndexedDocument(uri, document);
-        this.replaceIncludeEdges(uri, edges.get(uri) ?? new Set(), definiteEdges.get(uri) ?? new Set());
-        const context = contexts.get(uri);
-        if (context) { this.includeContexts.set(uri, context); }
-        const dependencies = diagnosticDependencies.get(uri);
-        if (dependencies) { this.diagnosticIncludeDependencies.set(uri, dependencies); }
-        const candidates = candidateDependencies.get(uri);
-        if (candidates) { this.includeCandidateDependencies.set(uri, candidates); }
+      if (reschedule) {
+        for (const open of this.openInputs.values()) {
+          if (!this.documents.has(open.uri)) { this.enqueueBackgroundDocument(open.uri, filePathFromUri(open.uri) ?? open.uri); }
+        }
       }
-      this.forcedIncludesIndexed = unchanged && forcedIndexed;
-      if (!reschedule) { return; }
-      for (const [uri, filePath] of pending) { this.enqueueBackgroundDocument(uri, filePath); }
-      for (const open of this.openInputs.values()) {
-        if (!this.documents.has(open.uri)) { this.enqueueBackgroundDocument(open.uri, filePathFromUri(open.uri) ?? open.uri); }
-      }
-      if (loginPending) { this.pendingLoginIndexing = true; this.scheduleBackgroundIndexing(); }
+    }) as AnalysisTransaction;
+    rollback.run = work => {
+      const previous = this.activeMutationJournal;
+      this.activeMutationJournal = journal;
+      try { return work(); } finally { this.activeMutationJournal = previous; }
     };
+    rollback.commit = () => journal.clear();
+    return rollback;
   }
 
   /** An unchanged editor view of an already indexed dependency is not a source edit. */
@@ -1347,12 +1349,13 @@ export class WorkspaceIndex {
     if (active) {
       this.backgroundStepping = true;
       try {
-        const next = this.withIncludeResolutionCache(() => measureDurationMs(this.logger, 'workspace.background',
-          { uri: active.uri }, () => active.steps.next()), active.resolutions);
-        if (next.done) { this.activeBackground = undefined; }
+        const next = active.rollback.run(() => this.withIncludeResolutionCache(() => measureDurationMs(this.logger, 'workspace.background',
+          { uri: active.uri }, () => active.steps.next()), active.resolutions));
+        if (next.done) { active.rollback.commit(); this.activeBackground = undefined; }
         else { next.value?.sync(); }
       } catch (error: unknown) {
         this.activeBackground = undefined;
+        active.steps.return(); active.rollback();
         this.logger.error(`Background indexing failed for ${active.filePath}: ${getErrorMessage(error)}`);
       } finally { this.backgroundStepping = false; }
     }
@@ -1413,7 +1416,7 @@ export class WorkspaceIndex {
     this.includeGraph.set(uri, includedUris);
     this.definiteIncludeGraph.set(uri, definiteUris);
     for (const includedUri of includedUris) {
-      const dependents = this.reverseIncludeGraph.get(includedUri) ?? new Set<string>();
+      const dependents = this.reverseIncludeGraph.get(includedUri) ?? new JournalSet<string>(() => this.activeMutationJournal);
       dependents.add(uri);
       this.reverseIncludeGraph.set(includedUri, dependents);
     }
@@ -1791,7 +1794,7 @@ export class WorkspaceIndex {
     const cached = cache?.get(key);
     if (cached) { return cached; }
     const sourceUri = pathToFileURL(input.includingFilePath).toString();
-    const candidates = this.includeCandidateDependencies.get(sourceUri) ?? new Set<string>();
+    const candidates = this.includeCandidateDependencies.get(sourceUri) ?? new JournalSet<string>(() => this.activeMutationJournal);
     this.includeCandidateDependencies.set(sourceUri, candidates);
     const resolution = resolveInclude({ ...input, fileExists: file => {
       candidates.add(pathToFileURL(file).toString());

@@ -1,13 +1,15 @@
+import { runAnalysisSteps, type AnalysisStep } from '../util/analysisSteps';
 import type * as Parser from 'tree-sitter';
 import { collectMacroDefinitions } from './macroIndex';
 import { collectSystemMacroSyntax } from './systemMacros';
-import { buildTypeSnapshot, type TypeNode, type TypeSnapshot } from './typeChecking/syntax';
+import { buildTypeSnapshotSteps, type TypeNode, type TypeSnapshot } from './typeChecking/syntax';
 
 /** Syntax-only facts: callers must not mutate these shared, completed values. */
 export interface SourceSyntaxFacts {
   readonly macros: ReturnType<typeof collectMacroDefinitions>;
   readonly system: ReturnType<typeof collectSystemMacroSyntax>;
   typeSnapshot(replacements: readonly TypeNode[]): TypeSnapshot;
+  typeSnapshotSteps(replacements: readonly TypeNode[]): Generator<AnalysisStep, TypeSnapshot, void>;
 }
 
 // Roots are generation-local. Clearing the analyzer's roots releases these entries too.
@@ -23,10 +25,11 @@ export function getSourceSyntaxFacts(root: Parser.SyntaxNode, uri: string): Sour
   const facts: SourceSyntaxFacts = {
     get macros() { return macros ??= collectMacroDefinitions(root, uri); },
     get system() { return system ??= collectSystemMacroSyntax(root); },
-    typeSnapshot(replacements) {
+    typeSnapshot(replacements) { return runAnalysisSteps(facts.typeSnapshotSteps(replacements)); },
+    *typeSnapshotSteps(replacements) {
       if (previous && previous.replacements.length === replacements.length
         && replacements.every((node, i) => node === previous!.replacements[i])) { return previous.snapshot; }
-      const snapshot = buildTypeSnapshot(root, uri, replacements);
+      const snapshot = yield* buildTypeSnapshotSteps(root, uri, replacements);
       previous = { replacements: [...replacements], snapshot };
       return snapshot;
     }

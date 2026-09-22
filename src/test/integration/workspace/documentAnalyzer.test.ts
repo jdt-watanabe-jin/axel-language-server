@@ -39,17 +39,17 @@ suite('DocumentAnalyzer', () => {
   });
 
   test('builds the type snapshot only for the final macro-expanded source', () => {
-    const descriptor=Object.getOwnPropertyDescriptor(typeSyntax,'buildTypeSnapshot')!;
-    const build=typeSyntax.buildTypeSnapshot;
+    const descriptor=Object.getOwnPropertyDescriptor(typeSyntax,'buildTypeSnapshotSteps')!;
+    const build=typeSyntax.buildTypeSnapshotSteps;
     let snapshots=0;
-    Object.defineProperty(typeSyntax,'buildTypeSnapshot',{...descriptor,value:(...args:Parameters<typeof build>)=>{
+    Object.defineProperty(typeSyntax,'buildTypeSnapshotSteps',{...descriptor,value:(...args:Parameters<typeof build>)=>{
       snapshots++;return build(...args);
     }});
     try {
       const result=new DocumentAnalyzer().analyzeDocument({uri:'file:///snapshot.axl',version:1,text:'#define VALUE 1\nvoid f(){ int value=VALUE; }'});
       assert.ok(result.typeSnapshot);
       assert.strictEqual(snapshots,1);
-    } finally { Object.defineProperty(typeSyntax,'buildTypeSnapshot',descriptor); }
+    } finally { Object.defineProperty(typeSyntax,'buildTypeSnapshotSteps',descriptor); }
   });
 
   test('uses the foreground analysis when collecting final diagnostics for the same version', () => {

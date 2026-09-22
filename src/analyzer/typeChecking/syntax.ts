@@ -1,3 +1,4 @@
+import { runAnalysisSteps, type AnalysisStep } from '../../util/analysisSteps';
 import { isTypedVariadicParameter } from '../syntaxTree';
 import type * as Parser from 'tree-sitter';
 import type { AnalysisRange } from '../../types/analysis';
@@ -18,12 +19,17 @@ export interface TypeNode {
 }
 export interface TypeSnapshot { uri: string; root: TypeNode }
 export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacements: readonly TypeNode[] = []): TypeSnapshot {
+  return runAnalysisSteps(buildTypeSnapshotSteps(root, uri, replacements));
+}
+export function* buildTypeSnapshotSteps(root: Parser.SyntaxNode, uri: string, replacements: readonly TypeNode[] = []): Generator<AnalysisStep, TypeSnapshot, void> {
+  let visited = 0;
   const source = root.text;
   const sourceStart = root.startIndex;
   // One cursor streams native nodes directly into the immutable semantic tree.
   // No child wrapper arrays or parse-local property caches are needed by this pass.
   const cursor = root.walk();
-  function copy(): TypeNode {
+  function* copy(): Generator<AnalysisStep, TypeNode, void> {
+    if (++visited % 128 === 0) { yield; }
     const start = cursor.startIndex, end = cursor.endIndex;
     const replacement = replacements.find(item => item.start === start && item.end >= end);
     if (replacement) { return replacement; }
@@ -36,22 +42,23 @@ export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacem
     const argumentDelimiters: TypeNode[] = [];
     if (cursor.gotoFirstChild()) {
       do {
+        if (++visited % 128 === 0) { yield; }
         if (replacements.some(item => item.start < cursor.startIndex && cursor.endIndex <= item.end)) { continue; }
         const name = cursor.currentFieldName;
         const named = cursor.nodeIsNamed;
         if (kind === 'argument_list') {
           const childKind = cursor.nodeType;
-          if (['(', ',', ')'].includes(childKind)) { argumentDelimiters.push(copy()); }
+          if (['(', ',', ')'].includes(childKind)) { argumentDelimiters.push(yield* copy()); }
           // Retain the trailing comma inside an unfinished-call recovery node.
           if (childKind === 'ERROR' && source.slice(cursor.startIndex - sourceStart, cursor.endIndex - sourceStart) === ',') {
             if (cursor.gotoFirstChild()) {
-              do { if (cursor.nodeType === ',') { argumentDelimiters.push(copy()); } } while (cursor.gotoNextSibling());
+              do { if (cursor.nodeType === ',') { argumentDelimiters.push(yield* copy()); } } while (cursor.gotoNextSibling());
               cursor.gotoParent();
             }
           }
         }
         if (!named && !name) { continue; }
-        const item = copy();
+        const item = yield* copy();
         if (named) { children.push(item); }
         if (name) { (fields[name] ??= []).push(item); }
       } while (cursor.gotoNextSibling());
@@ -61,7 +68,7 @@ export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacem
       kind, text: source.slice(start - sourceStart, end - sourceStart), start, end,
       range: {start:{line:from.row, character:from.column}, end:{line:to.row, character:to.column}}, children, fields};
   }
-  return {uri, root:copy()};
+  return {uri, root:yield* copy()};
 }
 
 export function field(node: TypeNode, name: string): TypeNode | undefined { return node.fields[name]?.[0]; }

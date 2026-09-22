@@ -12,7 +12,7 @@ optimizations described here.
 2. `WorkspaceIndex` coordinates open/disk documents, forced includes, startup
    login scope, dependency graphs, foreground work and cooperative background work.
    Generators in `analysisSteps.ts` share the synchronous and asynchronous pipeline.
-   Request rollback snapshots prevent partially published analysis from surviving cancellation.
+   Request mutation journals prevent partially published analysis from surviving cancellation.
 3. `DocumentAnalyzer` parses through native Tree-sitter, evaluates preprocessing,
    reparses conditional/macro source when necessary, builds symbols/scopes/GUI
    data and a type snapshot, and extracts documentation. Syntax-only outline,
@@ -128,8 +128,10 @@ tests exercise the new ownership boundaries.
   avoid materializing that tree solely to inspect directives.
 - Type snapshots stream a Tree-sitter cursor directly into generation-local TypeNode
   objects. This pass avoids materializing native child-node arrays and the parse-local
-  property cache. Named children and field references share the same TypeNode;
-  operator fields, missing nodes, argument delimiters and recovery replacements retain
+  property cache. Named children and field references share the same TypeNode.
+  Traversal yields every bounded group of cursor operations. A cancelled partial
+  snapshot is never cached; the cursor and unfinished result belong to the generator.
+  Operator fields, missing nodes, argument delimiters and recovery replacements retain
   their existing meaning. The snapshot contains no native nodes or cursor.
 - Internal macro-expanded analysis omits source-only macro highlights and documentation
   blocks. The outer analysis owns those original-source presentation values. Direct
@@ -149,18 +151,27 @@ cancellation closes the generator, including when that operation later rejects.
 Existing macro-context, cyclic-include, background cancellation and native syntax
 compatibility tests cover the surrounding behavior.
 
+Request transactions record the original value of each changed map key and each
+changed reverse-edge/candidate-set membership once. Unchanged entries are not
+copied. Recording is active only while the generator executes, so notifications
+between yields do not become transaction writes. Rollback restores entries and
+invalidates derived caches for affected graph/context/document URIs. If a newer
+external revision has arrived, it clears analysis caches instead of restoring stale
+state. Successful foreground and background work explicitly releases the journal.
+
 ## Remaining work
 
-The cursor snapshot pass is still synchronous. The current pipeline neither adds
-incremental parsing nor removes required pre-/post-expansion symbol passes.
+Type snapshots yield during cursor traversal, but native parsing and several other
+semantic passes remain synchronous. Semantic analysis still rebuilds the affected
+document; required pre-/post-expansion symbol passes remain.
 
 Priorities for further measurement:
 
 | Area | Evidence / next experiment |
 | --- | --- |
-| Cold analysis and edits | Profile native-to-JS syntax snapshot construction, repeated semantic passes and GC with representative headers and macro expansions before introducing incremental parsing. |
+| Cold analysis and edits | Native incremental reuse is limited by fragile grammar subtrees. The current binding has no Tree.copy(); parsing unchanged source to protect old readers can cost nearly a full parse. Measure grammar reuse and safe ownership before enabling incremental parsing. |
 | Type lookup tradeoff | Name indexes reduce large-scope scans but add maps and allocation. Compare tiny vs large scopes and many classes/overloads; do not assume every type-checking workload improves. |
-| Workspace-scale cancellation | Rollback currently snapshots document/dependency maps. Measure request latency and snapshot allocation across thousands of indexed files before replacing rollback with a journal. |
+| Workspace-scale cancellation | Mutation journals avoid full document/dependency map snapshots. Measure high fan-in graphs and cancellation with simultaneous document revisions; stale-revision recovery still clears caches conservatively. |
 | File discovery and dependency I/O | Workspace symbols still reconcile filesystem fingerprints to recover missed events. Measure large trees, network disks and include fan-out; cache changes must retain missed-event correctness. |
 | Documentation / GUI / startup | Include comment-heavy and real SDK/login projects. Portable fixtures cannot establish their production bottlenecks. |
 | Memory and fairness | Extend repeated open/close, edits and cancellations across many files; capture heap retainers, native RSS and event-loop delay. Syntax parsing and individual generator steps remain synchronous. |
