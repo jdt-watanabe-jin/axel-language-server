@@ -65,7 +65,11 @@ suite('Macro command statements', () => {
     assert.ok(!analysis.scriptExecutions.some(script=>script.scriptPath==='degchk_Winlist.axl'));
   });
   test('keeps separate commands and argument references after recovery', () => {
-    const {analysis,index}=analyze(prefix+'void f(){int va; CMD @first.axl `va`; @second.axl;}');
+    const root=fixtures.createTempDir();
+    fs.writeFileSync(path.join(root,'second.axl'),'');
+    const index=fixtures.createWorkspaceIndex();
+    const analysis=index.analyzeDocument({uri:pathToFileURL(path.join(root,'main.axl')).toString(),version:1,
+      text:prefix+'void f(){int va; CMD @first.axl `va`; @second.axl;}'});
     assert.deepStrictEqual(analysis.diagnostics,[]);
     const commands=analysis.typeSnapshot!.root.children[1].fields.body[0].children.filter(n=>n.kind==='command_statement');
     assert.strictEqual(commands.length,2);
