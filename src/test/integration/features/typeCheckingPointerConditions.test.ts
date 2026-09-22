@@ -15,9 +15,8 @@ suite('Type checking: pointer conditions', () => {
   });
 
   test('accepts pointer and numeric logical operands in either order with integer results', () => {
-    for (const expression of ['item && flag', 'flag && item', 'item || flag', 'flag || item', 'item && other', 'item || NULL', 'NULL && flag', 'item && 1.0']) {
-      assert.deepStrictEqual(check('int result = ' + expression + ';'), [], expression);
-    }
+    const expressions = ['item && flag', 'flag && item', 'item || flag', 'flag || item', 'item && other', 'item || NULL', 'NULL && flag', 'item && 1.0'];
+    assert.deepStrictEqual(check(expressions.map((expression,i) => 'int result'+i+' = '+expression+';').join('\n')), []);
   });
 
   test('preserves pointer conditions and negation', () => {
@@ -25,9 +24,8 @@ suite('Type checking: pointer conditions', () => {
   });
 
   test('still rejects bitwise pointer operations and pointer-integer equality', () => {
-    for (const expression of ['item & flag', 'item | flag', 'item == flag', 'item * flag']) {
-      assert.deepStrictEqual(check(expression + ';').map(d => d.code), ['axel.type.binary_operator'], expression);
-    }
+    const expressions = ['item & flag', 'item | flag', 'item == flag', 'item * flag'];
+    assert.deepStrictEqual(check('\n'+expressions.map(expression=>expression+';').join('\n')).map(d=>[d.range.start.line,d.code]), expressions.map((_,i)=>[i+1,'axel.type.binary_operator']));
   });
 
   test('does not accept an arbitrary class value as a logical operand', () => {

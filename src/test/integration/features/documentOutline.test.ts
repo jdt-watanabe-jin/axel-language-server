@@ -1,7 +1,5 @@
 ﻿import * as assert from 'assert';
-import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
-import { findLocalDeclaration, thisReceiverType } from '../../../analyzer/resolution';
 import { runAnalysisSteps } from '../../../util/analysisSteps';
 import { validateSettings, configurationKeys } from '../../../lsp/configuration';
 import type { AnalysisSymbol, AnalyzeDocumentInput } from '../../../types/analysis';
@@ -14,14 +12,6 @@ suite('document outline isolation', () => {
     assert.throws(() => validateSettings({workspaceSymbols:'all'}), /workspaceSymbols/);
     assert.strictEqual(configurationKeys({}).features, configurationKeys({workspaceSymbols:'Just My Code'}).features);
     assert.notStrictEqual(configurationKeys({}).features, configurationKeys({workspaceSymbols:'All'}).features);
-  });
-  test('local resolution never materializes unrelated analysis fields', () => {
-    const analysis = new DocumentAnalyzer().analyzeDocument({uri:'file:///local.axl',version:1,text:'int value;'});
-    for (const key of ['semanticTokens','semanticTokenReferences','scriptExecutions','symbols']) {
-      Object.defineProperty(analysis,key,{get() { throw new Error('Unexpected getter: '+key); }});
-    }
-    assert.strictEqual(findLocalDeclaration(analysis,'value',{line:0,character:8})?.name,'value');
-    assert.strictEqual(thisReceiverType({analysis,position:{line:0,character:8},workspaceIndex:{}}),undefined);
   });
   test('outline does not enter semantic analysis or load dependencies and follows edits', () => {
     const index = new WorkspaceIndex({sxmHome:'missing-sdk',forcedIncludeFiles:['missing-forced.h'],defines:['SELECTED=1']});

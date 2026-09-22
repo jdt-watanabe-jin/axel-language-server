@@ -26,20 +26,18 @@ suite('Type checking: declaration resolution', () => {
 
   test('preserves alias precedence, local shadowing and declaration order', () => {
     const analyzer = new DocumentAnalyzer();
-    for (const [version, type] of [[1, 'short'], [2, 'double']] as const) {
-      const documents = [
-        analyzer.analyzeDocument({uri:'file:///first.h',version,text:'typedef ' + type + ' Shared;'}),
-        analyzer.analyzeDocument({uri:'file:///second.h',version,text:'typedef long Shared;'})
-      ];
-      const analysis = analyze('Shared imported; void main(){ typedef int Shared; Shared inner; }\nShared after; Later early; typedef int Later; Later late;');
-      const ctx = buildTypeContext({analysis,documents,catalog:loadBuiltinCatalog([])});
-      const types = Object.fromEntries(ctx.bindings.map(binding => [binding.name,binding.type.name]));
-      assert.strictEqual(types.imported,type);
-      assert.strictEqual(types.inner,'int');
-      assert.strictEqual(types.after,type);
-      assert.strictEqual(ctx.bindings.find(binding => binding.name === 'early')?.type.kind,'unknown');
-      assert.strictEqual(types.late,'int');
-    }
+    const documents = [
+      analyzer.analyzeDocument({ uri: 'file:///first.h', version: 1, text: 'typedef short Shared;' }),
+      analyzer.analyzeDocument({ uri: 'file:///second.h', version: 1, text: 'typedef long Shared;' })
+    ];
+    const analysis = analyze('Shared imported; void main(){ typedef int Shared; Shared inner; }\nShared after; Later early; typedef int Later; Later late;');
+    const ctx = buildTypeContext({ analysis, documents, catalog: loadBuiltinCatalog([]) });
+    const types = Object.fromEntries(ctx.bindings.map(binding => [binding.name, binding.type.name]));
+    assert.strictEqual(types.imported, 'short');
+    assert.strictEqual(types.inner, 'int');
+    assert.strictEqual(types.after, 'short');
+    assert.strictEqual(ctx.bindings.find(binding => binding.name === 'early')?.type.kind, 'unknown');
+    assert.strictEqual(types.late, 'int');
   });
 
   test('does not chain user conversions to double or use them for initialization', () => {
@@ -58,16 +56,11 @@ suite('Type checking: declaration resolution', () => {
     assert.strictEqual(lookupBinding(ctx,'hidden',ctx.scopes[0]),undefined);
     assert.ok(!ctx.functions.some(f=>f.name==='hiddenFn'));
   });
-  test('uncertain declarations and named types remain unresolved', () => {
-    const analysis=analyze('class A {int x;};\nA a;');
-    analysis.uncertainRanges=[{start:{line:0,character:0},end:{line:1,character:0}}];
-    analysis.uncertainNames=['A'];
-    const ctx=buildTypeContext({analysis,catalog:loadBuiltinCatalog([])});
-    assert.strictEqual(ctx.classes.length,0);
-    assert.strictEqual(lookupBinding(ctx,'a',ctx.scopes[0])!.type.kind,'unknown');
-    const other=analyze('class A {int x;}; A a;'); other.uncertainNames=['A'];
-    const otherCtx=buildTypeContext({analysis:other,catalog:loadBuiltinCatalog([])});
-    assert.strictEqual(lookupBinding(otherCtx,'a',otherCtx.scopes[0])!.type.kind,'unknown');
+  test('defers an uncertain class assignment without suppressing an independent known error', () => {
+    const text = '#if __TIME__\nclass A {int x;};\n#endif\nclass B {int x;};\nvoid main(){ A a; int i=a; B b; int j=b; }';
+    const diagnostics = new WorkspaceIndex().analyzeDocument({ uri: 'file:///uncertain-class.axl', version: 1, text }).diagnostics;
+    assert.deepStrictEqual(diagnostics.filter(d => d.code?.startsWith('axel.type.')).map(d => [d.code, d.messageDescriptor?.args]),
+      [['axel.type.initialization', ['int', 'B']]]);
   });
   test('value multiplication creates no phantom binding while real pointers survive', () => {
     const ctx=buildTypeContext({analysis:analyze('class A {int x;}; void main(){ int a; int b; a*b; A *p; }'),catalog:loadBuiltinCatalog([])});

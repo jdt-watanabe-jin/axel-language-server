@@ -1,7 +1,6 @@
 ﻿import * as assert from 'assert';
 import { DocumentAnalyzer } from '../../analyzer/documentAnalyzer';
 import { buildTypeContext, lookupBinding } from '../../analyzer/typeChecking/declarations';
-import type { Binding } from '../../analyzer/typeChecking/model';
 
 suite('Type binding lookup scaling', () => {
   function context() {
@@ -26,17 +25,20 @@ suite('Type binding lookup scaling', () => {
     }
     assert.ok(reads < 100, 'Repeated expressions reread ' + reads + ' binding names');
   });
-  test('sees appended declarations after a miss and preserves position and last-declaration precedence', () => {
-    const ctx = context();
+  test('sees appended parsed declarations after a miss and preserves source precedence', () => {
+    const analysis = new DocumentAnalyzer().analyzeDocument({uri:'file:///appended.axl',version:1,text:'int added;\nstring added;'});
+    const ctx = buildTypeContext({analysis,catalog:{declarationUris:new Set(),rolesByDeclaration:new Map(),analysisOnlyMacroUris:new Set()}});
     const scope = ctx.scopes[0];
-    assert.strictEqual(lookupBinding(ctx, 'added', scope), undefined);
-    const first: Binding = {...ctx.bindings[0], name: 'added', node: {...ctx.bindings[0].node, start: 10}};
-    scope.bindings.push(first); ctx.bindings.push(first);
-    assert.strictEqual(lookupBinding(ctx, 'added', scope, 9), undefined);
-    assert.strictEqual(lookupBinding(ctx, 'added', scope, 10), first);
-    const second: Binding = {...first, node: {...first.node, start: 20}};
-    scope.bindings.push(second); ctx.bindings.push(second);
-    assert.strictEqual(lookupBinding(ctx, 'added', scope, 19), first);
-    assert.strictEqual(lookupBinding(ctx, 'added', scope, 20), second);
+    const [first, second] = scope.bindings.filter(binding => binding.name === 'added');
+    assert.ok(first); assert.ok(second);
+    // Context construction appends bindings; prime a miss before replaying the real parsed entries.
+    scope.bindings.length = 0;
+    assert.strictEqual(lookupBinding(ctx,'added',scope),undefined);
+    scope.bindings.push(first);
+    assert.strictEqual(lookupBinding(ctx,'added',scope,first.node.start-1),undefined);
+    assert.strictEqual(lookupBinding(ctx,'added',scope,first.node.start),first);
+    scope.bindings.push(second);
+    assert.strictEqual(lookupBinding(ctx,'added',scope,second.node.start-1),first);
+    assert.strictEqual(lookupBinding(ctx,'added',scope,second.node.start),second);
   });
 });

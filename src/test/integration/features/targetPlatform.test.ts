@@ -1,4 +1,4 @@
-import { normalizeTargetPlatform } from '../../../analyzer/targetPlatform';
+import { normalizeTargetPlatform, platformMacroValue } from '../../../analyzer/targetPlatform';
 import * as assert from 'assert';
 import { WorkspaceIndex } from '../../../analyzer/workspaceIndex';
 import { getHover } from '../../../analyzer/hover';
@@ -23,23 +23,25 @@ suite('target platform', () => {
     ['hpux-hppa64', ['__OS_UNIX__', '__OS_HPUX__', '__CPU_HPPA__', '__OS_64bit__']]
   ];
   const index = new WorkspaceIndex();
-  for (const [targetPlatform, enabled] of cases) {
-    test(`evaluates and exposes all macros for ${targetPlatform}`, () => {
-      index.configure({ targetPlatform, tool: 'ismo', defines: names.map(name => `${name}=9`) });
-      const text = names.map((name, i) => `#if defined(${name}) && ${name} == ${enabled.includes(name) ? 1 : 0}\nint ok${i};\n#else\nint wrong${i};\n#endif\nint value${i} = ${name};`).join('\n');
-      const analysis = index.analyzeDocument({ uri, version: 1, text });
-      assert.deepStrictEqual(analysis.diagnostics, []);
-      assert.strictEqual(analysis.declarations.filter(d => d.name.startsWith('ok')).length, 11);
-      assert.ok(!analysis.declarations.some(d => d.name.startsWith('wrong')));
-      for (const name of targetPlatform === 'windows-x64' ? ['__OS_WINDOWS__', '__OS_UNIX__'] : []) {
-        const context = { analysis, workspaceIndex: index, position: positionFromOffset(text, text.lastIndexOf(name)) };
-        assert.ok(getHover(context)?.plainText.includes(`${name} (int)\n${enabled.includes(name) ? 1 : 0}`));
-        assert.ok(getCompletions({ ...context, text }).some(item => item.name === name));
-        assert.deepStrictEqual(getDefinitions(context), []);
-        assert.strictEqual(prepareRename(context), null);
-      }
-    });
-  }
+  test('maps each platform to its OS, CPU and word-size macros', () => {
+    for (const [platform, enabled] of cases) {
+      for (const name of names) assert.strictEqual(platformMacroValue(name, platform), enabled.includes(name) ? 1 : 0, platform + ':' + name);
+    }
+  });
+  test('exposes configured platform macros through analysis and language features', () => {
+    index.configure({targetPlatform:'windows-x64', defines:names.map(name => name + '=9')});
+    const text = '#if __OS_WINDOWS__ && !__OS_UNIX__\nint value = __OS_WINDOWS__; int unix = __OS_UNIX__;\n#endif';
+    const analysis = index.analyzeDocument({uri,version:1,text});
+    assert.deepStrictEqual(analysis.diagnostics, []);
+    assert.deepStrictEqual(analysis.declarations.map(d=>d.name), ['value','unix']);
+    for (const [name,value] of [['__OS_WINDOWS__',1],['__OS_UNIX__',0]] as const) {
+      const context={analysis,workspaceIndex:index,position:positionFromOffset(text,text.lastIndexOf(name))};
+      assert.ok(getHover(context)?.plainText.includes(name + ' (int)\n' + value));
+      assert.ok(getCompletions({...context,text}).some(item=>item.name===name));
+      assert.deepStrictEqual(getDefinitions(context),[]);
+      assert.strictEqual(prepareRename(context),null);
+    }
+  });
   test('changes branches and expansion without editing the document', () => {
     const text = '#if __OS_WINDOWS__\nint win;\n#else\nint unix;\n#endif\n#define MODE() __OS_WINDOWS__ + __OS_64bit__\nint mode = MODE();';
     for (const [targetPlatform, declaration, expansion] of [['windows-x64', 'win', '1 + 1'], ['hpux-hppa32', 'unix', '0 + 0'], ['windows-x64', 'win', '1 + 1']]) {

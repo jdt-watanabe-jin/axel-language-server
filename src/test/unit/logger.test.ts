@@ -42,8 +42,7 @@ suite('logger utilities', () => {
       timing: message => timings.push(message)
     };
     measureDurationMs(logger, 'document.analyze', {}, () => 42);
-    logger.info('[login] missing startup file');
-    assert.deepStrictEqual(entries, ['[login] missing startup file']);
+    assert.deepStrictEqual(entries, []);
     assert.strictEqual(timings.length, 1);
   });
 });

@@ -9,6 +9,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const groups = {
   unit: ['unit'], integration: ['integration'], e2e: ['e2e'],
   performance: ['performance'], external: ['external'],
+  benchmark: ['benchmark'], 'benchmark-external': ['benchmark-external'],
   fast: ['unit', 'integration'], all: ['unit', 'integration', 'e2e'],
   ci: ['unit', 'integration', 'e2e', 'performance'],
   complete: ['unit', 'integration', 'e2e', 'performance', 'external']

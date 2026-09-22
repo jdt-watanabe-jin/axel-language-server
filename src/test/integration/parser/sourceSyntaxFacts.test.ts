@@ -16,7 +16,7 @@ suite('Source syntax facts', () => {
     assert.strictEqual(getSourceSyntaxFacts(b, 'file:///a.axl').macros[0].replacementText, '2');
     assert.notStrictEqual(facts, getSourceSyntaxFacts(a, 'file:///other.axl'));
     assert.strictEqual(facts.typeSnapshot([]), facts.typeSnapshot([]));
-    assert.deepStrictEqual(facts.typeSnapshot([]), buildTypeSnapshot(a, 'file:///a.axl'));
+    assert.deepStrictEqual(facts.typeSnapshot([]).root.children.filter(node => node.kind === 'object_definition').map(node => node.text), ['int a;']);
   });
   test('does not share snapshots for different recovery nodes at the same range', () => {
     const root = cachedSyntaxNode(createAxelParser().parse('int value;').rootNode);

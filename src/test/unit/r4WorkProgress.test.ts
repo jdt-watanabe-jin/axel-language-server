@@ -51,13 +51,11 @@ suite('R4 work progress', () => {
       f.manager.run('number', CancellationToken.None, () => delay(25), {workDoneToken: 0}),
       f.manager.run('string', CancellationToken.None, () => delay(25), {workDoneToken: '0'})
     ]);
+    assert.strictEqual(f.created(), 0, 'supplied tokens do not create a second display');
     assert.deepStrictEqual(f.events.filter(e => e.value.kind === 'begin').map(e => e.token), [0, '0']);
-  });
-  test('uses supplied workDoneToken without creating a second display', async () => {
-    const f = fixture();
-    await f.manager.run('long', CancellationToken.None, () => delay(20), { workDoneToken: 0 });
-    assert.strictEqual(f.created(), 0);
-    assert.deepStrictEqual(f.events.map(e => e.token), [0, 0]);
+    for (const token of [0, '0']) {
+      assert.deepStrictEqual(f.events.filter(e => e.token === token).map(e => e.value.kind), ['begin', 'end']);
+    }
   });
   test('does not start a late display when create resolves after work ends', async () => {
     let release!: () => void;

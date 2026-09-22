@@ -44,11 +44,11 @@ suite('functions require source declarations', () => {
   test('macro-prefixed declared calls do not produce duplicates', () => {
     const directory = createTempDir();
     const header = path.join(directory, 'functions.h');
-    fs.writeFileSync(header, '#define M_DEBUG\nint printf(string format);\nint customLog(string format);');
+    fs.writeFileSync(header, '#define M_DEBUG\nint printf(string format);');
     const workspaceIndex = createWorkspaceIndex({ forcedIncludeFiles: [header] });
     const analysis = workspaceIndex.indexOpenDocument({
       uri: pathToFileURL(path.join(directory, 'main.axl')).toString(), version: 1,
-      text: 'void main() { M_DEBUG printf("first"); M_DEBUG printf("second"); M_DEBUG customLog("first"); M_DEBUG customLog("second"); }'
+      text: 'void main() { M_DEBUG printf("first"); M_DEBUG printf("second"); }'
     });
     assert.deepStrictEqual(analysis.diagnostics, []);
     assert.deepStrictEqual(collectSemanticDiagnostics({ analysis, workspaceIndex }), []);

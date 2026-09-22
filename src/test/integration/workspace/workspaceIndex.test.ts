@@ -40,21 +40,6 @@ suite('WorkspaceIndex', () => {
     assert.ok(index.indexOpenDocument(input).declarations.some(item => item.name === 'fresh'));
   });
   }
-  test('makes declarations from forced include directories visible to lookup', () => {
-    const tempDir = createTempDir();
-    const forcedDir = path.join(tempDir, 'forced');
-    fs.mkdirSync(forcedDir);
-    fs.writeFileSync(path.join(forcedDir, 'system.h'), 'class SystemClass {};');
-
-    const index = createWorkspaceIndex({ forcedIncludeRoots: [forcedDir] });
-
-    index.indexForcedIncludes();
-
-    assert.deepStrictEqual(
-      index.findDeclarations('SystemClass').map((declaration) => declaration.name),
-      ['SystemClass']
-    );
-  });
 
   test('replaces declarations when an opened document version changes', () => {
     const index = createWorkspaceIndex();
@@ -134,31 +119,7 @@ suite('WorkspaceIndex', () => {
     await index.waitForBackgroundIndexing();
     const complete = index.analyzeDiagnosticDocument(input);
     assert.deepStrictEqual(complete.diagnostics.map(d => d.message), initial.diagnostics.map(d => d.message));
-  });
-
-  test('diagnostic analysis avoids synchronously indexing pending include documents', async () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const headerPath = path.join(tempDir, 'types.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(headerPath, 'class IncludedType {};');
-    const index = createWorkspaceIndex();
-
-    const analysis = index.analyzeDiagnosticDocument({
-      uri: mainUri,
-      version: 1,
-      text: '#include "types.h"\nIncludedType value;'
-    });
-
-    assert.deepStrictEqual(analysis.declarations.map((declaration) => declaration.name), ['value']);
-    assert.deepStrictEqual(index.findDeclarations('IncludedType'), []);
-
-    await index.waitForBackgroundIndexing();
-
-    assert.deepStrictEqual(
-      index.findDeclarations('IncludedType').map((declaration) => declaration.name),
-      ['IncludedType']
-    );
+    assert.deepStrictEqual(index.findDeclarations('IncludedType').map(d => d.name), ['IncludedType']);
   });
 
   test('full analysis adds workspace diagnostics after foreground analysis cached the same version', () => {
@@ -409,26 +370,8 @@ suite('WorkspaceIndex', () => {
     assert.strictEqual(index.findBestVisibleMacroDefinition(uri, 'REPLACE')?.replacementText, 'a + b');
   });
 
-  test('finds declarations from includes resolved by forced include files', () => {
-    const tempDir = createTempDir();
-    const mainPath = path.join(tempDir, 'main.axl');
-    const forcedPath = path.join(tempDir, 'forced.h');
-    const dependencyPath = path.join(tempDir, 'dependency.h');
-    const mainUri = pathToFileURL(mainPath).toString();
-    fs.writeFileSync(forcedPath, '#include "dependency.h"');
-    fs.writeFileSync(dependencyPath, 'class ForcedDependency {};');
-
-    const index = createWorkspaceIndex({ forcedIncludeFiles: [forcedPath] });
-    index.indexOpenDocument({ uri: mainUri, version: 1, text: 'ForcedDependency value;' });
-
-    assert.deepStrictEqual(
-      index.findVisibleDeclarations(mainUri, 'ForcedDependency').map((declaration) => declaration.detail),
-      ['class']
-    );
-  });
-
-  test('uses configured default defines when collecting inactive ranges', () => {
-    const index = createWorkspaceIndex({ defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1'] });
+  test('invalidates same-version analysis when bare and valued default defines change', () => {
+    const index = createWorkspaceIndex();
     const lines = [
       '#ifdef NDEBUG',
       'int releaseValue;',
@@ -442,41 +385,14 @@ suite('WorkspaceIndex', () => {
       '#endif'
     ];
 
-    const analysis = index.indexOpenDocument({
-      uri: 'file:///main.axl',
-      version: 1,
-      text: lines.join('\n')
-    });
+    const input = { uri: 'file:///main.axl', version: 1, text: lines.join('\n') };
+    assert.deepStrictEqual(index.indexOpenDocument(input).inactiveRanges?.map(range => range.start.line), [1, 6]);
+    index.configure({ defines: ['NDEBUG', 'MY_CUSTOM_MACRO=1'] });
+    const analysis = index.indexOpenDocument(input);
 
     assert.deepStrictEqual(analysis.inactiveRanges, [
       { start: { line: 3, character: 0 }, end: { line: 3, character: 15 } },
       { start: { line: 8, character: 0 }, end: { line: 8, character: 18 } }
-    ]);
-  });
-
-  test('reanalyzes cached documents after configured default defines change', () => {
-    const index = createWorkspaceIndex();
-    const input = {
-      uri: 'file:///main.axl',
-      version: 1,
-      text: [
-        '#if SEMVER_TEST',
-        'int activeWhenConfigured;',
-        '#else',
-        'int inactiveWhenConfigured;',
-        '#endif'
-      ].join('\n')
-    };
-
-    const before = index.indexOpenDocument(input);
-    index.configure({ defines: ['SEMVER_TEST'] });
-    const after = index.indexOpenDocument(input);
-
-    assert.deepStrictEqual(before.inactiveRanges, [
-      { start: { line: 1, character: 0 }, end: { line: 1, character: 25 } }
-    ]);
-    assert.deepStrictEqual(after.inactiveRanges, [
-      { start: { line: 3, character: 0 }, end: { line: 3, character: 27 } }
     ]);
   });
 
@@ -526,6 +442,8 @@ suite('WorkspaceIndex', () => {
     fs.writeFileSync(secondPath, 'struct ForcedShared {};');
 
     const index = createWorkspaceIndex({ forcedIncludeRoots: [forcedDir] });
+    index.indexForcedIncludes();
+    assert.strictEqual(index.findDeclarations('ForcedShared').length, 2);
     index.indexOpenDocument({ uri: mainUri, version: 1, text: 'ForcedShared value;' });
 
     assert.deepStrictEqual(

@@ -1,7 +1,3 @@
-import { mock } from 'node:test';
-import * as diagnostics from '../../../analyzer/diagnostics';
-import * as scopeIndex from '../../../analyzer/scopeIndex';
-import * as documentSymbols from '../../../analyzer/documentSymbols';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
 import { getDefinitions, getReferences } from '../../../analyzer/navigation';
 import * as assert from 'assert';
@@ -49,54 +45,50 @@ suite('General macro reparsing', () => {
     assert.ok(analysis.diagnostics.some(d => d.code === 'axel.type.constant_expression'), JSON.stringify(analysis.diagnostics));
     assert.deepStrictEqual(check('#define ID(x) x\nint x = ID(\n 1\n);\nint a[2 / (__LINE__ - 3)];').diagnostics, []);
   });
-  for (const expand of [true, false]) {
-    test(`builds final metadata once with macro expansion ${expand}`, () => {
-      const spies = [mock.method(diagnostics, 'collectSyntaxDiagnostics'),
-        mock.method(scopeIndex, 'buildScopeIndex'), mock.method(documentSymbols, 'collectDocumentSymbols')];
-      try {
-        const analyzer = new DocumentAnalyzer();
-        const input = {uri:'file:///metadata.axl',version:1,
-          text:'#define VALUE 1\nvoid main(){ int answer = ' + (expand ? 'VALUE' : '0') + '; }'};
-        const analysis = analyzer.analyzeDocument(input);
-        assert.strictEqual(analysis.expandedMacroReferences?.length ?? 0, expand ? 1 : 0);
-        for (const spy of spies) { assert.strictEqual(spy.mock.callCount(), 1); }
-        assert.deepStrictEqual(analysis.diagnostics, []);
-        assert.ok(analysis.symbols.some(symbol => symbol.name === 'main'));
-        assert.ok(analysis.scopes.length > 1);
-        assert.ok(Object.values(Object.getOwnPropertyDescriptors(analysis)).every(property => !property.get));
-        const snapshot = JSON.stringify(analysis);
-        analyzer.releaseSyntax(input.uri);
-        assert.strictEqual(analyzer.analyzeDocument(input), analysis);
-        assert.strictEqual(JSON.stringify(analysis), snapshot);
-      } finally { for (const spy of spies) { spy.mock.restore(); } }
+  test('preserves diagnostics and navigation after releasing expanded syntax', () => {
+    const analyzer = new DocumentAnalyzer();
+    const input = {uri:'file:///metadata.axl',version:1,
+      text:'#define VALUE 1\nvoid main(){ int answer = VALUE; answer++; }'};
+    const before = analyzer.analyzeDocument(input);
+    const result = (analysis: typeof before) => ({
+      diagnostics: analysis.diagnostics,
+      symbols: analysis.symbols,
+      scopes: analysis.scopes,
+      definitions: getDefinitions({analysis,position:{line:1,character:33},workspaceIndex:{}}),
+      references: getReferences({analysis,position:{line:1,character:33},workspaceIndex:{},includeDeclaration:true})
     });
-  }
+    const expected = structuredClone(result(before));
+    assert.deepStrictEqual(expected.diagnostics, []);
+    assert.ok(expected.symbols.some(symbol => symbol.name === 'main'));
+    assert.strictEqual(expected.definitions.length, 1);
+    assert.strictEqual(expected.references.length, 2);
+    analyzer.releaseSyntax(input.uri);
+    assert.deepStrictEqual(result(analyzer.analyzeDocument(input)), expected);
+  });
 
   function check(text: string) {
     return fixtures.createWorkspaceIndex().analyzeDocument({uri:'file:///macros.axl',version:1,text});
   }
-  for (const newline of ['\n', '\r\n']) {
-    for (const prefix of ['', '  ', newline, newline + newline + '  ']) {
-      test(`preserves source positions with leading whitespace ${JSON.stringify({newline, prefix})}`, () => {
-        const text = prefix + ['#define DEBUG if(0)', '', '',
-          'void main(){ int value; DEBUG { value = 1; } }', ''].join(newline);
-        const analysis = check(text);
-        const lines = text.split('\n');
-        const mainLine = lines.findIndex(line => line.startsWith('void main'));
-        assert.deepStrictEqual(analysis.diagnostics, []);
-        assert.strictEqual(analysis.expandedMacroReferences?.length, 1);
-        assert.deepStrictEqual(analysis.declarations.find(d => d.name === 'main')?.selectionRange,
-          {start:{line:mainLine, character:5}, end:{line:mainLine, character:9}});
-        for (const declaration of analysis.declarations) {
-          const range = declaration.selectionRange;
-          assert.strictEqual(lines[range.start.line].slice(range.start.character, range.end.character), declaration.name);
-        }
-        for (const reference of analysis.navigationReferences ?? []) {
-          const range = reference.range;
-          assert.strictEqual(lines[range.start.line].slice(range.start.character, range.end.character), reference.name);
-        }
-      });
-    }
+  for (const [newline, prefix] of [['\n', ''], ['\n', '  '], ['\r\n', '\r\n\r\n  ']]) {
+    test(`preserves source positions with leading whitespace ${JSON.stringify({newline, prefix})}`, () => {
+      const text = prefix + ['#define DEBUG if(0)', '', '',
+        'void main(){ int value; DEBUG { value = 1; } }', ''].join(newline);
+      const analysis = check(text);
+      const lines = text.split('\n');
+      const mainLine = lines.findIndex(line => line.startsWith('void main'));
+      assert.deepStrictEqual(analysis.diagnostics, []);
+      assert.strictEqual(analysis.expandedMacroReferences?.length, 1);
+      assert.deepStrictEqual(analysis.declarations.find(d => d.name === 'main')?.selectionRange,
+        {start:{line:mainLine, character:5}, end:{line:mainLine, character:9}});
+      for (const declaration of analysis.declarations) {
+        const range = declaration.selectionRange;
+        assert.strictEqual(lines[range.start.line].slice(range.start.character, range.end.character), declaration.name);
+      }
+      for (const reference of analysis.navigationReferences ?? []) {
+        const range = reference.range;
+        assert.strictEqual(lines[range.start.line].slice(range.start.character, range.end.character), reference.name);
+      }
+    });
   }
   test('reparses conditional prefixes before member calls', () => {
     const a = check('#define DEBUG if(0)\nclass Date { int x; void Now(){} }; void f(Date dat){ DEBUG dat.Now(); }');

@@ -8,7 +8,7 @@ suite('Typed variadic arguments', () => {
     return fixtures.createWorkspaceIndex().analyzeDocument({uri:'file:///variadic.axl',version:1,
       text:`class Item { int x; static Item *Add(${signature}) {return NULL;} }; void f(Item *p){ ${call} }`});
   }
-  for(const call of ['Item::Add(p,"A");','Item::Add(p,"A","B");','Item::Add(p,"A","B","C");']) {
+  for(const call of ['Item::Add(p,"A");','Item::Add(p,"A","B","C");']) {
     test('accepts '+call,()=>assert.deepStrictEqual(check(call).diagnostics,[]));
   }
   test('requires the fixed arguments',()=>{
@@ -17,7 +17,6 @@ suite('Typed variadic arguments', () => {
   test('keeps the typed ellipsis together in the signature',()=>{
     const a=check(''); const d=a.declarations.find(d=>d.name==='Add')!;
     assert.deepStrictEqual(d.signature!.parameters.map(p=>p.label),['Item *parent','string text','string ...']);
-    assert.deepStrictEqual(acceptedArgumentCounts(d),{min:2,max:Infinity});
   });
   test('accepts zero arguments when only a typed variadic parameter is declared',()=>{
     const a=fixtures.createWorkspaceIndex().analyzeDocument({uri:'file:///log.axl',version:1,

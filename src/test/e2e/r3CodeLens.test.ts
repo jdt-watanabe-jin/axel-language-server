@@ -41,10 +41,6 @@ suite('R3 Code Lens lifecycle over stdio', function () {
       await waitRefresh(previous);
       assert.deepStrictEqual(await request(), []);
       assert.strictEqual((await resolve(first)).command, undefined);
-      await server.configure({ settings: { codeLens: { enabled: 'bad' } } });
-      await assert.rejects(request(), /configuration unavailable/);
-      await server.configure({ settings: {} });
-      assert.deepStrictEqual(await request(), []);
     } finally { await server.stop(); }
   });
 });

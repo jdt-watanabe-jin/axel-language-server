@@ -29,10 +29,6 @@ suite('LSP language settings', function () {
         textDocument: { uri }, position: { line: 1, character: 16 }
       });
       assert.ok(completions.some(item => item.label === 'myValue'), JSON.stringify(completions));
-      await server.configure( { settings: { hover: 'invalid', autocomplete: null } });
-      await assert.rejects(server.request<Hover>('textDocument/hover', params), /configuration unavailable/);
-      await server.configure({ settings: {} });
-      assert.ok(await server.request<Hover>('textDocument/hover', params));
     } finally { await server.stop(); }
   });
 

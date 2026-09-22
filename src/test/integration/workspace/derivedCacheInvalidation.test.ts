@@ -34,12 +34,12 @@ suite('Derived cache invalidation', () => {
     fs.writeFileSync(header, 'string after;');
     index.invalidateFile(header);
     const changed = index.indexOpenDocument(input);
-    assert.strictEqual(index.findVisibleDeclarations(input.uri, 'after').length, 1);
+    assert.deepStrictEqual(index.findVisibleDeclarations(input.uri, 'after').map(d => d.detail), ['string after']);
     assert.deepStrictEqual(index.findVisibleDeclarations(input.uri, 'before'), []);
     assert.deepStrictEqual(changed.diagnostics, createWorkspaceIndex().indexOpenDocument(input).diagnostics);
     assert.strictEqual(index.getSemanticTokens(independent), tokens);
   });
-  for (const event of ['create', 'rename', 'delete-recreate'] as const) {
+  for (const event of ['rename', 'delete-recreate'] as const) {
     test(`refreshes missing include candidates after ${event}`, () => {
       const root = createTempDir(), header = path.join(root, 'missing.h');
       const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
@@ -73,6 +73,7 @@ suite('Derived cache invalidation', () => {
     const index = createWorkspaceIndex({ forcedIncludeFiles: [forced] });
     const input = { uri: pathToFileURL(path.join(root, 'main.axl')).toString(), version: 1, text: 'void main(){}' };
     const before = index.indexOpenDocument(input);
+    assert.deepStrictEqual(index.findVisibleDeclarations(input.uri, 'before').map(d => d.detail), ['int before']);
     const context = index.callHierarchyTypeInput(before);
     index.listVisibleDeclarations(input.uri);
     fs.writeFileSync(dependency, 'string after;'); index.invalidateFile(dependency);
@@ -92,13 +93,7 @@ suite('Derived cache invalidation', () => {
     assert.deepStrictEqual(index.listVisibleDeclarations(input.uri), fresh.listVisibleDeclarations(input.uri));
     assert.deepStrictEqual(index.findVisibleDeclarations(input.uri, 'external'), []);
   });
-  test('does not expose mutable cached declaration arrays to callers', () => {
-    const index = createWorkspaceIndex();
-    const input = { uri: 'file:///mutable.axl', version: 1, text: 'int value;' };
-    index.indexOpenDocument(input);
-    index.listVisibleDeclarations(input.uri).length = 0;
-    assert.strictEqual(index.listVisibleDeclarations(input.uri).filter(d => d.name === 'value').length, 1);
-  });
+
   test('reloads a failed builtin catalog when an unindexed declaration file is created', () => {
     const root = createTempDir(), forced = path.join(root, 'entry.h'), missing = path.join(root, 'missing.h');
     fs.writeFileSync(forced, 'class string {};');

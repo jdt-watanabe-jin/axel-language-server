@@ -3,7 +3,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { getDefinitions, getReferences } from '../../../analyzer/navigation';
-import { recoveredStaticMemberFixture } from '../../support/recoveredStaticMember';
 import { analyzeMarked, positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
@@ -318,18 +317,6 @@ suite('navigation', () => {
     assert.deepStrictEqual(definitions.map((location) => location.range.start), [
       { line: 2, character: 24 }
     ]);
-  });
-
-  test('definition does not infer static member ownership from a preceding class', () => {
-    const fixture = recoveredStaticMemberFixture();
-
-    const definitions = getDefinitions({
-      analysis: fixture.analysis,
-      position: { line: 0, character: 20 },
-      workspaceIndex: fixture.workspaceIndex
-    });
-
-    assert.deepStrictEqual(definitions, []);
   });
 
   test('references collect matching cross-file method calls only from visible files', () => {

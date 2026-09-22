@@ -27,18 +27,14 @@ suite('R5 editing over stdio', function () {
       }), [{ range: { start: { line: 1, character: 0 }, end: { line: 1, character: 0 } }, newText: '  ' }]);
     } finally { await server.stop(); }
   });
-  test('advertises Code Action Resolve only when edit and data are supported', async () => {
-    for (const supported of [false, true]) {
-      const server = startLspServer();
-      try {
-        const result = await server.request<InitializeResult>('initialize', {
-          processId: null, rootUri: null, capabilities: supported ? { textDocument: { codeAction: { dataSupport: true, resolveSupport: { properties: ['edit'] } } } } : {}
-        });
-        const capability = result.capabilities.codeActionProvider;
-        assert.ok(capability && typeof capability === 'object');
-        assert.strictEqual(capability.resolveProvider === true, supported);
-      } finally { await server.stop(); }
-    }
+  test('does not advertise Code Action Resolve without client support', async () => {
+    const server = startLspServer();
+    try {
+      const result = await server.request<InitializeResult>('initialize', { processId: null, rootUri: null, capabilities: {} });
+      const capability = result.capabilities.codeActionProvider;
+      assert.ok(capability && typeof capability === 'object');
+      assert.notStrictEqual(capability.resolveProvider, true);
+    } finally { await server.stop(); }
   });
   test('resolves manual include edits and rejects candidates after source or settings changes', async () => {
     const server = startLspServer();
@@ -46,10 +42,13 @@ suite('R5 editing over stdio', function () {
     const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
     const headerUri = pathToFileURL(path.join(root, 'types.h')).toString();
     try {
-      await server.request('initialize', { processId: null, rootUri: null, capabilities: {
+      const initialized = await server.request<InitializeResult>('initialize', { processId: null, rootUri: null, capabilities: {
         textDocument: { codeAction: { dataSupport: true, resolveSupport: { properties: ['edit'] } } }
       } });
       await server.notify('initialized', {});
+      const capability = initialized.capabilities.codeActionProvider;
+      assert.ok(capability && typeof capability === 'object');
+      assert.strictEqual(capability.resolveProvider, true);
       for (const [file, text] of [['types.h', 'class R5Widget {};'], ['main.axl', 'R5Widget widget;']]) {
         await server.notify('textDocument/didOpen', { textDocument: { uri: pathToFileURL(path.join(root, file)).toString(), languageId: 'axel', version: 1, text } });
       }

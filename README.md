@@ -140,14 +140,15 @@ node out/server.js --stdio
 
 ## 開発・検証
 
-CI の対応環境とパーサー依存の更新手順は [CI と依存関係の検証](docs/developer/ci.md) を参照してください。
 
 ```sh
 npm test                  # unit・integration・LSP の E2E（ビルドを含む）
-npm run test:ci           # lint と上記テスト、性能回帰テスト
+npm run test:ci           # lint と上記テスト、処理量・再利用・キャンセルの回帰テスト
 npm run benchmark        # 合成ケースを3プロセスで計測し JSON を標準出力
+npm run benchmark:cases  # 大規模入力・編集レイテンシなどの個別ベンチマーク
+npm run benchmark:external # 実 SXM 環境で起動・診断・rename を計測
 ```
 
-実 SXM_USERHOME などローカル環境を要する検証は `npm run test:external` で実行します。必要な環境変数は [外部テスト](src/test/external) を参照してください。合成ベンチマークの実行コードは [scripts](scripts)、性能回帰テストは [src/test/performance](src/test/performance) にあります。
+実 SXM_USERHOME などローカル環境を要する互換性検証は `npm run test:external` で実行します。必要な環境変数は [外部テスト](src/test/external) と [外部ベンチマーク](src/test/benchmark-external) を参照してください。合成ベンチマークの実行コードは [scripts](scripts)、個別の測定ケースは [src/test/benchmark](src/test/benchmark)、CIで検証する処理量・再利用・キャンセルなどの回帰テストは [src/test/performance](src/test/performance) にあります。ベンチマークは `npm test`、`test:ci`、`test:complete` に含めず、明示的に実行します。
 
 実装は [src/lsp](src/lsp) が LSP の窓口、[src/analyzer](src/analyzer) が解析と索引管理を担当します。AXEL 構文・構文木の変更は `tree-sitter-axel`、エディター固有の UI は VS Code 拡張で扱います。

@@ -13,7 +13,7 @@ suite('Immutable type syntax traversal', () => {
     const root = node('translation_unit', [directive, node('class_specifier')]);
     assert.deepStrictEqual(descendants(root, 'preproc_call'), [directive]);
     const initialVisits = visits;
-    for (let n = 0; n < 20; n++) { assert.deepStrictEqual(descendants(root, 'preproc_call'), [directive]); }
+    for (let n = 0; n < 2; n++) { assert.deepStrictEqual(descendants(root, 'preproc_call'), [directive]); }
     assert.strictEqual(visits, initialVisits, 'unchanged headers must not be traversed on every include');
     assert.deepStrictEqual(descendants(node('translation_unit'), 'preproc_call'), []);
     assert.deepStrictEqual(descendants(root, 'class_specifier').map(n => n.kind), ['class_specifier']);

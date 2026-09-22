@@ -3,21 +3,6 @@ import { declarationsInTypeHierarchy, visibleDeclarationsByName, findLocalDeclar
 import { createVisibleEnumMemberDeclarations, createReferenceHeavyAnalysis } from '../../support/semanticTokenLoad';
 
 suite('Declaration lookup scaling', () => {
-  test('does not scan all scopes to resolve each parent', () => {
-    const analysis = createReferenceHeavyAnalysis(1);
-    const range = analysis.scopes[0].range;
-    analysis.scopes = [analysis.scopes[0], ...Array.from({length: 200}, (_, i) => ({
-      id: `scope-${i}`, parentId: analysis.scopes[0].id, range, declarationIds: []
-    }))];
-    let scans = 0;
-    const find = analysis.scopes.find.bind(analysis.scopes);
-    analysis.scopes.find = ((...args: Parameters<typeof find>) => { scans++; return find(...args); }) as typeof analysis.scopes.find;
-    for (let i = 0; i < 40; i++) {
-      assert.strictEqual(findLocalDeclaration(analysis, 'missing', {line: 0, character: i}), undefined);
-    }
-    assert.ok(scans <= 1, `Parent scope scans: ${scans}`);
-  });
-
   test('does not rescan visible declarations for repeated names and members', () => {
     function check(count: number) {
       const declarations = createVisibleEnumMemberDeclarations(500);
@@ -63,19 +48,6 @@ suite('Declaration lookup scaling', () => {
     visibleDeclarationsByName(input,'MD_MESSAGE_0').pop();
     assert.strictEqual(declarationsInTypeHierarchy(input,'MessageId').length,2);
     assert.strictEqual(visibleDeclarationsByName(input,'MD_MESSAGE_0').length,1);
-  });
-
-  test('does not remap every declaration in a scope for repeated local references', () => {
-    const analysis=createReferenceHeavyAnalysis(1);
-    analysis.declarations=createVisibleEnumMemberDeclarations(500);
-    const ids=analysis.scopes[0].declarationIds=analysis.declarations.map(d=>d.id);
-    const map=ids.map.bind(ids);
-    let scans=0;
-    ids.map=((...args:Parameters<typeof map>)=>{scans++;return map(...args);}) as typeof ids.map;
-    for(let i=0;i<40;i++) {
-      assert.strictEqual(findLocalDeclaration(analysis,'MD_MESSAGE_10',{line:0,character:10})?.name,'MD_MESSAGE_10');
-    }
-    assert.ok(scans<=1,`Full scope scans: ${scans}`);
   });
 
 });

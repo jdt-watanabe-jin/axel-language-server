@@ -11,6 +11,7 @@ suite('macroExpansion', () => {
     const lookup = lookupFrom([value, macro('STR', ['x'], '#x'), macro('WRAP', ['x'], 'STR(x)')]);
     assert.strictEqual(expandMacroInvocationText('STR(VALUE)', lookup).expandedText, '"VALUE"');
     assert.strictEqual(expandMacroInvocationText('WRAP(VALUE)', lookup).expandedText, '"42"');
+    assert.strictEqual(expandMacroInvocationText('WRAP(x + y)', lookup).expandedText, '"x + y"');
   });
 
   test('handles line continuation after the stringification operator', () => {
@@ -56,11 +57,6 @@ suite('macroExpansion', () => {
   test('recognizes spaced stringification without changing hashes in literals or token pasting', () => {
     const lookup = lookupFrom([macro('STR', ['value'], '# /* comment */ value, "#value", value ## value')]);
     assert.strictEqual(expandMacroInvocationText('STR(name)', lookup).expandedText, '"name", "#value", name ## name');
-  });
-
-  test('stringifies arguments in nested macros', () => {
-    const lookup = lookupFrom([macro('STR', ['value'], '#value'), macro('WRAP', ['value'], 'STR(value)')]);
-    assert.strictEqual(expandMacroInvocationText('WRAP(x + y)', lookup).expandedText, '"x + y"');
   });
 
   test('expands nested function-like macros', () => {

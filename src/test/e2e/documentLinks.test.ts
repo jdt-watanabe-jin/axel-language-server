@@ -40,13 +40,19 @@ suite('R2 document links over stdio', function () {
     const result = await initialize();
     assert.deepStrictEqual(result.capabilities.documentLinkProvider, { resolveProvider: true });
     assert.strictEqual(result.capabilities.colorProvider, undefined);
-    await open('#include "space dir/api.h"\nvoid main() {\n@scripts/run value @argument;\n// @ignored;\n}');
+    await open('#include "space dir/api.h"\nvoid main() {\n@scripts/run value @argument;\n// @ignored;\n@missing;\n}');
     const items = await links();
     assert.deepStrictEqual(items.map(item => item.range), [
       { start: { line: 0, character: 10 }, end: { line: 0, character: 25 } },
-      { start: { line: 2, character: 1 }, end: { line: 2, character: 12 } }
+      { start: { line: 2, character: 1 }, end: { line: 2, character: 12 } },
+      { start: { line: 4, character: 1 }, end: { line: 4, character: 8 } }
     ]);
-    assert.deepStrictEqual(await Promise.all(items.map(async item => (await resolve(item)).target)), [include, script]);
+    assert.deepStrictEqual(await Promise.all(items.map(async item => (await resolve(item)).target)), [include, script, undefined]);
+    assert.ok(items.every(item => item.target === undefined));
+    assert.strictEqual((await resolve({ ...items[0], target: 'file:///wrong.axl' })).target, include);
+    await assert.rejects(resolve({ ...items[0], data: { ...items[0].data, index: 999 } }));
+    fs.unlinkSync(path.join(root, 'scripts/run.axl'));
+    assert.strictEqual((await resolve(items[1])).target, undefined);
   });
 
   test('returns eager targets for a client without documentLink support', async () => {
@@ -56,18 +62,6 @@ suite('R2 document links over stdio', function () {
     const items = await links();
     assert.deepStrictEqual(items.map(item => item.target), [target]);
     assert.ok(items.every(item => item.data === undefined));
-  });
-
-  test('keeps unresolved literal links without inventing a target and rechecks deleted files', async () => {
-    file('run.axl');
-    await initialize();
-    await open('void main() {\n@run;\n@missing;\n}');
-    const items = await links();
-    assert.strictEqual(items.length, 2);
-    assert.ok(items.every(item => item.target === undefined));
-    fs.unlinkSync(path.join(root, 'run.axl'));
-    assert.strictEqual((await resolve(items[0])).target, undefined);
-    assert.strictEqual((await resolve(items[1])).target, undefined);
   });
 
   test('rejects links after edits and close/reopen even when the version is reused', async () => {
@@ -96,16 +90,6 @@ suite('R2 document links over stdio', function () {
     assert.strictEqual((await resolve(fresh)).target, second);
   });
 
-  test('uses literal paths in inactive branches without linking dynamic commands or macro includes', async () => {
-    const target = file('run.axl');
-    await initialize();
-    await open('#include HEADER\nvoid main() {\n#if 0\n@run;\n#endif\n@\x60name\x60 run;\n}');
-    const items = await links();
-    assert.strictEqual(items.length, 1);
-    assert.strictEqual(items[0].range.start.line, 3);
-    assert.strictEqual((await resolve(items[0])).target, target);
-  });
-
   test('retains links when another document is opened, edited and closed', async () => {
     const target = file('run.axl');
     await initialize();
@@ -118,12 +102,4 @@ suite('R2 document links over stdio', function () {
     assert.strictEqual((await resolve(item)).target, target);
   });
 
-  test('does not trust client supplied targets, paths or out-of-range indices', async () => {
-    const target = file('run.axl');
-    await initialize();
-    await open('void main() { @run; }');
-    const item = (await links())[0];
-    assert.strictEqual((await resolve({ ...item, target: 'file:///wrong.axl' })).target, target);
-    await assert.rejects(resolve({ ...item, data: { ...item.data, index: 999 } }));
-  });
 });

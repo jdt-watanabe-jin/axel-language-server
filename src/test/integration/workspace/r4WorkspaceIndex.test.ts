@@ -46,9 +46,7 @@ suite('R4 workspace index ownership', () => {
       parsed.push(args[0].text); return original(...args);
     });
     try {
-      const rebuildable = index as WorkspaceSymbolIndex & { rebuild(token: CancellationToken): Promise<void> };
-      assert.strictEqual(typeof rebuildable.rebuild, 'function', 'rebuild must be available');
-      await rebuildable.rebuild(CancellationToken.None);
+      await index.rebuild(CancellationToken.None);
       assert.deepStrictEqual(parsed.sort(), ['int symbol1;', 'int symbol2;', 'int unsaved;']);
       assert.deepStrictEqual((await index.search('', CancellationToken.None)).map(entry => entry.name), ['symbol1', 'symbol2', 'unsaved']);
     } finally { await index.dispose(); spy.mock.restore(); }
@@ -89,9 +87,7 @@ suite('R4 workspace index ownership', () => {
     const second = { uri: pathToFileURL(path.join(root, 'second.axl')).toString(), version: 1, text: 'int unsavedSecond;' };
     await index.analyzeRequestDocument(first, CancellationToken.None);
     await index.analyzeRequestDocument(second, CancellationToken.None);
-    const rebuildable = index as typeof index & { rebuildAnalysis(token: CancellationToken): Promise<void> };
-    assert.strictEqual(typeof rebuildable.rebuildAnalysis, 'function');
-    await rebuildable.rebuildAnalysis(CancellationToken.None);
+    await index.rebuildAnalysis(CancellationToken.None);
     assert.deepStrictEqual(index.findDeclarations('unsavedSecond'), []);
     await index.analyzeRequestDocument(first, CancellationToken.None);
     assert.strictEqual(index.findDeclarations('unsavedFirst').length, 1);

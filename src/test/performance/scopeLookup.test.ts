@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { findInnermostScope, contains, rangeSize } from '../../analyzer/resolution';
+import { findInnermostScope } from '../../analyzer/resolution';
 import type { AnalysisScope } from '../../types/analysis';
 suite('Scope lookup performance',()=>{
   test('avoids scanning unrelated scopes for each reference',()=>{
@@ -13,9 +13,8 @@ suite('Scope lookup performance',()=>{
   test('preserves overlapping ranges, tie order and end-exclusive boundaries',()=>{
     const ranges=[[0,20],[2,8],[2,8],[4,12],[6,7],[14,14]];
     const scopes:AnalysisScope[]=ranges.map(([start,end],i)=>({id:String(i),declarationIds:[],range:{start:{line:0,character:start},end:{line:0,character:end}}}));
-    for(let character=0;character<22;character++){
-      const position={line:0,character};const expected=scopes.filter(scope=>contains(scope.range,position)).sort((a,b)=>rangeSize(a.range)-rangeSize(b.range))[0];
-      assert.strictEqual(findInnermostScope(scopes,position),expected);
+    for (const [character, expected] of [[0,'0'],[2,'1'],[4,'1'],[6,'4'],[7,'1'],[8,'3'],[12,'0'],[14,'0'],[19,'0'],[20,undefined]] as const) {
+      assert.strictEqual(findInnermostScope(scopes,{line:0,character})?.id,expected);
     }
   });
 });

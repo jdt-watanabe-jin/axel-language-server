@@ -30,4 +30,12 @@ suite('Type checking: missing member diagnostics', () => {
   test('continues to resolve inherited members', () => {
     assert.deepStrictEqual(check('class Base { int x; int GetDBID(){return 1;} }; class DMLibraryDD : public Base {}; void f(DMLibraryDD ldd){ ldd.GetDBID(); ldd.x; }'), []);
   });
+
+  test('names a missing data member accessed through a value', () => {
+    const diagnostics = check('class Item { int x; };\nvoid f(Item item){ item.missing; }');
+    assert.deepStrictEqual(diagnostics.map(d => ({ code: d.code, message: d.message, range: d.range })), [{
+      code: 'axel.type.member', message: "Member 'missing' was not found on type 'Item'.",
+      range: { start: { line: 1, character: 24 }, end: { line: 1, character: 31 } }
+    }]);
+  });
 });

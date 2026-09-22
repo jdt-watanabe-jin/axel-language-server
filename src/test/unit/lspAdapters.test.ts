@@ -85,20 +85,15 @@ suite('LSP adapters', () => {
     assert.strictEqual(lsp.filterText, 'ui/button.h');
     assert.strictEqual(lsp.sortText, 'ui/button.h');
   });
-  for (const entry of [
-    { title: 'converts analyzer diagnostics to LSP diagnostics', severity: 'error' as const, expected: DiagnosticSeverity.Error, message: 'Syntax error.' },
-    { title: 'converts analyzer warnings to LSP warning diagnostics', severity: 'warning' as const, expected: DiagnosticSeverity.Warning, message: 'Warning.' }
-  ]) {
-    test(entry.title, () => {
-      const diagnostic: AnalysisDiagnostic = { severity: entry.severity, source: 'axel', message: entry.message,
-        range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } } };
-      const lsp = toLspDiagnostic(diagnostic);
-      assert.strictEqual(lsp.severity, entry.expected);
-      assert.strictEqual(lsp.source, 'axel');
-      assert.strictEqual(lsp.message, entry.message);
-      assert.deepStrictEqual(lsp.range, diagnostic.range);
-    });
-  }
+  test('converts analyzer warnings to LSP warning diagnostics', () => {
+    const diagnostic: AnalysisDiagnostic = { severity: 'warning', source: 'axel', message: 'Warning.',
+      range: { start: { line: 1, character: 2 }, end: { line: 1, character: 4 } } };
+    const lsp = toLspDiagnostic(diagnostic);
+    assert.strictEqual(lsp.severity, DiagnosticSeverity.Warning);
+    assert.strictEqual(lsp.source, 'axel');
+    assert.strictEqual(lsp.message, 'Warning.');
+    assert.deepStrictEqual(lsp.range, diagnostic.range);
+  });
 
   test('encodes semantic tokens with relative position deltas', () => {
     const tokens: AnalysisSemanticToken[] = [

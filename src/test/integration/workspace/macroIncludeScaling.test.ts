@@ -58,23 +58,11 @@ suite('Macro include lookup scaling', () => {
     const input = {uri: pathToFileURL(path.join(root, 'main.axl')).toString(), version: 1, text: '#include "background.h"'};
     index.analyzeForegroundDocument(input);
     await index.waitForBackgroundIndexing();
-    index.indexOpenDocument(input);
+    const result = index.indexOpenDocument(input);
+    assert.strictEqual(index.indexOpenDocument(input), result);
+    assert.ok(result.typeSnapshot);
     assert.ok(released.includes(pathToFileURL(header).toString()));
     assert.ok(released.includes(input.uri));
-  });
-
-  test('keeps unsaved root declarations visible through a cyclic include', () => {
-    const root = fixtures.createTempDir();
-    const main = path.join(root, 'main.axl');
-    const header = path.join(root, 'b.h');
-    fs.writeFileSync(main, '#include "b.h"\n');
-    fs.writeFileSync(header, '#include "main.axl"\nvoid f(){ shared; }');
-    const index = fixtures.createWorkspaceIndex();
-    const uri = pathToFileURL(main).toString();
-    index.analyzeDocument({ uri, version: 1, text: '#include "b.h"\nint shared;' });
-    const included = index.listVisibleDocuments(uri).find(document => document.uri === pathToFileURL(header).toString());
-    assert.ok(included);
-    assert.ok(!included.diagnostics.some(diagnostic => diagnostic.message.includes("Unknown identifier 'shared'")));
   });
 
   test('resolves repeated include paths once per macro lookup without losing occurrence order', () => {

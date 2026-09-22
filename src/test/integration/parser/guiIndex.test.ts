@@ -169,11 +169,11 @@ suite('buildGuiIndex', () => {
     }]);
   });
 
-  test('does not throw for malformed GUI classes', () => {
-    assert.doesNotThrow(() => buildGuiIndex(
-      parser.parse('class Broken : public GCDialog { GCVBoxLayout { GCText recovered; ').rootNode,
-      uri
-    ));
+  test('retains a complete GUI class before an incomplete class body', () => {
+    const result = buildGuiIndex(parser.parse('class Ready : public GCDialog { GCText input; }; class Broken : public GCDialog { GCVBoxLayout { GCText recovered; ').rootNode, uri);
+    const ready = result.find(item => item.name === 'Ready');
+    assert.ok(ready);
+    assert.deepStrictEqual(ready.parts.map(part => part.name), ['input']);
   });
 });
 

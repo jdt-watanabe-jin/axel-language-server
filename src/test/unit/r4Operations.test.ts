@@ -46,7 +46,7 @@ suite('R4 server operations',()=>{
     assert.deepStrictEqual(await f.execute('axel.applyQuickFix',f.target()),{applied:true});
   });
   test('uses a versioned edit and preserves declined client result',async()=>{
-    const f=fixture();const result=await f.execute('axel.applyQuickFix',f.target());
+    const f=fixture();const result=await f.execute('axel.applyQuickFix',[{uri:f.uri,position:{character:0,line:0}}]);
     assert.deepStrictEqual(result,{applied:false,failureReason:'Declined'});
     assert.strictEqual(f.requests[0].method,'workspace/applyEdit');
     assert.deepStrictEqual(f.requests[0].params.edit.documentChanges![0],{textDocument:{uri:f.uri,version:3},edits:[{range:{start:{line:0,character:0},end:{line:0,character:0}},newText:'#include "types.h"\n'}]});
@@ -71,11 +71,6 @@ suite('R4 server operations',()=>{
     assert.strictEqual(f.requests[0].method,'window/showDocument');assert.strictEqual(f.requests[0].params.external,false);
     const fallback=fixture(false);const destination=await fallback.execute('axel.showSource',fallback.target());
     assert.strictEqual(destination.uri,fallback.uri);assert.strictEqual(destination.success,false);assert.strictEqual(fallback.requests.length,0);
-  });
-  test('accepts positions regardless of JSON object property order',async()=>{
-    const f=fixture();
-    const result=await f.execute('axel.applyQuickFix',[{uri:f.uri,position:{character:0,line:0}}]);
-    assert.strictEqual(result.applied,false);assert.strictEqual(f.requests.length,1);
   });
   test('cancellation during analysis prevents edits',async()=>{
     const f=fixture(),source=new CancellationTokenSource();f.analyzeHook(()=>source.cancel());

@@ -2,20 +2,21 @@ import * as assert from 'assert';
 import { createAxelParser } from '../../analyzer/axelParser';
 import { buildTypeSnapshot } from '../../analyzer/typeChecking/syntax';
 suite('Syntax snapshot traversal',()=>{
-  test('does not query fields of a fieldless translation unit or read every child text natively', () => {
-    const root = createAxelParser().parse('int first; int second;').rootNode;
-    let fields = 0, texts = 0;
-    const field = root.fieldNameForChild.bind(root);
-    Object.defineProperty(root, 'fieldNameForChild', { configurable: true,
-      value: (index: number) => { fields++; return field(index); } });
-    for (const child of root.namedChildren) {
-      const text = child.text;
-      Object.defineProperty(child, 'text', { configurable: true, get: () => { texts++; return text; } });
+  test('bounds native root reads while preserving snapshot children and fields', () => {
+    const root = createAxelParser().parse('int first; int second; void f(){first=second;}').rootNode;
+    let reads = 0;
+    for (const key of ['child', 'fieldNameForChild'] as const) {
+      const original = root[key].bind(root);
+      Object.defineProperty(root, key, { configurable: true, value: (index: number) => { reads++; return original(index); } });
     }
-    const snapshot = buildTypeSnapshot(root, 'file:///fields.axl');
-    assert.deepStrictEqual(snapshot.root.children.map(child => child.text), ['int first;', 'int second;']);
-    assert.strictEqual(fields, 0);
-    assert.strictEqual(texts, 0);
+    for (const key of ['children', 'namedChildren'] as const) {
+      const children = root[key];
+      Object.defineProperty(root, key, { configurable: true, get() { reads++; return children; } });
+    }
+    const result = buildTypeSnapshot(root, 'file:///snapshot.axl');
+    assert.deepStrictEqual(result.root.children.map(child => child.kind), ['object_definition', 'object_definition', 'function_definition']);
+    assert.strictEqual(result.root.children[0].fields.declarator[0].text, 'first');
+    assert.ok(reads <= root.childCount * 3 + 2, 'Native reads must stay bounded by the number of children');
   });
   test('preserves Unicode text and absolute offsets when snapshotting a subtree', () => {
     const text = '// 日本語 😀\r\nvoid f(){ string x = "日本語 😀"; }';
@@ -32,13 +33,5 @@ suite('Syntax snapshot traversal',()=>{
     }
     check(snapshot.root);
   });
-  test('enumerates siblings together instead of crossing into the parser for every child',()=>{
-    const root=createAxelParser().parse('int first; int second; void f(){first=second;}').rootNode;
-    const child=root.child.bind(root);let indexedReads=0;
-    Object.defineProperty(root,'child',{value:(index:number)=>{indexedReads++;return child(index);},configurable:true});
-    const snapshot=buildTypeSnapshot(root,'file:///snapshot.axl');
-    assert.strictEqual(snapshot.root.children.length,3);
-    assert.strictEqual(snapshot.root.children[0].fields.declarator[0].text,'first');
-    assert.strictEqual(indexedReads,0);
-  });
+
 });

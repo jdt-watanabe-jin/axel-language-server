@@ -45,7 +45,6 @@ suite('collectDocumentSymbols', () => {
     assert.deepStrictEqual(symbols[0].children?.map(symbol => symbol.name), ['good']);
   });
 
-
   test('nests external methods and preserves overloads, declarations and navigation', () => {
     const text = [
       'class Version { static Version makeVersion(int value); };',
@@ -235,28 +234,6 @@ suite('collectDocumentSymbols', () => {
       children: [
         { name: 'value', kind: 'field' },
         { name: 'Reset', kind: 'method' }
-      ]
-    }]);
-  });
-
-  test('adds class method prototypes as nested method symbols', () => {
-    const parser = createAxelParser();
-    const tree = parser.parse([
-      'class string {',
-      'public:',
-      '  int Length();',
-      '  string Mid(int cpos, int clen);',
-      '};'
-    ].join('\n'));
-
-    const symbols = collectDocumentSymbols(tree.rootNode);
-
-    assert.deepStrictEqual(symbols.map(symbolSummary), [{
-      name: 'string',
-      kind: 'class',
-      children: [
-        { name: 'Length', kind: 'method' },
-        { name: 'Mid', kind: 'method' }
       ]
     }]);
   });

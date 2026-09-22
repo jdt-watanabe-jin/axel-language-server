@@ -120,12 +120,6 @@ suite('Type hierarchy semantic resolution', () => {
     assert.ok(!records.some(record => record.name === 'Duplicate'));
   });
 
-  test('retains the alias chain for shared type-definition consumers', () => {
-    const f = fixture('class Value { int x; }; typedef Value Alias; typedef Alias Other; Other *value;');
-    assert.deepStrictEqual(f.target('value')?.aliases.map(alias => alias.name), ['Other', 'Alias']);
-    assert.deepStrictEqual(f.target('Other')?.aliases.map(alias => alias.name), ['Other', 'Alias']);
-  });
-
   test('does not turn pointer typedefs in base clauses into inheritance', () => {
     const f = fixture('class Base { int x; }; typedef Base *Pointer; class Child : Pointer { int y; };');
     assert.deepStrictEqual(f.graph().find(record => record.name === 'Child')?.bases, []);

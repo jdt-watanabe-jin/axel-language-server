@@ -112,7 +112,7 @@ suite('buildSymbolIndex', () => {
       'class Widget {};',
       'struct Point {};',
       'union Payload {};',
-      'enum Mode { A, B };'
+      'enum Mode { A, B = 2 };'
     ].join('\n')).rootNode, uri);
 
     assert.deepStrictEqual(
@@ -131,6 +131,8 @@ suite('buildSymbolIndex', () => {
         'enumMember:B'
       ]
     );
+    assert.deepStrictEqual(index.declarations.filter(d => d.kind === 'enum' || d.kind === 'enumMember').map(d => [d.name, d.detail, d.containerName]),
+      [['Mode', 'enum', undefined], ['A', 'enum Mode::A', 'Mode'], ['B', 'enum Mode::B = 2', 'Mode']]);
     const main = index.declarations.find(declaration => declaration.name === 'main')!;
     assert.deepStrictEqual(main.range, { start: { line: 4, character: 0 }, end: { line: 4, character: 14 } });
     assert.deepStrictEqual(main.selectionRange, { start: { line: 4, character: 5 }, end: { line: 4, character: 9 } });
@@ -172,26 +174,6 @@ suite('buildSymbolIndex', () => {
     const declaration = index.declarations.find((item) => item.name === 'GCControlButton' && item.kind === 'class');
     assert.ok(declaration);
     assert.strictEqual(declaration.selectionRange.start.line, 6);
-  });
-
-  test('uses enum member details', () => {
-    const index = buildSymbolIndex(parser.parse([
-      'enum Mode { A, B = 2 };'
-    ].join('\n')).rootNode, uri);
-
-    assert.deepStrictEqual(
-      index.declarations.map((declaration) => ({
-        name: declaration.name,
-        kind: declaration.kind,
-        detail: declaration.detail,
-        containerName: declaration.containerName
-      })),
-      [
-        { name: 'Mode', kind: 'enum', detail: 'enum', containerName: undefined },
-        { name: 'A', kind: 'enumMember', detail: 'enum Mode::A', containerName: 'Mode' },
-        { name: 'B', kind: 'enumMember', detail: 'enum Mode::B = 2', containerName: 'Mode' }
-      ]
-    );
   });
 
   test('records declaration documentation from adjacent comments', () => {

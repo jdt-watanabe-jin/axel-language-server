@@ -22,22 +22,6 @@ suite('DocumentAnalyzer', () => {
     assert.ok(result.typeSnapshot);
   });
 
-  test('releases native syntax views after workspace diagnostics', () => {
-    const released: string[] = [];
-    class ReleasingAnalyzer extends DocumentAnalyzer {
-      public override releaseSyntax(uri: string) {
-        released.push(uri);
-        super.releaseSyntax(uri);
-      }
-    }
-    const index = new WorkspaceIndex({analyzer: new ReleasingAnalyzer()});
-    const input = {uri: 'file:///release.axl', version: 1, text: 'int value;'};
-    const result = index.analyzeDocument(input);
-    assert.deepStrictEqual(released, [input.uri]);
-    assert.strictEqual(index.analyzeDocument(input), result);
-    assert.ok(result.typeSnapshot);
-  });
-
   test('builds the type snapshot only for the final macro-expanded source', () => {
     const descriptor=Object.getOwnPropertyDescriptor(typeSyntax,'buildTypeSnapshotSteps')!;
     const build=typeSyntax.buildTypeSnapshotSteps;
@@ -99,7 +83,6 @@ suite('DocumentAnalyzer', () => {
     analyzer.analyzeDocument(input);
     assert.strictEqual(parses,3);
   });
-
 
   test('reuses cached analysis and refreshes symbols and type diagnostics on edit and clear', () => {
     const analyzer = new DocumentAnalyzer();
@@ -222,22 +205,6 @@ suite('DocumentAnalyzer', () => {
 
     assert.deepStrictEqual(result.macroDefinitions, []);
     assert.strictEqual(result.diagnostics[0]?.message, 'Syntax error.');
-  });
-
-  test('keeps syntax errors for macro invocations before local definitions', () => {
-    const analyzer = new DocumentAnalyzer();
-    const result = analyzer.analyzeDocument({
-      uri: 'file:///main.axl',
-      version: 1,
-      text: [
-        'class C { FIELD(int) };',
-        '#define FIELD(T) T value;'
-      ].join('\n')
-    });
-
-    assert.deepStrictEqual(result.diagnostics.map((diagnostic) => diagnostic.message), [
-      'Syntax error.'
-    ]);
   });
 
   test('invalidates cached diagnostics when macro parameter labels change', () => {

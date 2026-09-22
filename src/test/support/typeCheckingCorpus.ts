@@ -53,10 +53,18 @@ export function loadTypeCheckingCases(root = typeCheckingFixtureRoot): RuntimeCa
   });
 }
 
-
 // Observed compiler evidence remains in the manifest even when another LS test
 // covers the same condition more strongly. Values name the retained coverage.
 const coveredElsewhere: Readonly<Record<string, string>> = {
+  'round2/prototype_only': 'typeCheckingPrototypes: free function prototype',
+  'round2/member_missing': 'typeCheckingMissingMembers: missing data member through value',
+  'round2/redefine_null': 'typeCheckingContext: source override invalidates cached NULL provenance',
+  'round2/user_assignment_control': 'typeCheckingObjects: method-only operator assignment storage',
+  'initial/ambiguous_overload': 'initial/numeric_overload + typeCheckingFunctionArity',
+  'round2/definition_only': 'typeCheckingFunctionArity: global function definitions',
+  'round2/nat_arg_variable': 'naturalArgumentInputs integration',
+  'round2/nat_arg_expression': 'naturalArgumentInputs integration',
+  'initial/natural_arg_int': 'naturalArgumentInputs integration',
   'initial/const_assign_value': 'initial/const_assign',
   'round2/return_void_expr': 'round2/return_void_value',
   'round2/nat_mul_control': 'initial/unused_function_error',

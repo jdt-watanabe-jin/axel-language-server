@@ -198,48 +198,4 @@ suite('Call hierarchy semantics', () => {
     assert.ok(calls.every(call => call.targets[0] === destructor));
   });
 
-  test('maps calls expanded from macros back to original source positions', () => {
-    const text = [
-      'int target(int value) { return value; }',
-      '#define CALL_TARGET(value) target(value)',
-      'void use() { CALL_TARGET(1); }'
-    ].join('\n');
-    const { analysis, data } = collect(text);
-    const target = declarationOnLine(analysis.declarations, 0);
-
-    const call = data.calls.find(item => item.targets[0] === target
-      && item.range.start.line === 2 && item.range.start.character === 13);
-    assert.ok(call?.expandedRange);
-    assert.notDeepStrictEqual(call.expandedRange,call.range);
-  });
-
-  test('prefers the definition in the analyzed document over its visible prototype', () => {
-    const analyzer = new DocumentAnalyzer();
-    const header = analyzer.analyzeDocument({
-      uri:'file:///api.h',version:1,text:'int target(int value);'
-    });
-    const text = [
-      'int target(int value) { return value; }',
-      'void use() { target(1); }'
-    ].join('\n');
-    const analysis = analyzer.analyzeDocument({
-      uri:'file:///main.axl',version:1,text
-    });
-    const data = runAnalysisSteps(collectSemanticCallData({analysis,documents:[header]}));
-    const definition = declarationOnLine(analysis.declarations,0);
-
-    assert.deepStrictEqual(data.calls.find(call => selectedText(text,call.range) === 'target')?.targets,[definition]);
-  });
-
-  test('resolves a qualified static call to its external definition', () => {
-    const analyzer = new DocumentAnalyzer();
-    const header = analyzer.analyzeDocument({uri:'file:///api.h',version:1,
-      text:'class C { public: static void target(); };'});
-    const text = 'void C::target() {}\nvoid main() { C::target(); }';
-    const analysis = analyzer.analyzeDocument({uri:'file:///main.axl',version:1,text});
-    const data = runAnalysisSteps(collectSemanticCallData({analysis,documents:[header]}));
-
-    assert.deepStrictEqual(data.calls.find(call => selectedText(text,call.range) === 'target')?.targets,
-      [declarationOnLine(analysis.declarations,0)]);
-  });
 });

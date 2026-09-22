@@ -96,41 +96,37 @@ suite('GUI implicit method feature agreement', () => {
     });
   }
 
-  for (const [type, name] of [
-    ['GCPushButton', 'MD_GetSelectedWaveformName'],
-    ['GCGroupBox', 'MD_FftArea'],
-    ['GCLabel', 'MD_StartValue']
-  ]) {
-    test(`included enum member ${name} keeps its scope inside ${type}`, () => {
-      const directory = createTempDir();
-      const header = `enum { ${name} };`;
-      const headerPath = path.join(directory, 'messages.hh');
-      fs.writeFileSync(headerPath, header);
-      const text = [
-        '#include "messages.hh"',
-        'class AdcDlg : public GCDialog {',
-        `  ${type} { OnCreate() { int message = ${name}; } };`,
-        '};'
-      ].join('\n');
-      const uri = pathToFileURL(path.join(directory, 'main.axl')).toString();
-      const workspaceIndex = createWorkspaceIndex();
-      const analysis = workspaceIndex.indexOpenDocument({ uri, version: 1, text });
-      const position = positionFromOffset(text, text.indexOf(name));
-      const input = { analysis, position, workspaceIndex };
-      const declaration = workspaceIndex.findVisibleDeclarations(uri, name)[0];
-      assert.strictEqual(declaration.kind, 'enumMember');
-      assert.strictEqual(declaration.containerName, undefined);
-      assert.strictEqual(getHover(input)?.plainText.split('\n')[0], `enum ${name}`);
-      const reference = analysis.references.find(item => item.name === name)!;
-      assert.strictEqual(resolveImplicitGuiReference(input, reference), undefined);
-      assert.deepStrictEqual(getDefinitions(input), [{
-        uri: pathToFileURL(headerPath).toString(),
-        range: { start: { line: 0, character: 7 }, end: { line: 0, character: 7 + name.length } }
-      }]);
-      assert.ok(collectSemanticTokens(analysis, workspaceIndex).some(token =>
-        token.range.start.line === position.line && token.range.start.character === position.character && token.tokenType === 'enumMember'));
-    });
-  }
+  test('included enum members keep their scope inside an anonymous GUI part', () => {
+    const type = 'GCLabel';
+    const name = 'MD_StartValue';
+    const directory = createTempDir();
+    const header = `enum { ${name} };`;
+    const headerPath = path.join(directory, 'messages.hh');
+    fs.writeFileSync(headerPath, header);
+    const text = [
+      '#include "messages.hh"',
+      'class AdcDlg : public GCDialog {',
+      `  ${type} { OnCreate() { int message = ${name}; } };`,
+      '};'
+    ].join('\n');
+    const uri = pathToFileURL(path.join(directory, 'main.axl')).toString();
+    const workspaceIndex = createWorkspaceIndex();
+    const analysis = workspaceIndex.indexOpenDocument({ uri, version: 1, text });
+    const position = positionFromOffset(text, text.indexOf(name));
+    const input = { analysis, position, workspaceIndex };
+    const declaration = workspaceIndex.findVisibleDeclarations(uri, name)[0];
+    assert.strictEqual(declaration.kind, 'enumMember');
+    assert.strictEqual(declaration.containerName, undefined);
+    assert.strictEqual(getHover(input)?.plainText.split('\n')[0], `enum ${name}`);
+    const reference = analysis.references.find(item => item.name === name)!;
+    assert.strictEqual(resolveImplicitGuiReference(input, reference), undefined);
+    assert.deepStrictEqual(getDefinitions(input), [{
+      uri: pathToFileURL(headerPath).toString(),
+      range: { start: { line: 0, character: 7 }, end: { line: 0, character: 7 + name.length } }
+    }]);
+    assert.ok(collectSemanticTokens(analysis, workspaceIndex).some(token =>
+      token.range.start.line === position.line && token.range.start.character === position.character && token.tokenType === 'enumMember'));
+  });
 
   test('inherited inline methods share definition, hover, signature and completion', () => {
     const { analysis, position, text } = analyzeMarked([
@@ -165,22 +161,6 @@ suite('GUI implicit method feature agreement', () => {
     assert.ok(completion?.detail?.startsWith('int '), completion?.detail);
     const references = getReferences({ ...input, includeDeclaration: false });
     assert.deepStrictEqual(references.map(location => location.range.start), [position]);
-  });
-
-  test('diagnostics use the inherited GUI method selected by navigation', () => {
-    const { analysis, position } = analyzeMarked([
-      'class GCWidget { void SetValue(int value); };',
-      'class GCLabel : public GCWidget {};',
-      'class AdcDlg : public GCDialog {',
-      '  GCLabel { OnCreate() { |SetValue(1, 2); } };',
-      '};'
-    ].join('\n'));
-    const input = { analysis, position, workspaceIndex: createWorkspaceIndex() };
-    assert.deepStrictEqual(getDefinitions(input).map(location => location.range.start), [{ line: 0, character: 22 }]);
-    assert.ok(collectSemanticDiagnostics(input).some(diagnostic =>
-      diagnostic.range.start.line === position.line
-      && diagnostic.range.start.character === position.character
-      && diagnostic.message.includes('expects 1 argument')));
   });
 
   test('nested member paths resolve beyond a named GUI part', () => {
@@ -225,43 +205,43 @@ suite('GUI implicit method feature agreement', () => {
     assert.strictEqual(documentLookups, 1, 'A token request should load dependency documents once');
   });
 
-  for (const feature of ['completion', 'diagnostics']) {
-    test(`${feature} prefers the implicit method over an unrelated visible function`, () => {
-      const directory = createTempDir();
-      fs.writeFileSync(path.join(directory, 'globals.h'), 'void SetValue(int a, int b);');
-      const text = [
-        '#include "globals.h"',
-        'class GCWidget { void SetValue(int value); };',
-        'class GCLabel : public GCWidget {};',
-        'class AdcDlg : public GCDialog {',
-        '  GCLabel { OnCreate() { SetValue(1, 2); } };',
-        '};'
-      ].join('\n');
-      const uri = pathToFileURL(path.join(directory, 'main.axl')).toString();
-      const workspaceIndex = createWorkspaceIndex();
-      const analysis = workspaceIndex.indexOpenDocument({ uri, version: 1, text });
-      const position = positionFromOffset(text, text.lastIndexOf('SetValue'));
-      const input = { analysis, position, workspaceIndex };
-      assert.ok(getHover(input)?.plainText.includes('GCWidget::SetValue'));
-      assert.deepStrictEqual(getDefinitions(input).map(location => location.range.start), [{ line: 1, character: 22 }]);
-      if (feature === 'completion') {
-        const completion = getCompletions({ ...input, text, position: { ...position, character: position.character + 1 } })
-          .find(item => item.name === 'SetValue');
-        assert.ok(completion?.detail?.includes('GCWidget::SetValue'), completion?.detail);
-      } else {
-        assert.ok(collectSemanticDiagnostics(input).some(diagnostic => diagnostic.message.includes('expects 1 argument')));
-      }
-    });
-  }
+  test('features prefer the implicit method over an unrelated visible function', () => {
+    const directory = createTempDir();
+    fs.writeFileSync(path.join(directory, 'globals.h'), 'void SetValue(int a, int b);');
+    const text = [
+      '#include "globals.h"',
+      'class GCWidget { void SetValue(int value); };',
+      'class GCLabel : public GCWidget {};',
+      'class AdcDlg : public GCDialog {',
+      '  GCLabel { OnCreate() { SetValue(1, 2); } };',
+      '};'
+    ].join('\n');
+    const uri = pathToFileURL(path.join(directory, 'main.axl')).toString();
+    const workspaceIndex = createWorkspaceIndex();
+    const analysis = workspaceIndex.indexOpenDocument({ uri, version: 1, text });
+    const position = positionFromOffset(text, text.lastIndexOf('SetValue'));
+    const input = { analysis, position, workspaceIndex };
+    assert.ok(getHover(input)?.plainText.includes('GCWidget::SetValue'));
+    assert.deepStrictEqual(getDefinitions(input).map(location => location.range.start), [{ line: 1, character: 22 }]);
+    const completion = getCompletions({ ...input, text, position: { ...position, character: position.character + 1 } })
+      .find(item => item.name === 'SetValue');
+    assert.ok(completion?.detail?.includes('GCWidget::SetValue'), completion?.detail);
+    assert.ok(collectSemanticDiagnostics(input).some(diagnostic =>
+      diagnostic.range.start.line === position.line
+      && diagnostic.range.start.character === position.character
+      && diagnostic.message.includes('expects 1 argument')));
+  });
 
   test('recovered static members are not attributed to an earlier unrelated class', () => {
     const fixture = recoveredStaticMemberFixture();
+    const input = { ...fixture, position: { line: 0, character: 22 } };
+    assert.deepStrictEqual(getDefinitions(input), []);
+    assert.strictEqual(getHover(input), null);
     const declarations = fixture.workspaceIndex.listVisibleDeclarations('');
     declarations.splice(1, 0, { ...declarations[0], id: 'other', name: 'OTHER',
       range: { start: { line: 3, character: 0 }, end: { line: 3, character: 20 } },
       selectionRange: { start: { line: 3, character: 6 }, end: { line: 3, character: 11 } }
     });
-    const input = { ...fixture, position: { line: 0, character: 22 } };
     assert.deepStrictEqual(getDefinitions(input), []);
     assert.strictEqual(getHover(input), null);
   });

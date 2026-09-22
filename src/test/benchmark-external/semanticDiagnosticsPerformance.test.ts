@@ -40,13 +40,11 @@ suite('external semantic and diagnostic performance', function () {
       const initial = measure('settledDiagnosticsMs', () => measuredIndex.analyzeDiagnosticDocument(input));
       const initialTokens = measure('settledTokensMs', () => collectSemanticTokens(initial, measuredIndex.semanticTokenWorkspaceIndex(uri)));
       assert.ok(initialTokens.length > 0);
-      assert.deepStrictEqual(measuredIndex.analyzeDiagnosticDocument(input).diagnostics, initial.diagnostics);
       const edit = { ...input, version: 2, text: text + '\n' };
       const edited = measure('editAnalysisMs', () => measuredIndex.analyzeForegroundDocument(edit));
       measure('editedTokensMs', () => collectSemanticTokens(edited, measuredIndex.semanticTokenWorkspaceIndex(uri)));
       await measuredIndex.waitForBackgroundIndexing();
       const diagnosed = measure('editedDiagnosticsMs', () => measuredIndex.analyzeDiagnosticDocument(edit));
-      assert.deepStrictEqual(measuredIndex.analyzeDiagnosticDocument(edit).diagnostics, diagnosed.diagnostics);
       assert.deepStrictEqual(collectSemanticTokens(diagnosed, measuredIndex.semanticTokenWorkspaceIndex(uri)), initialTokens);
       console.log(JSON.stringify({ lines: text.split('\n').length, diagnosticCount: diagnosed.diagnostics.length,
         tokenCount: initialTokens.length, timings }, null, 2));

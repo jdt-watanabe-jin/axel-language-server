@@ -31,23 +31,17 @@ suite('Overload feature agreement', () => {
     '};'
   ].join('\n');
   const source = 'void main(){DBPfigDD fdd; string name; fdd.InitGetFigureWP(NULL,name+"|x",0,0,0,NULL);}';
-  for (const feature of ['hover', 'definition', 'signature', 'references']) {
-    test(`selects the registered string/pointer overload for ${feature}`, () => {
-      const input = setup(header, source);
-      const position = {line:0,character:source.indexOf('InitGetFigureWP')+2};
-      if (feature === 'hover') { assert.match(getHover({...input,position})!.plainText, /string layername.*VARRAY\* zone/); }
-      if (feature === 'definition') { assert.strictEqual(getDefinitions({...input,position})[0].range.start.line,4); }
-      if (feature === 'signature') {
-        const help = getSignatureHelp({...input,position:{line:0,character:source.lastIndexOf('NULL')+2}});
-        assert.match(help!.signatures[0].label, /string layername.*VARRAY\* zone/);
-      }
-      if (feature === 'references') {
-        const target = input.workspaceIndex.listVisibleDocuments(input.analysis.uri).find(d => d.uri.endsWith('api.h'))!;
-        const refs = getReferences({analysis:target,workspaceIndex:input.workspaceIndex,position:{line:4,character:8},includeDeclaration:false});
-        assert.ok(refs.some(ref => ref.uri === input.analysis.uri));
-      }
-    });
-  }
+  test('selects the registered string/pointer overload consistently across features', () => {
+    const input = setup(header, source);
+    const position = {line:0,character:source.indexOf('InitGetFigureWP')+2};
+    assert.match(getHover({...input,position})!.plainText, /string layername.*VARRAY\* zone/);
+    assert.strictEqual(getDefinitions({...input,position})[0].range.start.line,4);
+    const help = getSignatureHelp({...input,position:{line:0,character:source.lastIndexOf('NULL')+2}});
+    assert.match(help!.signatures[0].label, /string layername.*VARRAY\* zone/);
+    const target = input.workspaceIndex.listVisibleDocuments(input.analysis.uri).find(d => d.uri.endsWith('api.h'))!;
+    const refs = getReferences({analysis:target,workspaceIndex:input.workspaceIndex,position:{line:4,character:8},includeDeclaration:false});
+    assert.ok(refs.some(ref => ref.uri === input.analysis.uri));
+  });
   test('keeps all viable numeric declarations instead of guessing a ranking', () => {
     const text = 'void main(){f(1);}';
     const input = setup('class string {public:int data;};\nint f(int x);\nint f(double x);',text);

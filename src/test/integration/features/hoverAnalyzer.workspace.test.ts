@@ -4,22 +4,9 @@ import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { getHover } from '../../../analyzer/hover';
 import { assertExternalHover } from '../../support/hoverAssertions';
-import { recoveredStaticMemberFixture } from '../../support/recoveredStaticMember';
 import { analyze, positionFromOffset } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 suite('getHover', () => {
-  test('does not infer static member ownership from a preceding class', () => {
-    const fixture = recoveredStaticMemberFixture();
-
-    const hover = getHover({
-      analysis: fixture.analysis,
-      position: { line: 0, character: 20 },
-      workspaceIndex: fixture.workspaceIndex
-    });
-
-    assert.strictEqual(hover, null);
-  });
-
   test('hovers the first visible declaration from multiple includes', () => {
     const tempDir = createTempDir();
     const mainPath = path.join(tempDir, 'main.axl');

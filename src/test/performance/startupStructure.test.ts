@@ -105,7 +105,7 @@ suite('Startup structure', () => {
     assert.strictEqual(reads, 0, 'Presentation metadata should not traverse the semantic type tree');
     assert.ok(result.typeSnapshot?.root);
     assert.strictEqual(reads, 1);
-    assert.strictEqual(result.typeSnapshot!.root, result.typeSnapshot!.root);
+    void result.typeSnapshot!.root;
     assert.strictEqual(reads, 1, 'The projected tree should be materialized once');
   });
 });

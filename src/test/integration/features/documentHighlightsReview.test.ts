@@ -17,17 +17,11 @@ suite('Document highlights review regressions', () => {
     }));
   }
 
-  test('does not resolve another function local through the GUI fallback', () => {
-    const text = 'void f(){ int x; } void g(){ x=1; }';
+  test('does not resolve another function local or a local before its declaration', () => {
+    const text = 'void f(){ int x; } void g(){ x=1; int x; }';
     const highlights = fixture(text);
     assert.strictEqual(highlights(text.indexOf('x;')).length, 1);
-    assert.deepStrictEqual(highlights(text.indexOf('x=1')), []);
-  });
-
-  test('does not resolve a local variable before its declaration', () => {
-    const text = 'void f(){ x=1; int x; }';
-    const highlights = fixture(text);
-    assert.strictEqual(highlights(text.indexOf('x;')).length, 1);
+    assert.strictEqual(highlights(text.lastIndexOf('x;')).length, 1);
     assert.deepStrictEqual(highlights(text.indexOf('x=1')), []);
   });
 

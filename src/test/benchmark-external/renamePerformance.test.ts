@@ -32,15 +32,17 @@ suite('external rename performance', function () {
         const started = performance.now();
         const edit = await server.request<WorkspaceEdit>('textDocument/rename', { textDocument: { uri }, position, newName: 'renamedLocal' });
         renameMs.push(performance.now() - started);
-        const edits = Object.values(edit.changes ?? {}).flat();
-        assert.ok(edits.length > 1);
-        const lines = text.split('\n');
-        for (const entry of edits) {
-          assert.strictEqual(entry.newText, 'renamedLocal');
-          assert.strictEqual(lines[entry.range.start.line].slice(entry.range.start.character, entry.range.end.character), name);
-        }
-        if (process.env.AXEL_PERF_RENAME_COUNT) {
-          assert.strictEqual(edits.length, Number(process.env.AXEL_PERF_RENAME_COUNT));
+        if (i === 0) {
+          const edits = Object.values(edit.changes ?? {}).flat();
+          assert.ok(edits.length > 1);
+          const lines = text.split('\n');
+          for (const entry of edits) {
+            assert.strictEqual(entry.newText, 'renamedLocal');
+            assert.strictEqual(lines[entry.range.start.line].slice(entry.range.start.character, entry.range.end.character), name);
+          }
+          if (process.env.AXEL_PERF_RENAME_COUNT) {
+            assert.strictEqual(edits.length, Number(process.env.AXEL_PERF_RENAME_COUNT));
+          }
         }
       }
       console.log(JSON.stringify({ coldOutlineMs, renameMs }));

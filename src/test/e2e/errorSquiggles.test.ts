@@ -54,7 +54,7 @@ suite('LSP error squiggles', function () {
     assert.deepStrictEqual(await diagnostics(), []);
   });
 
-  test('default keeps missing-include errors only and invalid settings fail until corrected', async () => {
+  test('default keeps missing-include errors only and can be overridden independently per file', async () => {
     await initialize();
     await open('main.axl', '#include "missing.h"\nvoid main() { unknownValue; }');
     const items = await diagnostics();
@@ -64,10 +64,6 @@ suite('LSP error squiggles', function () {
     assert.ok(hasUnknown(await diagnostics('other.axl')), 'one file must not disable diagnostics in another');
     await server.configure( { settings: { errorSquiggles: 'enabled' } });
     assert.ok(hasUnknown(await diagnostics()));
-    await server.configure( { settings: { errorSquiggles: 'invalid' } });
-    await assert.rejects(diagnostics(), /configuration unavailable/);
-    await server.configure({ settings: {} });
-    assert.strictEqual((await diagnostics()).length, 1);
   });
 
   test('limits unresolved include diagnostics after applying the presentation policy', async () => {

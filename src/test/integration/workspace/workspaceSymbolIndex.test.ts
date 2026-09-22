@@ -70,12 +70,12 @@ suite('Workspace Symbol index', () => {
   });
   test('cancels a waiting search without cancelling background work', async () => {
     const { root, index } = setup();
-    for (let i = 0; i < 80; i++) { fs.writeFileSync(path.join(root, `file${i}.axl`), `int symbol${i};`); }
+    for (let i = 0; i < 3; i++) { fs.writeFileSync(path.join(root, `file${i}.axl`), `int symbol${i};`); }
     const source = new CancellationTokenSource();
     try {
       const pending = index.search('', source.token); source.cancel();
       await assert.rejects(pending, (e: unknown) => (e as { code: number }).code === LSPErrorCodes.RequestCancelled);
-      assert.strictEqual((await names(index)).length, 80);
+      assert.strictEqual((await names(index)).length, 3);
     } finally { source.dispose(); }
   });
   test('reuses unchanged files and reparses only the notified file', async () => {

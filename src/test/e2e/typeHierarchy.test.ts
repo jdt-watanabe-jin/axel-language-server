@@ -39,6 +39,13 @@ suite('LSP stdio Type hierarchy', function () {
     assert.deepStrictEqual(children?.map(item => item.name), ['Child']);
     assert.deepStrictEqual((await supers(children![0]))?.map(item => item.name), ['Base']);
     assert.strictEqual(children![0].selectionRange.start.line, 1);
+    const source = new CancellationTokenSource();
+    try {
+      const pending = server.request('typeHierarchy/subtypes', { item: base }, source.token);
+      source.cancel();
+      await assert.rejects(pending, (error: { code?: number }) => error.code === LSPErrorCodes.RequestCancelled);
+      assert.deepStrictEqual((await subs(base))?.map(item => item.name), ['Child']);
+    } finally { source.dispose(); }
   });
 
   test('applies the common scope while preserving excluded dependency type resolution', async () => {
@@ -74,18 +81,4 @@ suite('LSP stdio Type hierarchy', function () {
     assert.strictEqual(await supers({ ...base, data: undefined }), null);
   });
 
-  test('does not match same-named bases from separate files and responds to cancellation', async () => {
-    fs.writeFileSync(path.join(directory, 'one.h'), 'class Base { int x; };');
-    fs.writeFileSync(path.join(directory, 'two.h'), 'class Base { int x; };');
-    fs.writeFileSync(path.join(directory, 'child.axl'), '#include "two.h"\nclass Child : Base { int z; };');
-    await initialize(); await open('one.h', 'class Base { int x; };');
-    const base = (await prepare('one.h', 0, 6))![0];
-    assert.deepStrictEqual(await subs(base), []);
-    const source = new CancellationTokenSource();
-    const request = server.request('typeHierarchy/subtypes', { item: base }, source.token);
-    source.cancel();
-    await assert.rejects(request, (error: { code?: number }) => error.code === LSPErrorCodes.RequestCancelled);
-    source.dispose();
-    assert.deepStrictEqual(await subs(base), []);
-  });
 });

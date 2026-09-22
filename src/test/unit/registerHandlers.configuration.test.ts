@@ -2,63 +2,14 @@ import * as assert from 'assert';
 import { registerHandlers } from '../support/configuredHandlers';
 import { registerHandlers as registerPullHandlers } from '../../lsp/registerHandlers';
 import { CancellationToken } from 'vscode-languageserver/node';
-import { createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
+import { createHandlerConnection, createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
-  test('registers requests without dedicated successful handler scenarios', () => {
-    const calls: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeConfiguration: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => calls.push('references'),
-      onPrepareRename: () => calls.push('prepareRename'),
-      onRenameRequest: () => calls.push('rename'),
-      onCodeAction: () => calls.push('codeAction'),
-      onDocumentFormatting: () => undefined,
-      onDocumentRangeFormatting: () => undefined,
-      onSignatureHelp: () => calls.push('signatureHelp'),
-      onDocumentSymbol: () => calls.push('documentSymbol'),
-      console: {
-        error: () => undefined
-      }
-    };
-    const documents = {
-      get: () => undefined,
-      onDidOpen: () => undefined,
-      onDidChangeContent: () => undefined,
-      onDidClose: () => undefined
-    };
-    const analyzer = {
-      analyzeDocument: () => (emptyAnalysis({ uri: 'file:///missing.axl', version: 0 }))
-    };
-
-    registerHandlers({
-      connection: connection as never,
-      documents: documents as never,
-      analyzer,
-      logger: { error: () => undefined }
-    });
-
-    assert.deepStrictEqual(calls.sort(), ["codeAction","documentSymbol","prepareRename","references","rename","signatureHelp"].sort());
-  });
 
   test('invalidates watched files through the workspace index', () => {
     const invalidatedUris: string[] = [];
     let diagnosticRefreshes = 0;
     let watchedFilesHandler: ((event: { changes: { uri: string }[] }) => void) | undefined;
-    const connection = {
-      onInitialize: () => undefined,
+    const connection = createHandlerConnection({
       onDidChangeWatchedFiles: (handler: (event: { changes: { uri: string }[] }) => void) => {
         watchedFilesHandler = handler;
       },
@@ -71,19 +22,7 @@ suite('registerHandlers', () => {
           on: () => undefined
         }
       },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => undefined,
       onDidOpen: () => undefined,
@@ -119,14 +58,12 @@ suite('registerHandlers', () => {
       start: { line: 3, character: 0 },
       end: { line: 3, character: 18 }
     }];
-    const connection = {
+    const connection = createHandlerConnection({
       sendRequest: async () => [{ defines: ['SEMVER_TEST'] }],
       window: { showErrorMessage: () => undefined },
-      onInitialize: () => undefined,
       onDidChangeConfiguration: (handler: (params: { settings?: unknown }) => void) => {
         configurationHandler = handler;
       },
-      onDidChangeWatchedFiles: () => undefined,
       sendNotification: (method: string, params: unknown) => {
         notifications.push({ method, params });
       },
@@ -140,19 +77,7 @@ suite('registerHandlers', () => {
           refresh: () => notifications.push({ method: 'semanticTokens/refresh' })
         }
       },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       all: () => [createTestDocument('#if SEMVER_TEST\nint value;\n#endif')],
       get: () => undefined,

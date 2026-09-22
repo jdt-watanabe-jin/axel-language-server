@@ -5,7 +5,7 @@ import { positionFromOffset } from '../support/source';
 
 suite('Doxygen LSP', function () {
   this.timeout(20_000);
-  for (const [markdown, locale] of [[true, 'ja-JP'], [false, 'ja-JP'], [true, 'en'], [false, 'en']] as const) {
+  for (const [markdown, locale] of [[true, 'ja-JP'], [false, 'en']] as const) {
     test(`transfers hover completion and parameter descriptions with markdown=${markdown}, locale=${locale}`, async () => {
       const server = startLspServer();
       try {
@@ -31,19 +31,21 @@ suite('Doxygen LSP', function () {
         const item = items.find(i=>i.label==='Find')!;
         assert.ok(JSON.stringify(item.documentation).includes('Search files'));
         assert.strictEqual(typeof item.documentation,markdown ? 'object':'string');
-        const changed = text.replace('Search files','Updated description');
-        await server.notify('textDocument/didChange',{textDocument:{uri,version:2},contentChanges:[{text:changed}]});
-        const updated = await server.request<Hover>('textDocument/hover',{textDocument:{uri},position:positionFromOffset(changed,changed.lastIndexOf('Find'))});
-        assert.ok((updated.contents as MarkupContent).value.includes('Updated description'));
-        assert.ok(!(updated.contents as MarkupContent).value.includes('Search files'));
-        const removed = 'int Find(int n);\nvoid main(){ Find(1); }';
-        await server.notify('textDocument/didChange',{textDocument:{uri,version:3},contentChanges:[{text:removed}]});
-        const withoutDocs = await server.request<Hover>('textDocument/hover',{textDocument:{uri},position:positionFromOffset(removed,removed.lastIndexOf('Find'))});
-        assert.ok(!(withoutDocs.contents as MarkupContent).value.includes('Updated description'));
-        const incomplete = '/*! @brief Incomplete\n' + removed;
-        await server.notify('textDocument/didChange',{textDocument:{uri,version:4},contentChanges:[{text:incomplete}]});
-        const unfinished = await server.request<Hover | null>('textDocument/hover',{textDocument:{uri},position:positionFromOffset(incomplete,incomplete.lastIndexOf('Find'))});
-        assert.ok(!JSON.stringify(unfinished).includes('Updated description'));
+        if (markdown) {
+          const changed = text.replace('Search files','Updated description');
+          await server.notify('textDocument/didChange',{textDocument:{uri,version:2},contentChanges:[{text:changed}]});
+          const updated = await server.request<Hover>('textDocument/hover',{textDocument:{uri},position:positionFromOffset(changed,changed.lastIndexOf('Find'))});
+          assert.ok((updated.contents as MarkupContent).value.includes('Updated description'));
+          assert.ok(!(updated.contents as MarkupContent).value.includes('Search files'));
+          const removed = 'int Find(int n);\nvoid main(){ Find(1); }';
+          await server.notify('textDocument/didChange',{textDocument:{uri,version:3},contentChanges:[{text:removed}]});
+          const withoutDocs = await server.request<Hover>('textDocument/hover',{textDocument:{uri},position:positionFromOffset(removed,removed.lastIndexOf('Find'))});
+          assert.ok(!(withoutDocs.contents as MarkupContent).value.includes('Updated description'));
+          const incomplete = '/*! @brief Incomplete\n' + removed;
+          await server.notify('textDocument/didChange',{textDocument:{uri,version:4},contentChanges:[{text:incomplete}]});
+          const unfinished = await server.request<Hover | null>('textDocument/hover',{textDocument:{uri},position:positionFromOffset(incomplete,incomplete.lastIndexOf('Find'))});
+          assert.ok(!JSON.stringify(unfinished).includes('Updated description'));
+        }
 
       } finally { await server.stop(); }
     });

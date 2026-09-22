@@ -32,15 +32,6 @@ suite('Interactive analysis reuse',()=>{
       assert.strictEqual(at(4).length,2);assert.strictEqual(calls,2);
     } finally {spy.mock.restore();}
   });
-  test('reuses semantic tokens while visible declarations stay unchanged',()=>{
-    const index=createWorkspaceIndex();const input={uri:'file:///colors.axl',version:1,text:'int number; void main(){number++;}'};
-    const analysis=index.indexOpenDocument(input);
-    const get=index.getSemanticTokens;
-    assert.ok(get,'Expected a dependency-validated semantic token cache');
-    const first=get.call(index,analysis);assert.strictEqual(get.call(index,analysis),first);
-    const edited=index.indexOpenDocument({...input,version:2,text:input.text.replace('int number','class number')});
-    assert.notStrictEqual(get.call(index,edited),first);
-  });
 
   test('invalidates shared inputs and token results for external edits and configuration',()=>{
     const root=createTempDir();const header=path.join(root,'dep.h');fs.writeFileSync(header,'int external;');

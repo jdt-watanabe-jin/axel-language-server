@@ -79,13 +79,6 @@ suite('R3 Code Lens', () => {
       assert.deepStrictEqual(resolved.command?.arguments?.[2],expected);
     } finally { f.controller.dispose(); await index.dispose(); }
   });
-  test('reuses source analysis and resolved results across repeated lens requests', async () => {
-    const f = fixture();
-    try {
-      const [first] = await f.list(); await f.resolve(first); const before = f.counts();
-      const [second] = await f.list(); await f.resolve(second); assert.deepStrictEqual(f.counts(), before);
-    } finally { f.controller.dispose(); }
-  });
   test('offers implementation lenses for virtual methods and their overrides only', async () => {
     const f = fixture(true, true, 'class Base { public: virtual int run() { return 1; } int plain() { return 0; } };\nclass Child : public Base { public: int run() { return 2; } };');
     try {
@@ -115,17 +108,13 @@ suite('R3 Code Lens', () => {
       assert.strictEqual(result.command?.command, 'editor.action.showReferences');
       const analysis = f.analyzer.analyzeDocument({uri:f.document.uri, version:1, text:f.document.getText()});
       assert.deepStrictEqual(result.command?.arguments?.[2], getReferences({analysis,position:lenses[0].range.start,workspaceIndex:{},includeDeclaration:false}));
-      const before = f.counts(); assert.deepStrictEqual(await f.resolve(lenses[0]), result); assert.deepStrictEqual(f.counts(), before);
-    } finally { f.controller.dispose(); }
-  });
-  test('keeps both unchanged enumeration batches resolvable', async () => {
-    const f = fixture();
-    try {
-      const first = await f.list(); const second = await f.list();
-      assert.strictEqual((await f.resolve(first[0])).command?.title, '1 reference (indexed scope)');
-      assert.strictEqual((await f.resolve(second[0])).command?.title, '1 reference (indexed scope)');
-      assert.strictEqual((await f.resolve(first[1])).command?.title, '0 references (indexed scope)');
-      assert.deepStrictEqual(first.map(lens => lens.data), second.map(lens => lens.data));
+      const before = f.counts();
+      const second = await f.list();
+      assert.deepStrictEqual((await f.resolve(second[0])).command, result.command);
+      assert.deepStrictEqual(await f.resolve(lenses[0]), result, 'the earlier batch remains resolvable');
+      assert.deepStrictEqual(f.counts(), before, 'unchanged list and resolve requests reuse analysis and results');
+      assert.strictEqual((await f.resolve(lenses[1])).command?.title, '0 references (indexed scope)');
+      assert.strictEqual((await f.resolve(second[1])).command?.title, '0 references (indexed scope)');
     } finally { f.controller.dispose(); }
   });
   test('rejects forged and revision-stale lens identities without analysis', async () => {

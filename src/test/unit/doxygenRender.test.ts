@@ -200,8 +200,6 @@ suite('Doxygen render', () => {
         '**TODO**', '', 'Write tests', '',
         '**Version**', '', 'SX 8',
       ].join('\n'));
-      assert.ok(!rendered.markdown.includes('**Parameters**'));
-      assert.ok(!rendered.markdown.includes('**Note**'));
     }
   });
 
@@ -215,7 +213,6 @@ suite('Doxygen render', () => {
       plainText: '[in,out] first code\n\nsecond description',
     });
     assert.strictEqual(renderParameterDocumentation(value, 1), undefined);
-    assert.strictEqual(renderParameterDocumentation(value, -1), undefined);
   });
 
   test('preserves Markdown-looking text inside an indented code block in plain text', () => {

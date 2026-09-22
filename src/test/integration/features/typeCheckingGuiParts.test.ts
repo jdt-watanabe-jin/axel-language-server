@@ -14,13 +14,10 @@ suite('Type checking: GUI part member access', () => {
     return new WorkspaceIndex().analyzeDocument({uri:'file:///radio.axl',version:1,
       text:source + ` void main(){Dialog dlg; ${body}}`}).diagnostics.filter(d=>d.code?.startsWith('axel.type.'));
   }
-  test('resolves parent and child parts through anonymous layout containers', () => {
-    assert.deepStrictEqual(check('int p=dlg.radio.GetOnRadioPosition(); int checked=dlg.radio.btn1.IsChecked(); dlg.radio.btn2.SetChecked(1);'), []);
+  test('resolves nested GUI parts and retains exact result and missing-member diagnostics', () => {
+    const diagnostics=check('int p=dlg.radio.GetOnRadioPosition(); int checked=dlg.radio.btn1.IsChecked(); dlg.radio.btn2.SetChecked(1);\nint*ptr=dlg.radio.btn1.IsChecked();\ndlg.radio.btn1.NoSuchMethod();');
+    const line=source.split('\n').length;
+    assert.deepStrictEqual(diagnostics.map(d=>[d.range.start.line,d.code]),[[line,'axel.type.initialization'],[line+1,'axel.type.member']]);
   });
-  test('retains the builtin method result type for surrounding checks', () => {
-    assert.ok(check('int*p=dlg.radio.btn1.IsChecked();').some(d=>d.code==='axel.type.initialization'));
-  });
-  test('still diagnoses missing methods on known GUI part types', () => {
-    assert.ok(check('dlg.radio.btn1.NoSuchMethod();').some(d=>d.code==='axel.type.member'));
-  });
+
 });

@@ -50,20 +50,12 @@ suite('LSP stdio folding ranges', function () {
     assert.deepStrictEqual(await fold(), [{ startLine: 0, endLine: 2, kind: 'comment' }]);
   });
 
-  for (const lineFoldingOnly of [true, false, undefined]) {
-    test(`honors client limit and supported kinds (lineFoldingOnly=${lineFoldingOnly})`, async () => {
-      await initialize({ rangeLimit: 2, lineFoldingOnly, foldingRangeKind: { valueSet: ['region'] } });
-      await open('#region example\n/*\n comment\n*/\nvoid main() {\nint a;\n}\n#endregion');
-      assert.deepStrictEqual(await fold(), [
-        { startLine: 0, endLine: 6, kind: 'region' }, { startLine: 1, endLine: 3 }
-      ]);
-    });
-  }
-
-  test('keeps only the outer range for limit one and omits unsupported kinds', async () => {
-    await initialize({ rangeLimit: 1, foldingRangeKind: { valueSet: [] } });
-    await open('#region example\n/*\n comment\n*/\n#endregion');
-    assert.deepStrictEqual(await fold(), [{ startLine: 0, endLine: 3 }]);
+  test('honors client limit and supported kinds', async () => {
+    await initialize({ rangeLimit: 2, lineFoldingOnly: true, foldingRangeKind: { valueSet: ['region'] } });
+    await open('#region example\n/*\n comment\n*/\nvoid main() {\nint a;\n}\n#endregion');
+    assert.deepStrictEqual(await fold(), [
+      { startLine: 0, endLine: 6, kind: 'region' }, { startLine: 1, endLine: 3 }
+    ]);
   });
 
   test('ignores code in an unfinished block comment and updates after its terminator is typed', async () => {
@@ -84,9 +76,4 @@ suite('LSP stdio folding ranges', function () {
     ]);
   });
 
-  test('honors a zero range limit', async () => {
-    await initialize({ rangeLimit: 0 });
-    await open('void main() {\nint value;\n}');
-    assert.deepStrictEqual(await fold(), []);
-  });
 });

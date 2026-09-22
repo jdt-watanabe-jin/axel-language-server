@@ -3,17 +3,26 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { useWorkspaceFixtures } from '../../support/workspace';
+import { useSuiteDirectory } from '../../support/suiteDirectory';
 
 suite('Type checking: registered overloads and observed expression results', () => {
   const fixtures = useWorkspaceFixtures();
+  const suiteDirectory = useSuiteDirectory();
+  const headers = new Map<string, {root:string; header:string}>();
   function analyze(headerText: string, source: string) {
-    const root = fixtures.createTempDir();
+    let files=headers.get(headerText);
+    if (!files) {
+    const root = path.join(suiteDirectory(), String(headers.size));
+    fs.mkdirSync(root);
     const header = path.join(root, 'axel.h');
     fs.writeFileSync(header, headerText);
     fs.writeFileSync(path.join(root, 'axel.analysis.json'), JSON.stringify({
       schemaVersion: 1, profile: 'axel-510', declarationFiles: ['axel.h'],
       types: { natural: 'axel.h' }, analysisOnlyMacros: []
     }));
+    files={root,header}; headers.set(headerText,files);
+    }
+    const {root,header}=files;
     const index = fixtures.createWorkspaceIndex({ forcedIncludeFiles: [header] });
     return index.analyzeDocument({ uri: pathToFileURL(path.join(root, 'probe.axl')).toString(), version: 1, text: source });
   }
@@ -54,24 +63,19 @@ suite('Type checking: registered overloads and observed expression results', () 
       range: {start: {line: 1, character: 7}, end: {line: 1, character: 17}}
     }]);
   });
-  for (const [expression, type] of [['n/2', 'natural'], ['n/2.0', 'natural'], ['n+2.0', 'double'], ['-n', 'natural'], ['+n', 'natural'], ['n+1', 'int'], ['n-1', 'int'], ['n*2.0', 'natural'], ['n<<1', 'int'], ['n>>1', 'int'], ['n%n', 'natural']]) {
-    test(`uses measured result ${type} for ${expression}`, () => {
-      const result = analyze(natural, `void main(){ natural n=2nat; void *p=${expression}; }`);
-      const diagnostic = result.diagnostics.find(d => d.code === 'axel.type.initialization');
-      assert.ok(diagnostic, JSON.stringify(result.diagnostics));
-      assert.deepStrictEqual(diagnostic.messageDescriptor?.args, ['void*', type]);
-      assert.strictEqual(result.diagnostics.length, 1, JSON.stringify(result.diagnostics));
-      assert.ok(!result.diagnostics.some(d => d.code === 'axel.type.binary_operator' || d.code === 'axel.type.unary_operator'));
-    });
-  }
+  test('preserves measured natural operation result types', () => {
+    const cases = [['n/2', 'natural'], ['n/2.0', 'natural'], ['n+2.0', 'double'], ['-n', 'natural'], ['+n', 'natural'], ['n+1', 'int'], ['n-1', 'int'], ['n*2.0', 'natural'], ['n<<1', 'int'], ['n>>1', 'int'], ['n%n', 'natural']];
+    const source = 'void main(){ natural n=2nat;\n' + cases.map(([expression],i)=>'void *p'+i+'='+expression+';').join('\n') + '\n}';
+    const diagnostics=analyze(natural,source).diagnostics;
+    assert.deepStrictEqual(diagnostics.map(d=>[d.range.start.line,d.code,d.messageDescriptor?.args]), cases.map(([,type],i)=>[i+1,'axel.type.initialization',['void*',type]]));
+  });
   test('checks compound division separately from binary division', () => {
     const result = analyze(natural, 'void main(){natural n=2nat; n/=n;}');
     assert.ok(result.diagnostics.some(d => d.code === 'axel.type.binary_operator'), JSON.stringify(result.diagnostics));
   });
-  for (const expression of ['n<<n', 'n<<1.0', 'n&n', 'n|n', 'n^n', 'n<<=1', 'n<<=n', 'n%=1']) {
-    test(`rejects measured unsupported operation ${expression}`, () => {
-      const result = analyze(natural, `void main(){natural n=2nat; ${expression};}`);
-      assert.ok(result.diagnostics.some(d => d.code === 'axel.type.binary_operator'), JSON.stringify(result.diagnostics));
-    });
-  }
+  test('rejects measured unsupported natural operations at their source lines', () => {
+    const expressions=['n<<n', 'n<<1.0', 'n&n', 'n|n', 'n^n', 'n<<=1', 'n<<=n', 'n%=1'];
+    const diagnostics=analyze(natural,'void main(){natural n=2nat;\n'+expressions.map(e=>e+';').join('\n')+'\n}').diagnostics;
+    assert.deepStrictEqual(diagnostics.map(d=>[d.range.start.line,d.code]),expressions.map((_,i)=>[i+1,'axel.type.binary_operator']));
+  });
 });

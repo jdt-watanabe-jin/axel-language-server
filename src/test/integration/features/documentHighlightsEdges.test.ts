@@ -83,16 +83,11 @@ suite('Document highlight edges', () => {
     assert.deepStrictEqual(f.named('work', 1).map(h => h.range), f.expected('work', [1, 3]));
   });
 
-  test('qualified names highlight only the selected component', () => {
-    const f = fixture('class A { static int value; }; void main() { int result = A::value; }');
-    assert.deepStrictEqual(f.named('A').map(h => h.range), f.expected('A', [0, 1]));
-    assert.deepStrictEqual(f.named('value').map(h => h.kind), ['text', 'read']);
-    assert.deepStrictEqual(f.named('value').map(h => h.range), f.expected('value', [0, 1]));
-  });
-
-  test('qualified static member assignments are writes', () => {
-    const f = fixture('class A { static int value; }; void main() { A::value = 1; A::value += 2; }');
-    assert.deepStrictEqual(f.named('value').map(h => h.kind), ['text', 'write', 'write']);
+  test('qualified names select one component and classify static reads and assignments', () => {
+    const f = fixture('class A { static int value; }; void main() { int result = A::value; A::value = 1; A::value += 2; }');
+    assert.deepStrictEqual(f.named('A').map(h => h.range), f.expected('A', [0, 1, 2, 3]));
+    assert.deepStrictEqual(f.named('value').map(h => h.kind), ['text', 'read', 'write', 'write']);
+    assert.deepStrictEqual(f.named('value').map(h => h.range), f.expected('value', [0, 1, 2, 3]));
   });
 
   test('implicit GUI properties resolve to their containing part', () => {

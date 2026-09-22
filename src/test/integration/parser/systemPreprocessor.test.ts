@@ -29,14 +29,9 @@ suite('system preprocessor', () => {
     assert.deepStrictEqual(collectInactivePreprocessorRanges(tree.rootNode).map(range => range.start.line), [3, 6]);
   });
 
-  test('always defines runtime macros without deciding their values', () => {
-    const root = createAxelParser().parse('#ifdef __TIME__\nint active;\n#else\nint inactive;\n#endif\n').rootNode;
+  test('defines runtime macros while retaining both possible value branches', () => {
+    const root = createAxelParser().parse('#ifdef __TIME__\nint active;\n#else\nint inactive;\n#endif\n#if __TIME__\nint possible;\n#else\nint alternative;\n#endif\n').rootNode;
     assert.deepStrictEqual(collectInactivePreprocessorRanges(root).map(range => range.start.line), [3]);
-  });
-
-  test('retains both branches of runtime conditions', () => {
-    const root = createAxelParser().parse('#if __TIME__\nint possible;\n#else\nint alternative;\n#endif\n').rootNode;
-    assert.deepStrictEqual(collectInactivePreprocessorRanges(root), []);
   });
 
   for (const [tool, name] of [['ismo', '__APP_LEDIT__'], ['asca', '__APP_SEDIT__'], ['spicechart', '__APP_SCHART__']]) {

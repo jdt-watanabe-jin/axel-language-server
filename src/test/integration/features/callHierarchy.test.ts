@@ -98,6 +98,9 @@ suite('Call hierarchy graph', () => {
     assert.strictEqual(item.selectionRange.start.line, 1);
     const incoming = runAnalysisSteps(api().incomingCallHierarchySteps({analysis, item, workspaceIndex:index}));
     assert.deepStrictEqual(incoming.map(c => c.item.name), ['caller']);
+    const outgoing = runAnalysisSteps(api().outgoingCallHierarchySteps({analysis,item:incoming[0].item,workspaceIndex:index}));
+    assert.deepStrictEqual(outgoing.map(call => ({uri:call.item.uri,range:call.item.selectionRange})),
+      [{uri,range:item.selectionRange}]);
   });
 
   test('keeps unrelated same-name functions in separate files separate', () => {
@@ -108,10 +111,10 @@ suite('Call hierarchy graph', () => {
   });
 
   test('maps macro generated calls and argument references to written source positions', () => {
-    const f = fixture('void target() {}\n#define RUN target()\nvoid main() { RUN; }');
+    const f = fixture('void target(int value) {}\n#define RUN(x) target(x)\nvoid main() { RUN(1); }');
     const calls = f.outgoing(f.prepare('main'));
     assert.deepStrictEqual(calls.map(c => c.item.name), ['target']);
-    assert.deepStrictEqual(calls[0].fromRanges, [{start:{line:2,character:14},end:{line:2,character:17}}]);
+    assert.deepStrictEqual(calls[0].fromRanges, [{start:{line:2,character:14},end:{line:2,character:20}}]);
   });
 
   test('attributes inline and external GUI handler calls to their own event', () => {
@@ -193,7 +196,11 @@ suite('Call hierarchy graph', () => {
     const item = runAnalysisSteps(api().prepareCallHierarchySteps({analysis,position:{line:1,character:8},workspaceIndex:index}))?.[0];
     assert.ok(item);
     assert.strictEqual(item.uri,uri);
-    assert.deepStrictEqual(runAnalysisSteps(api().incomingCallHierarchySteps({analysis,item,workspaceIndex:index})).map(c=>c.item.name),['main']);
+    const incoming = runAnalysisSteps(api().incomingCallHierarchySteps({analysis,item,workspaceIndex:index}));
+    assert.deepStrictEqual(incoming.map(call=>call.item.name),['main']);
+    const outgoing = runAnalysisSteps(api().outgoingCallHierarchySteps({analysis,item:incoming[0].item,workspaceIndex:index}));
+    assert.deepStrictEqual(outgoing.map(call => ({uri:call.item.uri,range:call.item.selectionRange})),
+      [{uri,range:item.selectionRange}]);
   });
 
   test('retains both owners when a macro generates two functions at the same source location', () => {
@@ -224,11 +231,6 @@ suite('Call hierarchy graph', () => {
   test('does not invent a target for an ambiguous direct overload', () => {
     const f = fixture('void target(int value) {}\nvoid target(double value) {}\nvoid main() { target(unknown); }');
     assert.deepStrictEqual(f.outgoing(f.prepare('main')),[]);
-  });
-
-  test('recognizes virtual methods defined inline in the base class', () => {
-    const f = fixture('class Base { public: int data; virtual void run() {} };\nclass Derived : public Base { public: void run() {} };\nvoid caller(Base *value) { value->run(); }');
-    assert.deepStrictEqual(f.incoming(f.prepare('run',1)).map(call=>call.item.name),['caller']);
   });
 
   test('includes callable operators and construction in graph navigation', () => {

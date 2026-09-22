@@ -1,5 +1,6 @@
 import * as assert from 'assert';
 import { DocumentAnalyzer } from '../../../analyzer/documentAnalyzer';
+import { createAxelParser } from '../../../analyzer/axelParser';
 import type { AnalyzeDocumentInput } from '../../../types/analysis';
 
 suite('Analysis generation', () => {
@@ -22,10 +23,20 @@ suite('Analysis generation', () => {
     }
   });
   test('rebuilds after an interrupted generator and after clear', () => {
-    const analyzer = new DocumentAnalyzer();
+    const parser = createAxelParser();
+    const parse = parser.parse.bind(parser);
+    let parsed = false;
+    parser.parse = (...args: Parameters<typeof parser.parse>) => {
+      const tree = parse(...args);
+      parsed = true;
+      return tree;
+    };
+    const analyzer = new DocumentAnalyzer(parser);
     const input = { uri: 'file:///cancel.axl', version: 1, text: 'int value; void f(){ value++; }' };
     const steps = analyzer.analyzeDocumentSteps(input);
-    for (let i = 0; i < 8; i++) { assert.strictEqual(steps.next().done, false); }
+    while (!parsed) {
+      assert.strictEqual(steps.next().done, false, 'parsing must finish before analysis publishes its result');
+    }
     steps.return(undefined!);
     assert.deepStrictEqual(analyzer.analyzeDocument(input), new DocumentAnalyzer().analyzeDocument(input));
     analyzer.clear(input.uri);

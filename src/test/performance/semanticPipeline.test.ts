@@ -26,15 +26,7 @@ suite('Semantic pipeline materialization', () => {
       assert.strictEqual(documents.mock.callCount(), 2);
     } finally { highlights.mock.restore(); documents.mock.restore(); }
   });
-  test('copies a semantic tree without materializing native child-node arrays', () => {
-    const root = createAxelParser().parse('int first; int second; void f(){ first = second; }').rootNode;
-    const children = root.children;
-    let reads = 0;
-    Object.defineProperty(root, 'children', {configurable: true, get() { reads++; return children; }});
-    const result = buildTypeSnapshot(root, 'file:///cursor.axl');
-    assert.strictEqual(result.root.children.length, 3);
-    assert.strictEqual(reads, 0, 'Snapshot construction should stream the native tree');
-  });
+
   for (const source of [
     'class C { public: int x; virtual void f(string ...); }; void g(){ C *p; p->x += 1; }',
     'void f(){ call(1, // comment\n2,',

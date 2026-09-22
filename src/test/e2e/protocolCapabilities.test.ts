@@ -36,6 +36,10 @@ suite('LSP capability negotiation', function () {
         await server.notify('textDocument/didClose', { textDocument: { uri } });
         // A request ordered after close is a transport/handler barrier, not a timing sleep.
         assert.strictEqual(await server.request('textDocument/hover', { textDocument: { uri }, position: { line: 0, character: 5 } }), null);
+        await server.configure({ settings: { inlayHints: { parameterNames: { enabled: true } } } });
+        await server.request('textDocument/inlayHint', {
+          textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 1, character: 0 } }
+        });
         await server.stop();
         if (supported) {
           assert.ok(requests.includes('workspace/semanticTokens/refresh'));

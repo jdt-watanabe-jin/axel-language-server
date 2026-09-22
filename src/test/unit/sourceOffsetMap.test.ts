@@ -9,19 +9,17 @@ suite('Source offset mapping',()=>{
     {start:7,end:9,targetStart:10,targetEnd:11},
     {start:12,end:15,targetStart:14,targetEnd:14}
   ];
-  function reference(index:number,end:boolean) {
-    let delta=0;
-    for(const s of segments){
-      if(index<s.start || index===s.start && end){break;}
-      if(index<s.end || index===s.end && !end && s.start===s.end){return end?s.targetEnd:s.targetStart;}
-      delta=s.targetEnd-s.end;
-    }
-    return index+delta;
-  }
   test('preserves start/end boundaries including empty and adjacent expansions',()=>{
-    for(let offset=0;offset<20;offset++) {for(const end of [false,true]) {
-      assert.strictEqual(mapSourceOffset(segments,offset,end),reference(offset,end));
-    }}
+    // [source offset, mapped start, mapped end]; expectations describe the source spans above.
+    const boundaries = [
+      [0, 0, 0], [1, 1, 1], [2, 2, 2], [3, 2, 3], [5, 3, 3], [6, 4, 4],
+      [7, 5, 5], [8, 10, 11], [9, 11, 11], [11, 13, 13], [12, 14, 14],
+      [13, 14, 14], [15, 14, 14], [16, 15, 15]
+    ];
+    for (const [offset, start, end] of boundaries) {
+      assert.strictEqual(mapSourceOffset(segments, offset, false), start, 'start at ' + offset);
+      assert.strictEqual(mapSourceOffset(segments, offset, true), end, 'end at ' + offset);
+    }
   });
   test('does not scan every expansion for a location near the end',()=>{
     let reads=0;

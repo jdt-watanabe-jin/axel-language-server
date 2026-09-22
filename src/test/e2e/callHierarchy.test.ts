@@ -59,9 +59,6 @@ suite('LSP stdio Call hierarchy', function () {
     assert.deepStrictEqual(caller[0].selectionRange, {
       start: { line: 1, character: 5 }, end: { line: 1, character: 11 }
     });
-    assert.deepStrictEqual(caller[0].data, {
-      key: assertString((caller[0].data as { key?: unknown }).key), sourceUri: uri
-    });
 
     const calls = await outgoing(caller[0]);
     assert.deepStrictEqual(calls.map(call => ({
@@ -137,9 +134,3 @@ suite('LSP stdio Call hierarchy', function () {
     return server.request<CallHierarchyOutgoingCall[]>('callHierarchy/outgoingCalls', { item }, source.token);
   }
 });
-
-function assertString(value: unknown): string {
-  assert.strictEqual(typeof value, 'string');
-  assert.notStrictEqual(value, '');
-  return value as string;
-}

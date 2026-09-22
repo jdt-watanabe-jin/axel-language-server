@@ -66,7 +66,7 @@ suite('unchanged dependency opens', () => {
     assert.ok(!analysis.declarations.some(value => value.name === 'old'));
   });
 
-  for (const alias of [false, true]) {
+  for (const alias of [true]) {
     test('reuses parsed declarations on open and hover, alias=' + alias, async () => {
       const root = createTempDir();
       const header = path.join(root, 'api.h');

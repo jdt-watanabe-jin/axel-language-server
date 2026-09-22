@@ -24,25 +24,7 @@ suite('Doxygen workspace', () => {
     assert.ok(!hb?.plainText.includes('A only'));
     assert.strictEqual(index.documentationBindings(a), index.documentationBindings(a));
   });
-  test('replaces edited header docs and removes deleted header docs', () => {
-    const dir = createTempDir();
-    const file = path.join(dir,'api.h');
-    fs.writeFileSync(file, '/*! @brief old */\nint Find();');
-    const uri = pathToFileURL(path.join(dir,'main.axl')).href;
-    const index = createWorkspaceIndex();
-    const text = '#include "api.h"\nvoid main(){ Find(); }';
-    const read = (version:number) => {
-      const analysis = index.indexOpenDocument({uri,version,text});
-      return getHover({analysis,position:positionFromOffset(text,text.lastIndexOf('Find')),workspaceIndex:index});
-    };
-    assert.ok(read(1)?.plainText.includes('old'));
-    fs.writeFileSync(file, '/*! @brief updated */\nint Find();');
-    index.invalidateFile(file);
-    assert.ok(read(2)?.plainText.includes('updated'));
-    fs.unlinkSync(file);
-    index.invalidateFile(file);
-    assert.ok(!read(3)?.plainText.includes('updated'));
-  });
+
   test('refreshes documentation when forced includes switch', () => {
     const dir = createTempDir();
     const firstDir = path.join(dir, 'first'), secondDir = path.join(dir, 'second');
@@ -62,7 +44,7 @@ suite('Doxygen workspace', () => {
     assert.ok(read(2)?.includes('Second docs'));
     assert.ok(!read(2)?.includes('First docs'));
   });
-  test('uses new and unsaved header documentation ahead of disk content', () => {
+  test('refreshes header documentation after creation, unsaved edits, disk changes and deletion', () => {
     const dir = createTempDir();
     const file = path.join(dir, 'api.h');
     const headerUri = pathToFileURL(file).href;
@@ -80,6 +62,12 @@ suite('Doxygen workspace', () => {
     index.indexOpenDocument({uri:headerUri,version:1,text:'/*! @brief Unsaved docs */\nint Find();'});
     assert.ok(read(3)?.includes('Unsaved docs'));
     assert.ok(!read(3)?.includes('Disk docs'));
+    fs.writeFileSync(file, '/*! @brief Updated docs */\nint Find();');
+    index.deleteDocument(headerUri); index.invalidateFile(file);
+    assert.ok(read(3)?.includes('Updated docs'));
+    assert.ok(!read(3)?.includes('Unsaved docs'));
+    fs.unlinkSync(file); index.invalidateFile(file);
+    assert.ok(!read(3)?.includes('Updated docs'));
   });
   test('does not expose documentation from an inactive include', () => {
     const dir = createTempDir();

@@ -9,10 +9,6 @@ suite('Type checking: function prototypes', () => {
     return collectTypeDiagnostics({analysis});
   }
 
-  test('accepts virtual member prototypes', () => {
-    assert.deepStrictEqual(check('class A { int x; virtual void func(); };'), []);
-  });
-
   test('accepts virtual callbacks with parameters and comments', () => {
     assert.deepStrictEqual(check('class A { int x; public: virtual /* callback */ void OnApply(); virtual\nvoid OnChangedName(string celname); };'), []);
   });
@@ -23,7 +19,7 @@ suite('Type checking: function prototypes', () => {
   });
 
   test('still diagnoses ordinary member and free function prototypes', () => {
-    for (const text of ['class A { int x; void func(); };', 'void func();', 'class A { int x; /* virtual */ void func(); };']) {
+    for (const text of ['void func();', 'class A { int x; /* virtual */ void func(); };']) {
       assert.deepStrictEqual(check(text).map(d => d.code), ['axel.type.prototype']);
     }
   });

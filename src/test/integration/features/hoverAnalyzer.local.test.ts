@@ -404,13 +404,9 @@ suite('getHover', () => {
   });
 
   test('does not throw for a syntax-error document', () => {
-    const analysis = analyze('void broken( { int recovered;');
-
-    assert.doesNotThrow(() => getHover({
-      analysis,
-      position: { line: 0, character: 5 },
-      workspaceIndex: createWorkspaceIndex()
-    }));
+    const analysis = analyze('int retained;\nvoid broken( { int recovered;');
+    const hover = getHover({analysis,position:{line:0,character:5},workspaceIndex:createWorkspaceIndex()});
+    assert.strictEqual(hover?.plainText, 'int retained');
   });
 });
 

@@ -25,10 +25,6 @@ suite('Doxygen binding', () => {
     assert.ok(hover(source + 'void main(){ Fi|nd(1); }')?.markdown?.includes('Search files'));
     assert.ok(!hover(source + 'void main(){ Ot|her(); }')?.plainText.includes('Search files'));
   });
-  test('uses the adjacent function even when fn names a different target', () => {
-    const result = hover('/*! @fn int Missing(int n)\n * @brief Wrong target\n */\nint Find();\nvoid main(){ Fi|nd(); }');
-    assert.ok(result?.plainText.includes('Wrong target'));
-  });
   test('resolves overloads by parameter types while ignoring parameter names', () => {
     const source = 'int Find(int n);\nint Find(string s);\n/*! @fn int Find(string name)\n * @brief String search\n */\n// boundary\n';
     assert.ok(hover(source + 'void main(){ Fi|nd("x"); }')?.plainText.includes('String search'));
@@ -80,8 +76,9 @@ suite('Doxygen binding', () => {
     assert.ok(!hover('/*! @brief unrelated */\n#define BARRIER 1\nint Fi|nd();')?.plainText.includes('unrelated'));
   });
   test('merges adjacent doc blocks without losing the first paragraph', () => {
-    assert.ok(hover('/*! @brief First */\n/*! @details Second */\nint Fi|nd();')?.plainText.includes('First'));
-    assert.ok(hover('/*! @brief First */\n/*! @details Second */\nint Fi|nd();')?.plainText.includes('Second'));
+    const result = hover('/*! @brief First */\n/*! @details Second */\nint Fi|nd();');
+    assert.ok(result?.plainText.includes('First'));
+    assert.ok(result?.plainText.includes('Second'));
   });
   test('does not choose between conflicting distant documentation blocks', () => {
     const text = 'int Fi|nd();\n/*! @fn int Find()\n * @brief First\n */\n/*! @fn int Find()\n * @brief Second\n */';

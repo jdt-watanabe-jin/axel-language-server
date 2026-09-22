@@ -37,10 +37,10 @@ suite('collectSemanticTokens', () => {
     const analysis = new DocumentAnalyzer().analyzeDocument({
       uri: 'file:///broken.axl',
       version: 1,
-      text: 'int main( { value'
+      text: 'int retained;\nint main( { value'
     });
 
-    assert.doesNotThrow(() => collectSemanticTokens(analysis));
+    assertToken(collectSemanticTokens(analysis), 0, 4, 'variable', ['declaration']);
   });
 
   test('tokens implicit GUI receiver properties inside inline event bodies', () => {

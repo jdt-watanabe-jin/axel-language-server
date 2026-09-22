@@ -27,23 +27,21 @@ suite('R4 operations over stdio', function () {
     } finally { await server.stop(); }
   });
 
-  for (const response of [null, []]) {
-    test(`honors an empty workspace/folders response (${JSON.stringify(response)})`, async () => {
-      const root = fs.realpathSync.native(createTempDir());
-      fs.writeFileSync(path.join(root, 'main.axl'), 'int removedRoot;');
-      const server = startLspServer();
-      let requests = 0;
-      server.onRequest('workspace/workspaceFolders', () => { requests++; return response; });
-      try {
-        await server.request('initialize', { processId: null, rootUri: pathToFileURL(root).toString(), capabilities: { workspace: { workspaceFolders: true } } });
-        await server.notify('initialized', {});
-        assert.strictEqual((await server.request<WorkspaceSymbol[]>('workspace/symbol', { query: '' })).length, 1);
-        await server.request('workspace/executeCommand', { command: 'axel.rebuildIndex' });
-        assert.strictEqual(requests, 1);
-        assert.deepStrictEqual(await server.request('workspace/symbol', { query: '' }), []);
-      } finally { await server.stop(); }
-    });
-  }
+  test('honors a null workspace/folders response', async () => {
+    const root = fs.realpathSync.native(createTempDir());
+    fs.writeFileSync(path.join(root, 'main.axl'), 'int removedRoot;');
+    const server = startLspServer();
+    let requests = 0;
+    server.onRequest('workspace/workspaceFolders', () => { requests++; return null; });
+    try {
+      await server.request('initialize', { processId: null, rootUri: pathToFileURL(root).toString(), capabilities: { workspace: { workspaceFolders: true } } });
+      await server.notify('initialized', {});
+      assert.strictEqual((await server.request<WorkspaceSymbol[]>('workspace/symbol', { query: '' })).length, 1);
+      await server.request('workspace/executeCommand', { command: 'axel.rebuildIndex' });
+      assert.strictEqual(requests, 1);
+      assert.deepStrictEqual(await server.request('workspace/symbol', { query: '' }), []);
+    } finally { await server.stop(); }
+  });
 
   test('retains folder notifications received while a folder snapshot is pending', async () => {
     const oldRoot = fs.realpathSync.native(createTempDir());

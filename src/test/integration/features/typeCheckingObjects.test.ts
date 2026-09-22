@@ -7,7 +7,7 @@ suite('Type checking: object instantiation',()=>{
     return collectTypeDiagnostics({analysis:new DocumentAnalyzer().analyzeDocument({uri:'file:///objects.axl',version:1,text})});
   }
   test('diagnoses method-only empty storage at the declaration',()=>{
-    const diagnostics=check('class A {public:int method(){return 1;}};\nvoid main(){ A a; }');
+    const diagnostics=check('class A {public:A operator=(int v){return *this;}};\nvoid main(){ A a; }');
     assert.strictEqual(diagnostics.length,1);
     assert.strictEqual(diagnostics[0].code,'axel.type.object_type');
     assert.deepStrictEqual(diagnostics[0].range,{start:{line:1,character:15},end:{line:1,character:16}});

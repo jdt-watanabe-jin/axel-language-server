@@ -7,17 +7,9 @@ import { analyze, marked } from '../../support/source';
 import { useWorkspaceFixtures } from '../../support/workspace';
 
 suite('getCompletions', () => {
-  test('excludes prototype parameters from expression completions', () => {
-    const { text, position } = marked('int time(int *timer);\nvoid main() { ti| }');
-    const analysis = analyze(text);
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
-
-    assertCompletionNames(completions, ['time']);
-    assertNoCompletionNames(completions, ['timer']);
-  });
-
   test('only completes parameters and locals in enclosing scopes', () => {
     const { text, position } = marked([
+      'int time(int *timer);',
       'void other(int otherParameter) { int otherLocal; }',
       'void main(int currentParameter) {',
       '  int currentLocal;',
@@ -29,8 +21,8 @@ suite('getCompletions', () => {
     const analysis = analyze(text);
     const completions = getCompletions({ analysis, text, position, workspaceIndex: createWorkspaceIndex() });
 
-    assertCompletionNames(completions, ['currentParameter', 'currentLocal', 'other']);
-    assertNoCompletionNames(completions, ['otherParameter', 'otherLocal', 'expiredLocal', 'laterLocal']);
+    assertCompletionNames(completions, ['currentParameter', 'currentLocal', 'other', 'time']);
+    assertNoCompletionNames(completions, ['otherParameter', 'otherLocal', 'expiredLocal', 'laterLocal', 'timer']);
   });
 
   test('excludes parameters and locals from included headers', () => {
@@ -230,27 +222,13 @@ suite('getCompletions', () => {
     assertCompletionNames(completions, ['GCDialog', 'GCWidget', 'CustomWidget']);
   });
 
-  test('returns include path candidates without keyword noise', () => {
-    const tempDir = createTempDir();
-    fs.writeFileSync(path.join(tempDir, 'widget.h'), 'class Widget {};');
-    fs.writeFileSync(path.join(tempDir, 'dialog.axl'), 'class Dialog {};');
-    fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'ignored');
-    const mainPath = path.join(tempDir, 'main.axl');
-    const mainUri = pathToFileURL(mainPath).toString();
-    const { text, position } = marked('#include "|');
-    const index = createWorkspaceIndex({ includeRoots: [tempDir] });
-    const analysis = index.indexOpenDocument({ uri: mainUri, version: 1, text });
-
-    const completions = getCompletions({ analysis, text, position, workspaceIndex: index });
-
-    assertCompletionNames(completions, ['widget.h', 'dialog.axl']);
-    assertNoCompletionNames(completions, ['class', 'if']);
-  });
-
   test('returns path-intellisense include candidates for the current path segment', () => {
     const tempDir = createTempDir();
     const uiDir = path.join(tempDir, 'ui');
     fs.mkdirSync(uiDir);
+    fs.writeFileSync(path.join(tempDir, 'widget.h'), 'class Widget {};');
+    fs.writeFileSync(path.join(tempDir, 'dialog.axl'), 'class Dialog {};');
+    fs.writeFileSync(path.join(tempDir, 'notes.txt'), 'ignored');
     fs.mkdirSync(path.join(uiDir, 'parts'));
     fs.writeFileSync(path.join(uiDir, 'button.h'), 'class Button {};');
     fs.writeFileSync(path.join(uiDir, 'dialog.axl'), 'class Dialog {};');
@@ -266,6 +244,11 @@ suite('getCompletions', () => {
     assert.deepStrictEqual(completions.map((completion) => completion.name), ['button.h', 'dialog.axl', 'parts']);
     assert.deepStrictEqual(completions.map((completion) => completion.insertText), ['button.h', 'dialog.axl', 'parts']);
     assert.deepStrictEqual(completions.map((completion) => completion.filterText), ['ui/button.h', 'ui/dialog.axl', 'ui/parts/']);
+    const root = marked('#include "|');
+    const rootAnalysis = index.indexOpenDocument({ uri: mainUri, version: 2, text: root.text });
+    const rootCompletions = getCompletions({ analysis: rootAnalysis, ...root, workspaceIndex: index });
+    assertCompletionNames(rootCompletions, ['widget.h', 'dialog.axl']);
+    assertNoCompletionNames(rootCompletions, ['class', 'if']);
   });
 
   test('returns local path candidates for angle includes when include roots are not configured', () => {
@@ -479,15 +462,11 @@ suite('getCompletions', () => {
   });
 
   test('returns a safe list for malformed input', () => {
-    const { text, position } = marked('void broken( { |');
+    const { text, position } = marked('int retained;\nvoid main() { | }\nvoid broken(');
     const analysis = analyze(text);
 
-    assert.doesNotThrow(() => getCompletions({
-      analysis,
-      text,
-      position,
-      workspaceIndex: createWorkspaceIndex()
-    }));
+    const completions = getCompletions({analysis,text,position,workspaceIndex:createWorkspaceIndex()});
+    assertCompletionNames(completions, ['retained']);
   });
 });
 

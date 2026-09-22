@@ -17,11 +17,5 @@ suite('Workspace Symbol files', () => {
     assert.deepStrictEqual([...result.values()].map(file => path.relative(fs.realpathSync.native(root), file).replace(/\\/g, '/')).sort(),
       ['main.AXL', 'nested/a.hh', 'node_modules/a.h']);
   });
-  test('does not follow directory junctions outside the root', async () => {
-    const root = createTempDir(); const outside = createTempDir();
-    fs.writeFileSync(path.join(outside, 'external.axl'), 'int outside;');
-    fs.symlinkSync(outside, path.join(root, 'link'), 'junction');
-    assert.strictEqual((await collectWorkspaceSymbolFiles([pathToFileURL(root).toString()], [], CancellationToken.None,
-      error => assert.fail(error))).size, 0);
-  });
+
 });

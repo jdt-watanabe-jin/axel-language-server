@@ -1,37 +1,16 @@
 import * as assert from 'assert';
 import { registerHandlers } from '../support/configuredHandlers';
-import { createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
+import { createHandlerConnection, createTestDocument, emptyAnalysis } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
 
   test('logs completion request timing when logger supports info', async () => {
     let completionHandler: ((params: { textDocument: { uri: string }; position: { line: number; character: number } }) => unknown) | undefined;
     const infoMessages: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
-      },
-      onHover: () => undefined,
+    const connection = createHandlerConnection({
       onCompletion: (handler: typeof completionHandler) => {
         completionHandler = handler;
       },
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('int value;'),
       onDidOpen: () => undefined,
@@ -74,9 +53,7 @@ suite('registerHandlers', () => {
   test('preserves logger method receiver when logging semantic token timing', async () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
     const sentMessages: string[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
+    const connection = createHandlerConnection({
       languages: {
         diagnostics: {
           on: () => undefined
@@ -87,16 +64,7 @@ suite('registerHandlers', () => {
           }
         }
       },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('int value;'),
       onDidOpen: () => undefined,
@@ -133,4 +101,3 @@ suite('registerHandlers', () => {
     assert.match(sentMessages[0], /durationMs=\d+/);
   });
 });
-

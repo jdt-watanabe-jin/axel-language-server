@@ -40,6 +40,7 @@ suite('R3 deferred completion and inlay details', function () {
     assert.strictEqual(item.documentation, undefined);
     assert.strictEqual(item.detail, undefined);
     assert.ok(item.data);
+    await assert.rejects(server.request('completionItem/resolve', { ...item, data: { ...item.data, index: 9000000 } }), (error: {code:number}) => error.code === ErrorCodes.InvalidParams);
     const resolved = await server.request<CompletionItem>('completionItem/resolve', item);
     assert.match(JSON.stringify(resolved.documentation), /Updates the value/);
     assert.match(resolved.detail!, /consume/);
@@ -82,23 +83,9 @@ suite('R3 deferred completion and inlay details', function () {
     assert.strictEqual(resolved.label[0].value, 'count:');
     assert.strictEqual(resolved.label[0].location?.uri, uri);
     assert.strictEqual(resolved.label[0].location?.range.start.line, 3);
-  });
-
-  for (const properties of [['tooltip', 'label.tooltip', 'label.location'], ['tooltip'], ['label.tooltip']]) {
-    test('shows parameter documentation once for ' + properties.join(', '), async () => {
-      await initialize([], properties);
-      const resolved = await server.request<InlayHint>('inlayHint/resolve', (await hints())[0]);
-      const tooltips = [resolved.tooltip, ...(Array.isArray(resolved.label) ? resolved.label.map(part => part.tooltip) : [])]
-        .filter(value => value !== undefined);
-      assert.strictEqual(tooltips.length, 1);
-      assert.match(JSON.stringify(tooltips[0]), /number of items/);
-    });
-  }
-
-  test('does not repeat the parameter type supplied by the label location hover', async () => {
-    await initialize();
-    const resolved = await server.request<InlayHint>('inlayHint/resolve', (await hints())[0]);
-    assert.ok(Array.isArray(resolved.label));
+    const tooltips = [resolved.tooltip, ...resolved.label.map(part => part.tooltip)].filter(value => value !== undefined);
+    assert.strictEqual(tooltips.length, 1);
+    assert.match(JSON.stringify(tooltips[0]), /number of items/);
     const part = resolved.label[0];
     assert.ok(part.location);
     const hover = await server.request('textDocument/hover', {
@@ -108,6 +95,17 @@ suite('R3 deferred completion and inlay details', function () {
     assert.strictEqual((rendered.match(/int count/g) ?? []).length, 1);
     assert.match(rendered, /number of items/);
   });
+
+  for (const properties of [['tooltip'], ['label.tooltip']]) {
+    test('shows parameter documentation once for ' + properties.join(', '), async () => {
+      await initialize([], properties);
+      const resolved = await server.request<InlayHint>('inlayHint/resolve', (await hints())[0]);
+      const tooltips = [resolved.tooltip, ...(Array.isArray(resolved.label) ? resolved.label.map(part => part.tooltip) : [])]
+        .filter(value => value !== undefined);
+      assert.strictEqual(tooltips.length, 1);
+      assert.match(JSON.stringify(tooltips[0]), /number of items/);
+    });
+  }
 
   test('navigates from a resolved guarded built-in hint through an editor URI alias', async () => {
     const directory = createTempDir();
@@ -157,9 +155,4 @@ suite('R3 deferred completion and inlay details', function () {
     await assert.rejects(server.request('completionItem/resolve', fresh), (error: {code:number}) => error.code === LSPErrorCodes.ContentModified);
   });
 
-  test('rejects forged resolve data', async () => {
-    await initialize();
-    const item = (await complete()).find(item => item.label === 'consume')!;
-    await assert.rejects(server.request('completionItem/resolve', { ...item, data: { ...item.data, index: 9000000 } }), (error: {code:number}) => error.code === ErrorCodes.InvalidParams);
-  });
 });

@@ -173,8 +173,10 @@ suite('Doxygen parse', () => {
   });
 
   test('retains unknown commands and recovers at the next supported command', () => {
-    const doc = parse('@unknown original\nunknown continuation\n@param value supported');
-    assert.deepStrictEqual(doc.unparsed.map(item => item.text), ['@unknown original\nunknown continuation']);
+    const doc = parse('\\unknown original marker\nunknown continuation\n@Brief case sensitive\n@param value supported');
+    assert.deepStrictEqual(doc.unparsed.map(item => item.text), [
+      '\\unknown original marker\nunknown continuation', '@Brief case sensitive'
+    ]);
     assert.deepStrictEqual(doc.parameters.map(item => [item.names, item.text]), [[['value'], 'supported']]);
   });
 
@@ -183,14 +185,6 @@ suite('Doxygen parse', () => {
     assert.deepStrictEqual(doc.parameters, []);
     assert.deepStrictEqual(doc.unparsed.map(item => item.text), ['@param[input] value invalid']);
     assert.deepStrictEqual(doc.returns.map(item => item.text), ['still parsed']);
-  });
-
-  test('retains unsupported command spelling and its original marker exactly', () => {
-    const doc = parse('\\unknown original marker\n@Brief case sensitive\n@return recovered');
-    assert.deepStrictEqual(doc.unparsed.map(item => item.text), [
-      '\\unknown original marker', '@Brief case sensitive'
-    ]);
-    assert.deepStrictEqual(doc.returns.map(item => item.text), ['recovered']);
   });
 
   test('keeps commands inside a multiline inline code span across a blank line', () => {

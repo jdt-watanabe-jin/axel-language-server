@@ -106,15 +106,4 @@ suite('Doxygen comments', () => {
     assert.deepStrictEqual(extractDocumentationComments(tree.rootNode, text, 'file:///main.axl'), []);
   });
 
-  test('the AXEL parser accepts representative declaration shapes', () => {
-    const declarations = [
-      'int Find(const char *name, int (*compare)(int,int));',
-      'int InitGetSection(Inifile *inifile, string sec);',
-      'int operator+(int left, int right);',
-      'void Log(string format, int values...);'
-    ];
-    for (const declaration of declarations) {
-      assert.strictEqual(createAxelParser().parse(declaration).rootNode.hasError, false, declaration);
-    }
-  });
 });

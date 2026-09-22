@@ -20,9 +20,13 @@ suite('Doxygen owner scope', () => {
       ' * @brief A member',
       ' */',
       'int Find(int n);',
+      '/*! @var value',
+      ' * @brief A field',
+      ' */',
+      'int value;',
       '};',
     ].join('\n'));
-    fs.writeFileSync(duplicatePath, 'class Box { public: int Find(int n); };');
+    fs.writeFileSync(duplicatePath, 'class Box { public: int Find(int n); int value; };');
 
     const mainUri = pathToFileURL(mainPath).toString();
     const documentedUri = pathToFileURL(documentedPath).toString();
@@ -46,45 +50,11 @@ suite('Doxygen owner scope', () => {
       ['A member'],
     );
     assert.strictEqual(bindings.has(duplicate.id), false);
-  });
-
-  test('keeps a name-only member variable target on its actual owner', () => {
-    const directory = createTempDir();
-    const documentedPath = path.join(directory, 'a.h');
-    const duplicatePath = path.join(directory, 'b.h');
-    const mainPath = path.join(directory, 'main.axl');
-    fs.writeFileSync(documentedPath, [
-      'class Box { public:',
-      '/*! @var value',
-      ' * @brief A field',
-      ' */',
-      'int value;',
-      '};',
-    ].join('\n'));
-    fs.writeFileSync(duplicatePath, 'class Box { public: int value; };');
-
-    const mainUri = pathToFileURL(mainPath).toString();
-    const documentedUri = pathToFileURL(documentedPath).toString();
-    const duplicateUri = pathToFileURL(duplicatePath).toString();
-    const index = createWorkspaceIndex();
-    index.indexOpenDocument({
-      uri: mainUri,
-      version: 1,
-      text: '#include "a.h"\n#include "b.h"\nvoid main() {}',
-    });
-
-    const declarations = index.listVisibleDeclarations(mainUri);
-    const documented = declarations.find(declaration => declaration.uri === documentedUri && declaration.name === 'value');
-    const duplicate = declarations.find(declaration => declaration.uri === duplicateUri && declaration.name === 'value');
-    assert.ok(documented);
-    assert.ok(duplicate);
-
-    const bindings = index.documentationBindings(mainUri);
-    assert.deepStrictEqual(
-      bindings.get(documented.id)?.documents.flatMap(document => document.brief.map(entry => entry.text)),
-      ['A field'],
-    );
-    assert.strictEqual(bindings.has(duplicate.id), false);
+    const field = declarations.find(d => d.uri === documentedUri && d.name === 'value')!;
+    const otherField = declarations.find(d => d.uri === duplicateUri && d.name === 'value')!;
+    assert.ok(field); assert.ok(otherField);
+    assert.deepStrictEqual(bindings.get(field.id)?.documents.flatMap(doc => doc.brief.map(entry => entry.text)), ['A field']);
+    assert.strictEqual(bindings.has(otherField.id), false);
   });
 
   test('shares member documentation with an out-of-class definition in another file', () => {

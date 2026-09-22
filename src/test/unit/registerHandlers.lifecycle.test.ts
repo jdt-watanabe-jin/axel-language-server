@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { SEMANTIC_TOKEN_LEGEND } from '../../lsp/semanticTokens';
 import { registerHandlers } from '../support/configuredHandlers';
-import { createTestDocument, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
+import { createHandlerConnection, createTestDocument, emptyAnalysis, type TestDocument } from '../support/handlerFixtures';
 suite('registerHandlers', () => {
 
   test('analyzes opened and changed text in the foreground and sends inactive ranges', async () => {
@@ -15,33 +15,11 @@ suite('registerHandlers', () => {
       start: { line: 2, character: 0 },
       end: { line: 3, character: 12 }
     }];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
+    const connection = createHandlerConnection({
       sendNotification: (method: string, params: unknown) => {
         notifications.push({ method, params });
       },
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
-      },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => undefined,
       onDidOpen: (handler: (event: { document: TestDocument }) => void) => {
@@ -88,36 +66,14 @@ suite('registerHandlers', () => {
       end: { line: 3, character: 18 }
     }];
     const notifications: unknown[] = [];
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeConfiguration: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
+    const connection = createHandlerConnection({
       sendNotification: (method: string, params: unknown) => {
         notifications.push({ method, params });
-      },
-      languages: {
-        diagnostics: {
-          on: () => undefined
-        },
-        semanticTokens: {
-          on: () => undefined
-        }
       },
       onHover: (handler: typeof hoverHandler) => {
         hoverHandler = handler;
       },
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('#if SEMVER_TEST\nint value;\n#endif'),
       onDidOpen: () => undefined,
@@ -165,9 +121,7 @@ suite('registerHandlers', () => {
         end: { line: 0, character: 1 }
       }
     };
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
+    const connection = createHandlerConnection({
       languages: {
         diagnostics: {
           on: (handler: typeof diagnosticsHandler) => {
@@ -178,19 +132,7 @@ suite('registerHandlers', () => {
           on: () => undefined
         }
       },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onPrepareRename: () => undefined,
-      onRenameRequest: () => undefined,
-      onCodeAction: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('#include "missing.h"'),
       onDidOpen: () => undefined,
@@ -234,9 +176,7 @@ suite('registerHandlers', () => {
 
   test('uses cached workspace lookup for semantic token resolution', async () => {
     let semanticTokensHandler: ((params: { textDocument: { uri: string } }) => { data: number[] }) | undefined;
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
+    const connection = createHandlerConnection({
       languages: {
         diagnostics: {
           on: () => undefined
@@ -247,16 +187,7 @@ suite('registerHandlers', () => {
           }
         }
       },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => createTestDocument('Widget value;'),
       onDidOpen: () => undefined,
@@ -316,9 +247,7 @@ suite('registerHandlers', () => {
     let backgroundComplete: (() => void) | undefined;
     let semanticTokensRefreshCount = 0;
     let diagnosticsRefreshCount = 0;
-    const connection = {
-      onInitialize: () => undefined,
-      onDidChangeWatchedFiles: () => undefined,
+    const connection = createHandlerConnection({
       languages: {
         diagnostics: {
           on: () => undefined,
@@ -333,16 +262,7 @@ suite('registerHandlers', () => {
           }
         }
       },
-      onHover: () => undefined,
-      onCompletion: () => undefined,
-      onDefinition: () => undefined,
-      onReferences: () => undefined,
-      onSignatureHelp: () => undefined,
-      onDocumentSymbol: () => undefined,
-      console: {
-        error: () => undefined
-      }
-    };
+    });
     const documents = {
       get: () => undefined,
       onDidOpen: () => undefined,
@@ -369,4 +289,3 @@ suite('registerHandlers', () => {
     assert.strictEqual(diagnosticsRefreshCount, 1);
   });
 });
-

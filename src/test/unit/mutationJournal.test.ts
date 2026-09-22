@@ -16,13 +16,13 @@ suite('Mutation journal', () => {
   test('commit releases undo state and set updates do not enumerate existing members', () => {
     let active: MutationJournal | undefined = undefined;
     const set = new JournalSet<number>(() => active);
-    for(let i=0;i<10000;i++) { set.add(i); }
+    for(let i=0;i<32;i++) { set.add(i); }
     let reads=0;
     const iterator=set[Symbol.iterator].bind(set);
     set[Symbol.iterator]=function*(){ for(const value of iterator()) { reads++; yield value; } return undefined; };
     active = new MutationJournal();
-    set.add(10000); set.delete(5);
+    set.add(32); set.delete(5);
     active.clear(); active.rollback();
-    assert.ok(set.has(10000)); assert.ok(!set.has(5)); assert.strictEqual(reads, 0);
+    assert.ok(set.has(32)); assert.ok(!set.has(5)); assert.strictEqual(reads, 0);
   });
 });
