@@ -29,6 +29,7 @@
 		"test:unit": "node scripts/run-tests.mjs unit",
 		"test:integration": "node scripts/run-tests.mjs integration",
 		"test:e2e": "node scripts/run-tests.mjs e2e",
+		"benchmark": "node scripts/run-benchmark.mjs",
 		"test:performance": "node scripts/run-tests.mjs performance",
 		"test:external": "node scripts/run-tests.mjs external",
 		"test:fast": "node scripts/run-tests.mjs fast",

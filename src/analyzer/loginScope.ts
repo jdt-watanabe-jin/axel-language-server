@@ -8,7 +8,7 @@ import { resolveInclude } from './includeResolver';
 import { WorkspaceIndex, type WorkspaceIndexOptions } from './workspaceIndex';
 import { buildTypeContext } from './typeChecking/declarations';
 import { loadBuiltinCatalog } from './typeChecking/builtinCatalog';
-import type { TypeContext } from './typeChecking/model';
+import type { Binding, TypeContext } from './typeChecking/model';
 
 export interface LoginScopeSnapshot {
   entryUri: string;
@@ -59,8 +59,9 @@ export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndex
       const roots = analysis.declarations.filter(d => globalIds.has(d.id) &&
         (d.kind === 'class' || d.kind === 'variable' || d.kind === 'function' && d.name !== 'main'));
       for (const declaration of roots) { declarations.set(declaration.id, declaration); }
+      const rootClasses = new Set(roots.filter(root => root.kind === 'class').map(root => root.name));
       for (const declaration of analysis.declarations) {
-        if (declaration.containerName && roots.some(root => root.kind === 'class' && root.name === declaration.containerName)) {
+        if (declaration.containerName && rootClasses.has(declaration.containerName)) {
           declarations.set(declaration.id, declaration);
         }
       }
@@ -88,9 +89,16 @@ export function* buildLoginScopeSteps(entryPath: string, options: WorkspaceIndex
   const entry = documents.get(entryUri);
   const typeContext = entry ? buildTypeContext({ analysis: entry, documents: [...documents.values()].reverse().filter(document => document.uri !== entryUri),
     catalog: loadBuiltinCatalog(options.forcedIncludeFiles ?? []) }) : undefined;
+  // Preserve binding order within each bucket for shadowed declarations.
+  const bindingsByUri = new Map<string, Map<string, Binding[]>>();
+  for (const binding of typeContext?.bindings ?? []) {
+    let names = bindingsByUri.get(binding.uri);
+    if (!names) { names = new Map(); bindingsByUri.set(binding.uri, names); }
+    const bucket = names.get(binding.name);
+    if (bucket) { bucket.push(binding); } else { names.set(binding.name, [binding]); }
+  }
   const exported = [...declarations.values()].map(declaration => {
-    const binding = typeContext?.bindings.find(binding => binding.uri === declaration.uri && binding.name === declaration.name
-      && containsSourcePosition(binding.node.range, declaration.selectionRange.start));
+    const binding = bindingsByUri.get(declaration.uri)?.get(declaration.name)?.find(binding => containsSourcePosition(binding.node.range, declaration.selectionRange.start));
     const type = binding?.type.kind === 'function' ? binding.type.call?.result : binding?.type;
     return type && type.kind !== 'unknown' ? { ...declaration, startup: true, typeName: type.name } : { ...declaration, startup: true };
   });

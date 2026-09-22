@@ -1,9 +1,11 @@
 import * as fs from 'fs';
-import type { CancellationToken } from 'vscode-languageserver/node';
+import { CancellationToken, LSPErrorCodes, ResponseError } from 'vscode-languageserver/node';
 import { cancellationCheckpoint, throwIfCancelled } from './cancellation';
 
 export interface AnalysisOperation {
   sync(): void;
+  /** Only capture results locally; publication belongs to the next generator step.
+   * Cancellation may close the generator before this read finishes. */
   async(): Promise<void>;
 }
 export type AnalysisStep = void | AnalysisOperation;
@@ -31,7 +33,7 @@ export async function runAnalysisStepsAsync<T>(steps: Generator<AnalysisStep, T,
     while (!next.done) {
       await cancellationCheckpoint(token);
       check();
-      try { await next.value?.async(); }
+      try { if (next.value) { await awaitOperation(next.value.async(), token); } }
       catch (error) { check(); next = scope(() => steps.throw(error)); continue; }
       check();
       next = scope(() => steps.next());
@@ -66,4 +68,17 @@ export function* scopedAnalysisSteps<T>(steps: Generator<AnalysisStep, T, void>,
     }
     return next.value;
   } finally { scope(() => steps.return(undefined as T)); }
+}
+
+/** Stop waiting for non-abortable I/O without letting its late result resume analysis. */
+async function awaitOperation(operation: Promise<void>, token: CancellationToken): Promise<void> {
+  if (token === CancellationToken.None) { return operation; }
+  let subscription: { dispose(): void } | undefined;
+  try {
+    await Promise.race([operation, new Promise<never>((_resolve, reject) => {
+      const cancelled = () => reject(new ResponseError(LSPErrorCodes.RequestCancelled, 'Request cancelled.'));
+      subscription = token.onCancellationRequested(cancelled);
+      if (token.isCancellationRequested) { cancelled(); }
+    })]);
+  } finally { subscription?.dispose(); }
 }

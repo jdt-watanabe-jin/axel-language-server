@@ -317,6 +317,7 @@ export interface AnalyzedDocument {
   macroUndefinitions?: { name: string; range: AnalysisRange }[];
   /** Keep virtual positions until semantic checks finish; only published ranges use source positions. */
   expandedSource?: {
+    /** Semantic expanded input; source-only highlights and documentation belong to the outer document. */
     analysis: AnalyzedDocument;
     sourceRange(range: AnalysisRange): AnalysisRange;
     /** Preserves macro argument origins for reference presentation without changing declaration ranges. */

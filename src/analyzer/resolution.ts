@@ -9,6 +9,7 @@ import type {
 } from '../types/analysis';
 
 export interface WorkspaceDeclarationLookup extends NonNullable<GuiResolutionInput['workspaceIndex']> {
+  getVisibleDeclarationSnapshot?(sourceUri: string): readonly AnalysisDeclaration[];
   findVisibleGuiClasses?(sourceUri: string, name: string): AnalysisGuiClass[];
   findVisibleDeclarations?(sourceUri: string, name: string): AnalysisDeclaration[];
   listVisibleDeclarations?(sourceUri: string): AnalysisDeclaration[];
@@ -38,12 +39,17 @@ interface DeclarationIndex {
   hierarchies: Map<string, AnalysisDeclaration[]>;
 }
 const emptyDeclarations: AnalysisDeclaration[] = [];
-const visibleIndexes = new WeakMap<AnalysisDeclaration[], WeakMap<AnalysisDeclaration[], DeclarationIndex>>();
+const visibleIndexes = new WeakMap<AnalysisDeclaration[], WeakMap<readonly AnalysisDeclaration[], DeclarationIndex>>();
 const scopeIdIndexes = new WeakMap<AnalysisScope[], Map<string, AnalysisScope>>();
 const localIndexes = new WeakMap<AnalysisDeclaration[], Map<string, AnalysisDeclaration>>();
 const scopeNameIndexes = new WeakMap<AnalysisDeclaration[], WeakMap<string[], Map<string, AnalysisDeclaration[]>>>();
 
-function visibleIndex(input: DeclarationResolutionInput, listed = input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri) ?? emptyDeclarations): DeclarationIndex {
+function visibleDeclarationsSnapshot(input: DeclarationResolutionInput): readonly AnalysisDeclaration[] | undefined {
+  return input.workspaceIndex.getVisibleDeclarationSnapshot?.(input.analysis.uri)
+    ?? input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri);
+}
+
+function visibleIndex(input: DeclarationResolutionInput, listed = visibleDeclarationsSnapshot(input) ?? emptyDeclarations): DeclarationIndex {
   let generations = visibleIndexes.get(input.analysis.declarations);
   if (!generations) { generations = new WeakMap(); visibleIndexes.set(input.analysis.declarations, generations); }
   const cached = generations.get(listed);
@@ -159,7 +165,7 @@ export function visibleDeclarationsByName(
   input: DeclarationResolutionInput,
   name: string
 ): AnalysisDeclaration[] {
-  const listed = input.workspaceIndex.listVisibleDeclarations?.(input.analysis.uri);
+  const listed = visibleDeclarationsSnapshot(input);
   if (listed !== undefined) {
     return visibleIndex(input, listed).byName.get(name)?.slice() ?? [];
   }
@@ -284,6 +290,23 @@ function requiredParameterCount(parameters: NonNullable<AnalysisDeclaration['sig
   return firstOptionalIndex < 0 ? parameters.length : firstOptionalIndex;
 }
 
+interface OwnerScope extends AnalysisScope { declaration: AnalysisDeclaration }
+const ownerScopeIndexes = new WeakMap<AnalysisDeclaration[], { methods: OwnerScope[]; types: OwnerScope[] }>();
+function ownerScopes(declarations: AnalysisDeclaration[]): { methods: OwnerScope[]; types: OwnerScope[] } {
+  let index = ownerScopeIndexes.get(declarations);
+  if (!index) {
+    index = { methods: [], types: [] };
+    for (const declaration of declarations) {
+      const method = declaration.kind === 'function' && declaration.containerName !== undefined;
+      if (!method && !isTypeDeclaration(declaration)) { continue; }
+      const scope = { id: declaration.id, declaration, range: declaration.range, declarationIds: [] };
+      (method ? index.methods : index.types).push(scope);
+    }
+    ownerScopeIndexes.set(declarations, index);
+  }
+  return index;
+}
+
 export function thisReceiverType(input: DeclarationResolutionInput): string | undefined {
   const { guiClasses, guiMethods } = input.analysis;
   if (guiClasses && guiMethods) {
@@ -296,18 +319,12 @@ export function thisReceiverType(input: DeclarationResolutionInput): string | un
     });
     if (context) { return context.receiverTypeName; }
   }
-  const containingDeclarations = input.analysis.declarations
-    .filter((declaration) => contains(declaration.range, input.position))
-    .sort((left, right) => rangeSize(left.range) - rangeSize(right.range));
-
-  const method = containingDeclarations.find((declaration) => (
-    declaration.kind === 'function' && declaration.containerName !== undefined
-  ));
-  if (method?.containerName !== undefined) {
-    return method.containerName;
-  }
-
-  return containingDeclarations.find(isTypeDeclaration)?.name;
+  const owners = ownerScopes(input.analysis.declarations);
+  // Preserve method precedence and the smallest-range/source-order tie rule.
+  const method = findInnermostScope(owners.methods, input.position) as OwnerScope | undefined;
+  if (method) { return method.declaration.containerName; }
+  const type = findInnermostScope(owners.types, input.position) as OwnerScope | undefined;
+  return type?.declaration.name;
 }
 
 export function isTypeDeclaration(declaration: AnalysisDeclaration): boolean {

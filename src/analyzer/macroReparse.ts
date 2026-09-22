@@ -107,7 +107,15 @@ export function* macroReparseSteps(root: Parser.SyntaxNode, source: string, orig
   };
   const expanded = yield* analyze(text,toExpanded);
   yield;
-  const result = map(expanded) as AnalyzedDocument;
+  // Semantic consumers already use expandedSource. Project the large type tree
+  // only for consumers that actually request source-coordinate syntax.
+  const { typeSnapshot, ...presentation } = expanded;
+  const result = map(presentation) as AnalyzedDocument;
+  if (typeSnapshot) {
+    let projected: typeof typeSnapshot.root | undefined;
+    result.typeSnapshot = { uri: typeSnapshot.uri,
+      get root() { return projected ??= map(typeSnapshot.root) as typeof typeSnapshot.root; } };
+  }
   const referenceRange = (range: AnalysisRange): AnalysisRange => {
     const start=expandedPositions.offset(range.start),end=expandedPositions.offset(range.end);
     const segment=segments.find(segment=>segment.expandedStart<=start && end<=segment.expandedEnd);

@@ -130,16 +130,16 @@ export class DocumentAnalyzer {
     return runAnalysisSteps(this.analyzeDocumentSteps(input, expandMacros, dependenciesOnly));
   }
 
-  public *analyzeDocumentSteps(input: AnalyzeDocumentInput, expandMacros = true, dependenciesOnly = false): Generator<AnalysisStep, AnalyzedDocument, void> {
+  public *analyzeDocumentSteps(input: AnalyzeDocumentInput, expandMacros = true, dependenciesOnly = false, presentation: 'source' | 'expanded' = 'source'): Generator<AnalysisStep, AnalyzedDocument, void> {
     const startedAt = Date.now();
-    const analysis = yield* this.computeDocumentSteps(input, expandMacros, dependenciesOnly);
+    const analysis = yield* this.computeDocumentSteps(input, expandMacros, dependenciesOnly, presentation);
     (this.logger.timing ?? this.logger.info).call(this.logger,
       `[timing] operation=document.analyze uri=${input.uri} version=${input.version} durationMs=${Date.now() - startedAt}`);
     return analysis;
   }
 
-  private *computeDocumentSteps(input: AnalyzeDocumentInput, expandMacros: boolean, dependenciesOnly: boolean): Generator<AnalysisStep, AnalyzedDocument, void> {
-    const analysisContextKey = analysisContextKeyFromInput(input) + String(expandMacros) + String(dependenciesOnly);
+  private *computeDocumentSteps(input: AnalyzeDocumentInput, expandMacros: boolean, dependenciesOnly: boolean, presentation: 'source' | 'expanded'): Generator<AnalysisStep, AnalyzedDocument, void> {
+    const analysisContextKey = analysisContextKeyFromInput(input) + String(expandMacros) + String(dependenciesOnly) + presentation;
     const cached = this.cache.get(input.uri);
     if (cached?.version === input.version && cached.text === input.text && cached.analysisContextKey === analysisContextKey) {
       return cached.analysis;
@@ -186,11 +186,7 @@ export class DocumentAnalyzer {
         includes:collectIncludes(root, originalRoot).filter(i=>!startsInInactiveRange(i.range,inactiveRanges)),
         scriptExecutions:collectScriptExecutions(root).filter(e=>!startsInInactiveRange(e.selectionRange,inactiveRanges)),
         macroDefinitions:activeMacroDefinitions, macroInvocations:[],
-        macroUndefinitions: root.descendantsOfType('preproc_call').flatMap(node => {
-          const name = node.childForFieldName('argument')?.text.trim();
-          return name && node.childForFieldName('directive')?.text.replace(/\s/g, '') === '#undef'
-            ? [{ name, range: nodeToAnalysisRange(node) }] : [];
-        }),
+        macroUndefinitions: collectMacroUndefinitions(root),
         guiClasses:filterGuiClassesForInactiveRanges(guiClasses,[...inactiveRanges,...uncertainRanges]),
         guiMethods:[],inactiveRanges,uncertainRanges,uncertainNames,
         uncertainMacroDefinitions:macroDefinitions.filter(m=>startsInInactiveRange(m.selectionRange,uncertainRanges)
@@ -261,6 +257,7 @@ export class DocumentAnalyzer {
         && !startsInInactiveRange(declaration.selectionRange, [...inactiveRanges, ...uncertainRanges])),
       references: symbolIndex.references.filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)),
       macroDefinitions: activeMacroDefinitions,
+      macroUndefinitions: collectMacroUndefinitions(root),
       macroInvocations: macroInvocations.filter((invocation) => !startsInInactiveRange(invocation.selectionRange, inactiveRanges)),
       get semanticTokenReferences() { return collectPreprocessorSemanticTokenReferences(root, input.uri).filter((reference) => !startsInInactiveRange(reference.range, inactiveRanges)); },
       get semanticTokens() { return collectPreprocessorSemanticTokens(root).filter((token) => !startsInInactiveRange(token.range, inactiveRanges)); },
@@ -272,15 +269,17 @@ export class DocumentAnalyzer {
       inactiveRanges
     };
 
-    analysis.highlightMacros = yield* collectHighlightMacrosSteps(originalRoot, analysis, visibleMacroDefinitions,
-      [...evaluation.skippedConditionRanges ?? [],...evaluation.uncertainMacroReferenceRanges ?? []]);
+    if (presentation === 'source') {
+      analysis.highlightMacros = yield* collectHighlightMacrosSteps(originalRoot, analysis, visibleMacroDefinitions,
+        [...evaluation.skippedConditionRanges ?? [],...evaluation.uncertainMacroReferenceRanges ?? []]);
+    }
     if (expandMacros) {
       analysis = yield* macroReparseSteps(root, conditional?.text ?? input.text, analysis, visibleMacroDefinitions, (text, position) => this.analyzeDocumentSteps({...input, text,
         preprocessorSymbols: input.preprocessorSymbols?.map(symbol => ({...symbol, sourceRange: symbol.sourceRange
           ? {start:position(symbol.sourceRange.start),end:position(symbol.sourceRange.end,true)} : undefined})),
         macroDefinitions: input.macroDefinitions?.map(macro => ({...macro,
           visibilityStart: macro.visibilityStart ? position(macro.visibilityStart) : undefined}))
-      }, false));
+      }, false, false, 'expanded'));
     }
 
     yield;
@@ -299,7 +298,9 @@ export class DocumentAnalyzer {
       analysis.systemMacroReferences = systemSyntax.references.filter(ref => !startsInInactiveRange(ref.range, inactiveRanges));
     }
     yield;
-    analysis.documentationBlocks = buildDocumentationBlocks(originalRoot, input.text, analysis);
+    if (presentation === 'source') {
+      analysis.documentationBlocks = buildDocumentationBlocks(originalRoot, input.text, analysis);
+    }
     this.cache.set(input.uri, {
       version: input.version,
       text: input.text,
@@ -467,4 +468,12 @@ function deferred<T>(create: () => T): () => T {
     if (!initialized) { value = create(); initialized = true; }
     return value;
   };
+}
+
+function collectMacroUndefinitions(root: Parser.SyntaxNode): NonNullable<AnalyzedDocument['macroUndefinitions']> {
+  return root.descendantsOfType('preproc_call').flatMap(node => {
+    const name = node.childForFieldName('argument')?.text.trim();
+    return name && node.childForFieldName('directive')?.text.replace(/\s/g, '') === '#undef'
+      ? [{ name, range: nodeToAnalysisRange(node) }] : [];
+  });
 }

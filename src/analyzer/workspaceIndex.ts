@@ -88,12 +88,13 @@ export class WorkspaceIndex {
   private readonly typeInputCache = new Map<string, TypeDiagnosticsInput>();
   private readonly callResolutionCache = new Map<string, { documents: AnalyzedDocument[]; catalog: BuiltinCatalog; resolve: ReturnType<typeof createCallResolver> }>();
   private readonly documentationCache = new Map<string, { documents: AnalyzedDocument[]; bindings: DocumentationBindings }>();
-  private readonly visibleDeclarationsCache = new Map<string, AnalysisDeclaration[]>();
+  private readonly visibleDeclarationsCache = new Map<string, readonly AnalysisDeclaration[]>();
+  private readonly externalDeclarationsByNameCache = new Map<string, Map<string, AnalysisDeclaration[]>>();
   private readonly cachedVisibleDeclarationsCache = new Map<string, AnalysisDeclaration[]>();
   private readonly definiteVisibleUrisCache = new Map<string, string[]>();
   private readonly derivedCache = new WorkspaceDerivedCache([
     this.documentationCache, this.callResolutionCache, this.typeInputCache, this.semanticResultCache,
-    this.visibleDeclarationsCache, this.cachedVisibleDeclarationsCache, this.definiteVisibleUrisCache
+    this.visibleDeclarationsCache, this.cachedVisibleDeclarationsCache, this.definiteVisibleUrisCache, this.externalDeclarationsByNameCache
   ]);
   private readonly analyzer: DocumentAnalyzer;
   private readonly outlineAnalyzer = new DocumentAnalyzer();
@@ -114,6 +115,8 @@ export class WorkspaceIndex {
   private readonly definiteIncludeGraph = new Map<string, Set<string>>();
   private readonly reverseIncludeGraph = new Map<string, Set<string>>();
   private includeResolutionCache: Map<string, IncludeResolution> | undefined;
+  private completedDiskDocuments: Map<string, IndexedDocument> | undefined;
+  private readonly completedDiskTransactions = new WeakMap<Map<string, IncludeResolution>, Map<string, IndexedDocument>>();
   private forcedIncludeFileCache: string[] | undefined;
   private indexingForcedIncludes = false;
   private forcedIncludesIndexed = false;
@@ -597,11 +600,22 @@ export class WorkspaceIndex {
 
   public findVisibleDeclarations(sourceUri: string, name: string): AnalysisDeclaration[] {
     this.ensureForcedIncludesIndexed();
-    const ordinary = this.collectDefiniteVisibleUris(sourceUri)
-      .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
-      .filter((declaration) => declaration.name === name)
-      .sort(compareDeclarations);
-    return uniqueDeclarations([...ordinary, ...this.visibleLoginDeclarations(sourceUri).filter(d => d.name === name)]);
+    // Startup scope can invalidate derived caches; prepare it before consulting the index.
+    this.loginScope(sourceUri);
+    let byName = this.externalDeclarationsByNameCache.get(sourceUri);
+    if (!byName) {
+      const ordinary = this.collectDefiniteVisibleUris(sourceUri)
+        .flatMap(uri => this.documents.get(uri)?.analysis.declarations ?? []).sort(compareDeclarations);
+      const declarations = uniqueDeclarations([...ordinary, ...this.visibleLoginDeclarations(sourceUri)]);
+      byName = new Map();
+      for (const declaration of declarations) {
+        const entries = byName.get(declaration.name) ?? [];
+        entries.push(declaration);
+        byName.set(declaration.name, entries);
+      }
+      this.externalDeclarationsByNameCache.set(sourceUri, byName);
+    }
+    return byName.get(name)?.slice() ?? [];
   }
 
   public findVisibleMacroDefinitions(sourceUri: string, name: string): AnalysisMacroDefinition[] {
@@ -623,19 +637,25 @@ export class WorkspaceIndex {
   }
 
   public listVisibleDeclarations(sourceUri: string): AnalysisDeclaration[] {
+    return this.getVisibleDeclarationSnapshot(sourceUri).slice();
+  }
+
+  /** Immutable array identity remains stable until a visible dependency changes. */
+  public getVisibleDeclarationSnapshot(sourceUri: string): readonly AnalysisDeclaration[] {
     this.ensureForcedIncludesIndexed();
     // Preparing startup scope can publish new globals and invalidate derived values.
     this.loginScope(sourceUri);
     const cached = this.visibleDeclarationsCache.get(sourceUri);
-    if (cached) { return cached.slice(); }
+    if (cached) { return cached; }
     const declarations = [
       ...(this.documents.get(sourceUri)?.analysis.declarations ?? []),
       ...this.collectDefiniteVisibleUris(sourceUri)
         .flatMap((uri) => this.documents.get(uri)?.analysis.declarations ?? [])
     ];
     const result = uniqueDeclarations([...declarations.sort(compareDeclarations), ...this.visibleLoginDeclarations(sourceUri)]);
+    Object.freeze(result);
     this.visibleDeclarationsCache.set(sourceUri, result);
-    return result.slice();
+    return result;
   }
 
   private visibleLoginDeclarations(sourceUri: string, cachedOnly = false): AnalysisDeclaration[] {
@@ -998,11 +1018,15 @@ export class WorkspaceIndex {
     if (open && !pendingInputs.has(uri)) {
       return yield* this.indexOpenDocumentSteps({ ...open, uri, ...this.includeContexts.get(uri) }, forced, pendingInputs);
     }
+    const completed = this.completedDiskDocuments;
+    const previous = completed?.get(uri);
+    if (previous && this.documents.get(uri) === previous) { return previous.analysis; }
     const stat = yield* statAnalysisFile(normalizedPath);
     const cached = this.documents.get(uri);
 
     if (cached?.mtimeMs === stat.mtimeMs && cached.workspaceIndexComplete === true) {
       yield* this.indexResolvedIncludesSteps(cached.analysis, new Set([...visitedUris, uri]), forced, pendingInputs);
+      if (this.documents.get(uri) === cached) { completed?.set(uri, cached); }
       return cached.analysis;
     }
 
@@ -1034,6 +1058,7 @@ export class WorkspaceIndex {
       workspaceDiagnosticsComplete: false
     });
     this.analyzer.releaseSyntax(analysis.uri);
+    completed?.set(uri, this.documents.get(uri)!);
     return analysis;
   }
 
@@ -1748,7 +1773,16 @@ export class WorkspaceIndex {
   private withIncludeResolutionCache<T>(work: () => T, resolutions = new Map<string, IncludeResolution>()): T {
     if (this.includeResolutionCache) { return work(); }
     this.includeResolutionCache = resolutions;
-    try { return work(); } finally { this.includeResolutionCache = undefined; }
+    let completed = this.completedDiskTransactions.get(resolutions);
+    if (!completed) {
+      completed = new Map();
+      this.completedDiskTransactions.set(resolutions, completed);
+    }
+    this.completedDiskDocuments = completed;
+    try { return work(); } finally {
+      this.includeResolutionCache = undefined;
+      this.completedDiskDocuments = undefined;
+    }
   }
 
   private resolveInclude(input: Parameters<typeof resolveInclude>[0]): IncludeResolution {
@@ -1779,7 +1813,9 @@ export class WorkspaceIndex {
 
   private invalidateDerivedFor(uris: Iterable<string>): void {
     const affected = new Set(uris);
+    for (const uri of affected) { this.completedDiskDocuments?.delete(uri); }
     if (this.knownForcedIncludeUris().some(uri => affected.has(uri))) {
+      this.completedDiskDocuments?.clear();
       this.derivedCache.invalidate();
     } else {
       this.derivedCache.invalidate(affected);
@@ -1800,6 +1836,7 @@ export class WorkspaceIndex {
   }
 
   private clearCachedAnalysis(): void {
+    this.completedDiskDocuments?.clear();
     this.outlineAnalyzer.clear();
     this.reusedDependencyOpens.clear();
     this.backgroundGeneration++;

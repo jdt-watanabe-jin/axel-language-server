@@ -11,6 +11,24 @@ const declarationKinds = new Set(['object_definition', 'field_declaration', 'typ
 // Populated alongside aliases while building each context; discarded with it.
 const aliasScopeIndexes = new WeakMap<TypeContext, Map<string, Scope[]>>();
 
+// Binding arrays grow while the context is built. Index only the appended suffix,
+// and let the weak key release the index together with the owning scope/context.
+const bindingNameIndexes = new WeakMap<Binding[], { length: number; names: Map<string, Binding[]> }>();
+function bindingsNamed(bindings: Binding[], name: string): readonly Binding[] {
+  let index = bindingNameIndexes.get(bindings);
+  if (!index || index.length > bindings.length) {
+    index = { length: 0, names: new Map() };
+    bindingNameIndexes.set(bindings, index);
+  }
+  while (index.length < bindings.length) {
+    const binding = bindings[index.length++];
+    const entries = index.names.get(binding.name) ?? [];
+    entries.push(binding);
+    index.names.set(binding.name, entries);
+  }
+  return index.names.get(name) ?? [];
+}
+
 const basics = new Set([...numericNames, 'void']);
 
 export function scopeFor(ctx: TypeContext, node: TypeNode): Scope {
@@ -30,12 +48,12 @@ export function lookupClass(ctx: TypeContext, name: string, scope: Scope): Class
 
 export function lookupBinding(ctx: TypeContext, name: string, scope: Scope, position = Infinity): Binding | undefined {
   for (let current: Scope | undefined = scope; current; current = current.parent) {
-    const candidates = current.bindings.filter(b => b.name === name && (b.node.start <= position || !!current!.owner || b.type.kind === 'function'));
+    const candidates = bindingsNamed(current.bindings, name).filter(b => b.node.start <= position || !!current!.owner || b.type.kind === 'function');
     if (candidates.length) { return candidates[candidates.length - 1]; }
     const member = current.owner?.fields.get(name);
     if (member) { return member; }
   }
-  const globals = ctx.bindings.filter(b => b.name === name && !b.scope.parent && b.uri !== scope.uri);
+  const globals = bindingsNamed(ctx.bindings, name).filter(b => !b.scope.parent && b.uri !== scope.uri);
   return globals.find(binding => ctx.scopes.includes(binding.scope)) ?? globals[0];
 }
 

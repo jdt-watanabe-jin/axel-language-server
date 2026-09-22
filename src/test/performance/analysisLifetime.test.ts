@@ -2,6 +2,7 @@ import * as assert from 'assert';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { setImmediate } from 'timers/promises';
+import { visibleDeclarationsByName, thisReceiverType } from '../../analyzer/resolution';
 import { DocumentAnalyzer } from '../../analyzer/documentAnalyzer';
 import { createAxelParser } from '../../analyzer/axelParser';
 import type { AnalyzedDocument } from '../../types/analysis';
@@ -26,11 +27,15 @@ suite('Analysis lifetime', () => {
     const heaps: number[] = [];
     function generation(version: number) {
       const text = Array.from({ length: 300 }, (_, i) => `int value_${version}_${i};`).join('\n');
-      const input = { uri, version: 0, text };
+      const input = { uri, version: 0, text: text + '\nclass Box {}; void main(){ value_' + version + '_0 = 1; }' };
       index.updateOpenDocument(input);
       const result = index.indexOpenDocument(input);
       assert.deepStrictEqual(result.declarations, new DocumentAnalyzer().analyzeDocument(input).declarations);
       assert.deepStrictEqual(analyzer.analyzeDocument(input), new DocumentAnalyzer().analyzeDocument(input));
+      const lookup = {analysis: result, position: {line: 300, character: 14}, workspaceIndex: index};
+      assert.strictEqual(visibleDeclarationsByName(lookup, 'value_' + version + '_0').length, 1);
+      thisReceiverType(lookup);
+      index.findVisibleDeclarations(uri, 'missing');
       previous.push(new WeakRef(result));
       index.deleteDocument(uri);
       analyzer.clear(uri);

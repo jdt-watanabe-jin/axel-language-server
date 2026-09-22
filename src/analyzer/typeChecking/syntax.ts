@@ -20,38 +20,50 @@ export interface TypeSnapshot { uri: string; root: TypeNode }
 export function buildTypeSnapshot(root: Parser.SyntaxNode, uri: string, replacements: readonly TypeNode[] = []): TypeSnapshot {
   const source = root.text;
   const sourceStart = root.startIndex;
-  function copy(node: Parser.SyntaxNode): TypeNode {
-    const start = node.startIndex, end = node.endIndex;
+  // One cursor streams native nodes directly into the immutable semantic tree.
+  // No child wrapper arrays or parse-local property caches are needed by this pass.
+  const cursor = root.walk();
+  function copy(): TypeNode {
+    const start = cursor.startIndex, end = cursor.endIndex;
     const replacement = replacements.find(item => item.start === start && item.end >= end);
     if (replacement) { return replacement; }
+    const kind = cursor.nodeType;
+    const missing = cursor.nodeIsMissing;
+    const variadic = kind === 'parameter_declaration' && isTypedVariadicParameter(cursor.currentNode);
+    const from = cursor.startPosition, to = cursor.endPosition;
     const children: TypeNode[] = [];
     const fields: Record<string, TypeNode[]> = {};
     const argumentDelimiters: TypeNode[] = [];
-    const sourceChildren = node.children;
-    // The binding generates this metadata from the grammar's nodeTypeInfo.
-    // Unknown/recovery node classes lack it: preserve native lookup for those.
-    const fieldNames = (node as Parser.SyntaxNode & { fields?: readonly string[] }).fields;
-    const fieldless = Array.isArray(fieldNames) && fieldNames.length === 0;
-    for (let i = 0; i < sourceChildren.length; i++) {
-      const child = sourceChildren[i];
-      if (replacements.some(item => item.start < child.startIndex && child.endIndex <= item.end)) { continue; }
-      const name = fieldless ? undefined : node.fieldNameForChild(i);
-      if (node.type === 'argument_list' && ['(', ',', ')'].includes(child.type)) { argumentDelimiters.push(copy(child)); }
-      // A trailing comma in an unfinished call is retained under a recovery node.
-      if (node.type === 'argument_list' && child.type === 'ERROR' && child.text === ',') {
-        argumentDelimiters.push(...child.children.filter(token => token.type === ',').map(copy));
-      }
-      if (!child.isNamed && !name) { continue; }
-      const item = copy(child);
-      if (child.isNamed) { children.push(item); }
-      if (name) { (fields[name] ??= []).push(item); }
+    if (cursor.gotoFirstChild()) {
+      do {
+        if (replacements.some(item => item.start < cursor.startIndex && cursor.endIndex <= item.end)) { continue; }
+        const name = cursor.currentFieldName;
+        const named = cursor.nodeIsNamed;
+        if (kind === 'argument_list') {
+          const childKind = cursor.nodeType;
+          if (['(', ',', ')'].includes(childKind)) { argumentDelimiters.push(copy()); }
+          // Retain the trailing comma inside an unfinished-call recovery node.
+          if (childKind === 'ERROR' && source.slice(cursor.startIndex - sourceStart, cursor.endIndex - sourceStart) === ',') {
+            if (cursor.gotoFirstChild()) {
+              do { if (cursor.nodeType === ',') { argumentDelimiters.push(copy()); } } while (cursor.gotoNextSibling());
+              cursor.gotoParent();
+            }
+          }
+        }
+        if (!named && !name) { continue; }
+        const item = copy();
+        if (named) { children.push(item); }
+        if (name) { (fields[name] ??= []).push(item); }
+      } while (cursor.gotoNextSibling());
+      cursor.gotoParent();
     }
-    return {...(argumentDelimiters.length ? {argumentDelimiters} : {}), ...(node.isMissing ? {missing:true} : {}), ...(isTypedVariadicParameter(node) ? {variadic:true} : {}), kind: node.type, text: source.slice(start - sourceStart, end - sourceStart), start, end,
-      range: {start:{line:node.startPosition.row, character:node.startPosition.column},
-        end:{line:node.endPosition.row, character:node.endPosition.column}}, children, fields};
+    return {...(argumentDelimiters.length ? {argumentDelimiters} : {}), ...(missing ? {missing:true} : {}), ...(variadic ? {variadic:true} : {}),
+      kind, text: source.slice(start - sourceStart, end - sourceStart), start, end,
+      range: {start:{line:from.row, character:from.column}, end:{line:to.row, character:to.column}}, children, fields};
   }
-  return {uri, root:copy(root)};
+  return {uri, root:copy()};
 }
+
 export function field(node: TypeNode, name: string): TypeNode | undefined { return node.fields[name]?.[0]; }
 export function callArguments(node: TypeNode): TypeNode[] {
   return (field(node, 'arguments')?.children ?? []).filter(child => child.kind !== 'comment');
