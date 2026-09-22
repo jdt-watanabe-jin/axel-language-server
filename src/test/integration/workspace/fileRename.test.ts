@@ -92,6 +92,19 @@ suite('file rename includes', () => {
     const document = TextDocument.create(f.uri('main.axl'), 'axel', 0, '// 日本語😀\n#include "api.h"\n');
     assert.strictEqual(TextDocument.applyEdits(document, changes![0].edits), '// 日本語😀\n#include "API.h"\n');
   });
+  test('does not overwrite a different existing file', async () => {
+    const f = fixture(); f.write('api.h', ''); f.write('other.h', '');
+    f.write('main.axl', '#include "api.h"\n');
+    assert.strictEqual(await f.rename(f.move('api.h', 'other.h')), undefined);
+    assert.ok(f.logs.some(message => message.includes('overwrite an existing file')));
+  });
+  test('does not conflate differently cased files on a case-sensitive volume', async function () {
+    const f = fixture(); f.write('api.h', '');
+    if (fs.existsSync(path.join(f.root, 'API.h'))) { this.skip(); }
+    f.write('API.h', ''); f.write('main.axl', '#include "api.h"\n');
+    assert.strictEqual(await f.rename(f.move('api.h', 'API.h')), undefined);
+    assert.ok(f.logs.some(message => message.includes('overwrite an existing file')));
+  });
   test('treats a multi-file rename as one mapping', async () => {
     const f = fixture(); f.write('a.h', ''); f.write('b.h', ''); f.write('main.axl', '#include "a.h"\n#include "b.h"\n');
     const changes = await f.rename(f.move('a.h', 'b.h'), f.move('b.h', 'c.h'));

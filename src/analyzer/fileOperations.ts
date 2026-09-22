@@ -113,7 +113,15 @@ export class FileRenameIndex {
             || insideRoot(move.next, other.next) || insideRoot(other.next, move.next)) { throw new Error('Overlapping rename batch.'); }
         }
         if (fs.existsSync(move.next) && fileIdentity(move.old) !== fileIdentity(move.next)
-          && !moves.some(other => matches(move.next, other.old, other.folder))) { throw new Error('Rename would overwrite an existing file.'); }
+          && !moves.some(other => matches(move.next, other.old, other.folder))) {
+          // A case-insensitive volume can resolve both spellings to the same file,
+          // even on hosts where fileIdentity preserves case (for example macOS).
+          const originalStat = await fs.promises.lstat(move.old);
+          const destinationStat = await fs.promises.lstat(move.next);
+          const sameFile = move.old.toLowerCase() === move.next.toLowerCase()
+            && originalStat.dev === destinationStat.dev && originalStat.ino === destinationStat.ino;
+          if (!sameFile) { throw new Error('Rename would overwrite an existing file.'); }
+        }
       }
       const forward = (file: string) => {
         const move = moves.find(item => matches(file, item.old, item.folder));
