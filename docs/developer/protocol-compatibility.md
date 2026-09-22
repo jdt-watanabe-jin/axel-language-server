@@ -36,3 +36,11 @@ Just My Code uses an isolated syntax-only outline cache keyed by URI, version, s
 All uses the existing shared analysis, including forced headers, resolved includes, login declarations and diagnostics. Both modes return symbols of the requested document only. A configuration update affects the next request without reopening the document; there is no standard document-symbol refresh request.
 
 Regression coverage: `documentOutline.test.ts` in integration/features and E2E, and `documentOutlineScheduling.test.ts` in unit. Name resolution must pass only required GUI context fields, without spreading an analysis object whose lazy getters compute unrelated semantic data.
+
+## Input formatting
+
+`textDocument/onTypeFormatting` advertises `}` as its first trigger and newline as an additional trigger. The source-only handler has its own request queue, does not wait for configuration or semantic dependency analysis, and validates document versions and cancellation before returning edits. It adjusts only current-line leading whitespace using the request's tab/space options. The scanner and indentation calculation are shared with document formatting; on-type formatting does not require a complete syntax tree or balanced document.
+
+Comments, unfinished literals, preprocessor continuation lines and unmatched parenthesis/bracket continuations are left unchanged when indentation cannot be determined safely. Directives are recognized after leading comments. On-type indentation is conservatively skipped after any conditional preprocessing directive in the document prefix, including header guards and lines after #endif; active branches are not evaluated. Only the prefix preceding the target line is scanned, yielding periodically. The handler does not format the whole document or resolve include/login declarations. The VS Code client controls invocation through `editor.formatOnType`; the extension keeps the standard default (off). Save-time formatting remains ordinary document formatting, without Will Save or automatic include edits.
+
+Coverage: `onTypeFormatting.test.ts`, `r5FormattingScheduling.test.ts`, `r5Editing.test.ts` and the extension Host typing tests.

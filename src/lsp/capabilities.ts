@@ -1,3 +1,4 @@
+import { supportsCodeActionResolve } from './codeActionResolve';
 import { AXEL_COMMANDS } from './operations';
 import {
   CodeActionKind,
@@ -48,8 +49,10 @@ export function createInitializeResult(client?: ClientCapabilities): InitializeR
         prepareProvider: true
       },
       codeActionProvider: {
-        codeActionKinds: [CodeActionKind.QuickFix]
+        codeActionKinds: [CodeActionKind.QuickFix],
+        ...(supportsCodeActionResolve(client) ? { resolveProvider: true } : {})
       },
+      documentOnTypeFormattingProvider: { firstTriggerCharacter: '}', moreTriggerCharacter: ['\n'] },
       documentFormattingProvider: true,
       documentRangeFormattingProvider: true,
       documentSymbolProvider: true,

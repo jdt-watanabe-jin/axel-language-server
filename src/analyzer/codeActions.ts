@@ -23,13 +23,21 @@ export interface WorkspaceCodeActionIndex {
   findDeclarations?(name: string): AnalysisDeclaration[];
 }
 
+export interface CodeActionCandidate extends Omit<AnalysisCodeAction, 'edit'> {
+  resolveEdit(): AnalysisWorkspaceEdit;
+}
+
 export function getCodeActions(input: CodeActionInput): AnalysisCodeAction[] {
+  return getCodeActionCandidates(input).map(({ resolveEdit, ...action }) => ({ ...action, edit: resolveEdit() }));
+}
+
+export function getCodeActionCandidates(input: CodeActionInput): CodeActionCandidate[] {
   return input.diagnostics
     .filter((diagnostic) => rangesIntersect(diagnostic.range, input.range))
     .flatMap((diagnostic) => includeQuickFix(input, diagnostic));
 }
 
-function includeQuickFix(input: CodeActionInput, diagnostic: AnalysisDiagnostic): AnalysisCodeAction[] {
+function includeQuickFix(input: CodeActionInput, diagnostic: AnalysisDiagnostic): CodeActionCandidate[] {
   const missingTypeName = missingTypeNameFromDiagnostic(diagnostic);
   if (missingTypeName === undefined) {
     return [];
@@ -47,11 +55,12 @@ function includeQuickFix(input: CodeActionInput, diagnostic: AnalysisDiagnostic)
     return [];
   }
 
+  const sourceUri = input.analysis.uri;
   return [{
     title: translate(input.locale, 'Add include "{0}"', includePath),
     kind: 'quickfix',
     diagnostics: [diagnostic],
-    edit: includeWorkspaceEdit(input.analysis.uri, includePath)
+    resolveEdit: () => includeWorkspaceEdit(sourceUri, includePath)
   }];
 }
 

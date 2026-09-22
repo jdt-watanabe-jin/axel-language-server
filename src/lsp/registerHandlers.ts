@@ -1,4 +1,6 @@
 
+import { CodeActionResolveStore } from './codeActionResolve';
+import { registerOnTypeFormattingHandler } from './onTypeFormatting';
 import { WorkProgress, progressRequest } from './workProgress';
 import { registerOperationHandlers } from './operations';
 import { WorkDoneProgress, WorkDoneProgressCreateRequest, WorkDoneProgressCancelNotification } from 'vscode-languageserver/node';
@@ -40,7 +42,7 @@ import type {
 } from 'vscode-languageserver/node';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { AnalyzeDocumentInput, AnalyzedDocument, AnalysisRange } from '../types/analysis';
-import { getCodeActions, type WorkspaceCodeActionIndex } from '../analyzer/codeActions';
+import { type WorkspaceCodeActionIndex } from '../analyzer/codeActions';
 import { type WorkspaceCompletionIndex } from '../analyzer/completion';
 import { getFormattingEditsSteps } from '../analyzer/formatting';
 import { getHover, type WorkspaceDeclarationIndex } from '../analyzer/hover';
@@ -50,7 +52,6 @@ import type { WorkspaceDeclarationLookup } from '../analyzer/resolution';
 import { getSignatureHelp } from '../analyzer/signatureHelp';
 import { collectSemanticTokens } from '../analyzer/semanticTokens';
 import { createInitializeResult } from './capabilities';
-import { toLspCodeActions } from './codeActions';
 import { toLspDefinitionLocations } from './definition';
 import { toDocumentDiagnosticReport } from './diagnostics';
 import { toLspDocumentSymbol } from './documentSymbols';
@@ -209,6 +210,16 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   const analyzeRequest = (context: HandlerRegistrationContext, token: CancellationToken, diagnostic: boolean, input: AnalyzeDocumentInput) =>
     analyzeRequestDocument(context, token, diagnostic, input, validateRequest);
   const deferredItems = registerDeferredItemHandlers(context, { request }, () => revision);
+  const codeActions = new CodeActionResolveStore({
+    documentVersion: uri => context.documents.get(uri)?.version,
+    analysisGeneration: uri => context.analyzer.getAnalyzedDocument?.(uri),
+    revision: () => revision
+  });
+  context.connection.onCodeActionResolve?.(request(async (action, token) => {
+    await cancellationCheckpoint(token);
+    return codeActions.resolve(action);
+  }));
+  registerOnTypeFormattingHandler(context);
   let locale: string | undefined;
   let hoverMarkdown = false;
   let completionMarkdown = false;
@@ -292,7 +303,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   context.connection.onDidChangeConfiguration?.(() => context.configuration!.refresh());
   registerDocumentLinkHandlers(context, () => revision, () => linkConfigurationRevision);
   const flushPendingChanges = registerDocumentLifecycleHandlers(context, invalidateRequests, refreshInlayHints, () => {
-    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); codeLens?.dispose(); deferredItems.clear(); progress.dispose(); operations?.dispose(); stopBackgroundObserver?.(); finishBackground?.();
+    context.configuration!.dispose(); context.analyzer.setAnalysisEnabled?.(false); fileOperations.dispose(); codeLens?.dispose(); deferredItems.clear(); codeActions.clear(); progress.dispose(); operations?.dispose(); stopBackgroundObserver?.(); finishBackground?.();
     return Promise.all([workspaceSymbols?.dispose(), typeHierarchy.dispose()]).then(() => undefined);
   });
   const measureRequest = async <T>(token: CancellationToken, operation: string, details: LogDetails, work: () => T | Promise<T>, flushChanges = true): Promise<T> => {
@@ -312,7 +323,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     }
   };
   context.connection.onDidChangeWatchedFiles(event => invalidateFiles(event.changes.map(change => change.uri)));
-  registerBackgroundRefreshHandlers(context, () => { deferredItems.clear(); refreshInlayHints(); });
+  registerBackgroundRefreshHandlers(context, () => { deferredItems.clear(); codeActions.clear(); refreshInlayHints(); });
   context.connection.onInitialized?.(() => {
     context.connection.onNotification?.(WorkDoneProgressCancelNotification.type, params => progress.cancel(params.token));
     workspaceSymbols?.start();
@@ -344,7 +355,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
     revision++;
     return await request(async (_params: undefined, cancellation) => {
       progress.report('Rebuilding workspace symbols');
-      typeHierarchy.invalidate(); deferredItems.clear();
+      typeHierarchy.invalidate(); deferredItems.clear(); codeActions.clear();
       await workspaceSymbols?.rebuild(cancellation);
       progress.report('Rebuilding open documents and dependencies');
       await context.analyzer.rebuildAnalysis?.(cancellation);
@@ -579,6 +590,8 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
   }));
 
   refactorConnection.onCodeAction?.(request(async (params: CodeActionParams, token) => {
+    // Manual include fixes must not participate in save-time source actions.
+    if (params.context.only && !params.context.only.some(kind => kind === '' || kind === 'quickfix')) { return []; }
     const document = context.documents.get(params.textDocument.uri);
     return measureRequest(token, 'lsp.codeAction', rangeRequestDetails(params, document), async () => {
       if (document === undefined) {
@@ -591,13 +604,13 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
           version: document.version,
           text: document.getText()
         });
-        return toLspCodeActions(getCodeActions({
+        return codeActions.actions({
           locale,
           analysis,
           range: params.range,
           diagnostics: analysis.diagnostics,
           workspaceIndex: context.analyzer
-        }), locale);
+        }, document.version, context.clientCapabilities);
       } catch (error: unknown) {
         rethrowCancellation(error);
         throwIfCancelled(token);

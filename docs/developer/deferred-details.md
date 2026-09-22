@@ -26,3 +26,11 @@ Workspace-symbol identity uses URI, qualified name and kind, excluding coordinat
 Resolved lenses use `editor.action.showReferences` with protocol arguments `[uri, position, locations]`. Generic command argument conversion is not supplied by `vscode-languageclient`; the extension's resolve middleware converts this known command to VS Code `Uri`, `Position` and `Location` objects. The extension does not implement a parallel Code Lens provider or language analysis.
 
 Regression coverage lives in `r3DeferredItems.test.ts`, `r3WorkspaceResolve.test.ts` and `r3CodeLens.test.ts`; the extension Host test `r3CodeLens.test.ts` checks live toggling and executes the resulting command. Manual checks belong to the extension's integration checklist.
+
+## Code Action edits
+
+Code Action Resolve requires both `textDocument.codeAction.dataSupport` and `resolveSupport.properties` containing `edit`. Only then is `resolveProvider` advertised and the edit deferred. Other clients keep the eager Quick Fix response. Candidate identification still uses current semantic diagnostics and analyzed declarations; deferring the edit does not defer that analysis or expand the include search scope.
+
+`src/lsp/codeActionResolve.ts` retains up to eight server-held candidate batches. Opaque signed data identifies a candidate. Resolve verifies the document version, workspace revision, cached analysis identity and bound action metadata; background indexing and rebuild clear snapshots. Invalid identities produce `InvalidParams`; changed or evicted candidates produce `ContentModified`, requiring a fresh list. Only the edit is added. Clients supporting `workspace.workspaceEdit.documentChanges` receive a versioned edit so an intervening document change prevents application; other clients receive the existing `changes` shape. No save-time include addition or Will Save handler is registered.
+
+Coverage: `codeActionResolve.test.ts` and the real stdio `r5Editing.test.ts`; the extension's `r5Editing.test.ts` exercises the VS Code provider, explicit edit application, Undo and saving without automatic include additions.
