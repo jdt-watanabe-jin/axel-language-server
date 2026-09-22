@@ -19,6 +19,8 @@ Inlay parameter descriptions are emitted once: `label.tooltip` takes precedence 
 
 `src/lsp/deferredItems.ts` binds completion and inlay items to bounded server-held snapshots. Client-supplied names or targets do not choose a declaration. Invalid identity data is rejected; source versions, workspace revisions, settings changes and background index invalidation prevent reuse of stale details. Clients receiving `ContentModified` request a new list. Completion resolution does not change labels, filtering, sorting, insertion text or edits. Internal declaration metadata never appears in the protocol payload.
 
+Interactive requests reuse complete semantic indexes without waiting for workspace diagnostic calculation. Diagnostic requests and Code Action candidate generation still calculate diagnostics. Unchanged dependency opens retain the caller analysis generation and symbol IDs, including when the editor uses an equivalent encoded file URI. Closing such a view preserves it only when both buffer and disk text remain unchanged; edits, configuration changes and incompatible include contexts follow normal invalidation. No-op background indexing completion does not invalidate deferred items or request feature refreshes.
+
 Workspace-symbol identity uses URI, qualified name and kind, excluding coordinates so line insertions can move a declaration. Resolve reconciles open buffers, disk state, project scope and configuration through the existing symbol index. Ambiguous identities, including overloads and duplicate declarations, use eager locations. Deleted, excluded or newly ambiguous selections reject resolution. Unchanged file extraction is reused; resolve does not add a second semantic index.
 
 ## Code Lens ownership

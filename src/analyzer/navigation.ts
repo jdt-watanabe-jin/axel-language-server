@@ -104,7 +104,9 @@ export function* getReferencesSteps(input: ReferencesInput): Generator<AnalysisS
     locations.push(...yield* referencesToDeclaration(input, analysis, target));
   }
   if (input.includeDeclaration) {
-    locations.push(locationFromDeclaration(target));
+    const declaration = documents.flatMap(document => document.declarations)
+      .find(candidate => candidate.id === target.id) ?? target;
+    locations.push(locationFromDeclaration(declaration));
   }
 
   return uniqueLocations(locations).sort(compareLocations);

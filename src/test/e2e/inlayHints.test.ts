@@ -75,6 +75,49 @@ suite('LSP parameter inlay hints', function () {
     } finally { await server.stop(); }
   });
 
+  test('keeps hints and lenses stable while hovering an unchanged dependency and closing it', async () => {
+    const root = fixtures.createTempDir();
+    const header = path.join(root, 'api.h');
+    const text = '/** @param count number of items */\nvoid f(int count);';
+    fs.writeFileSync(header, text);
+    const headerUri = pathToFileURL(header).toString().replace('api.h', '%61pi.h');
+    const uri = pathToFileURL(path.join(root, 'main.axl')).toString();
+    const server = startLspServer();
+    const refreshes = { inlay: 0, lens: 0, diagnostics: 0, tokens: 0 };
+    server.onInlayHintRefresh(() => { refreshes.inlay++; });
+    server.onRequest('workspace/codeLens/refresh', () => { refreshes.lens++; return null; });
+    server.onDiagnosticRefresh(() => { refreshes.diagnostics++; });
+    server.onRequest('workspace/semanticTokens/refresh', () => { refreshes.tokens++; return null; });
+    const params = { textDocument: { uri }, range: { start: { line: 0, character: 0 }, end: { line: 3, character: 0 } } };
+    try {
+      await server.request('initialize', { processId: null, rootUri: null, capabilities: {
+        textDocument: { inlayHint: { resolveSupport: { properties: ['label.tooltip', 'label.location'] } } },
+        workspace: { inlayHint: { refreshSupport: true }, codeLens: { refreshSupport: true },
+          semanticTokens: { refreshSupport: true }, diagnostics: { refreshSupport: true } }
+      }, configuration: { forcedIncludeFiles: [header], inlayHints: { parameterNames: { enabled: true } }, codeLens: { enabled: true } } });
+      await server.notify('initialized', {});
+      await server.notify('textDocument/didOpen', { textDocument: { uri, languageId: 'axel', version: 1, text: 'void main(){ f(1); }' } });
+      await server.request('textDocument/inlayHint', params);
+      // Observe past the 40ms Code Lens refresh debounce after warm-up and after each lifecycle event.
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const hint = (await server.request<InlayHint[]>('textDocument/inlayHint', params))[0];
+      const before = { ...refreshes };
+      for (let cycle = 0; cycle < 2; cycle++) {
+        await server.notify('textDocument/didOpen', { textDocument: { uri: headerUri, version: 1, languageId: 'axel', text } });
+        const hover = await server.request('textDocument/hover', { textDocument: { uri: headerUri }, position: { line: 1, character: 11 } });
+        assert.match(JSON.stringify(hover), /int count/);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.deepStrictEqual(refreshes, before, 'unchanged open must not refresh other features');
+        assert.ok(await server.request('inlayHint/resolve', hint), 'opening a view must not stale existing hint identity');
+        await server.notify('textDocument/didClose', { textDocument: { uri: headerUri } });
+        await server.request('textDocument/inlayHint', params);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.deepStrictEqual(refreshes, before, 'unchanged close must not refresh other features');
+        assert.ok(await server.request('inlayHint/resolve', hint));
+      }
+    } finally { await server.stop(); }
+  });
+
   test('does not request refresh without client support', async () => {
     const server = startLspServer();
     let refreshes = 0;

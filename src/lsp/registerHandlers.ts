@@ -82,7 +82,7 @@ export interface AnalyzerLike extends
   getSelectionRangesSteps?(input: AnalyzeDocumentInput, positions: readonly import('../types/analysis').AnalysisPosition[]): Generator<AnalysisStep, import('../analyzer/selectionRanges').AnalysisSelectionRange[], void>;
   getFoldingRangesSteps?(input: AnalyzeDocumentInput): Generator<AnalysisStep, FoldingRangeCandidate[], void>;
   updateOpenDocument?(input: AnalyzeDocumentInput): void;
-  analyzeRequestDocument?(input: AnalyzeDocumentInput, token: CancellationToken): Promise<AnalyzedDocument>;
+  analyzeRequestDocument?(input: AnalyzeDocumentInput, token: CancellationToken, diagnostics?: boolean): Promise<AnalyzedDocument>;
   analyzeDocument(input: AnalyzeDocumentInput): AnalyzedDocument;
   analyzeDiagnosticDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   getIncludeResolutionStatus?(analysis: AnalyzedDocument): IncludeResolutionStatus;
@@ -91,6 +91,8 @@ export interface AnalyzerLike extends
   indexOpenDocument?(input: AnalyzeDocumentInput): AnalyzedDocument;
   getSemanticTokens?(analysis: AnalyzedDocument): ReturnType<typeof collectSemanticTokens>;
   semanticTokenWorkspaceIndex?(sourceUri: string): WorkspaceDeclarationLookup;
+  tryReuseOpenDocument?(input: AnalyzeDocumentInput): boolean;
+  tryCloseUnchangedDocument?(uri: string): boolean;
   deleteDocument?(uri: string): void;
   configure?(options: unknown): void;
   setAnalysisEnabled?(enabled: boolean): void;
@@ -98,7 +100,7 @@ export interface AnalyzerLike extends
   setProjectScope?(scope: ProjectScope): void;
   invalidateUri?(uri: string): void;
   invalidatePaths?(uris: readonly string[]): void;
-  onBackgroundIndexingComplete?(listener: () => void): void;
+  onBackgroundIndexingComplete?(listener: (changed?: boolean) => void): void;
   onBackgroundIndexingActivity?(listener: (active: boolean) => void): () => void;
   cancelBackgroundIndexing?(): void;
   getLoginDependencies?(cachedOnly?: boolean): { generation: number; uris: string[] };
@@ -599,7 +601,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
       }
 
       try {
-        const analysis = await analyzeRequest(context, token, false, {
+        const analysis = await analyzeRequest(context, token, true, {
           uri: document.uri,
           version: document.version,
           text: document.getText()
@@ -795,6 +797,7 @@ export function registerHandlers(context: HandlerRegistrationContext): void {
 function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, invalidateRequests: () => void, refreshInlayHints: () => void,
   disposeSymbols: () => Promise<void> | undefined): () => Promise<void> {
   const pending = new Map<string, TextDocument>();
+  const openedVersions = new Map<string, { version: number; text: string }>();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = async (): Promise<void> => {
     clearTimeout(timer);
@@ -808,12 +811,21 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
   };
 
   context.documents.onDidOpen((event) => {
+    const document = event.document;
+    openedVersions.set(document.uri, { version: document.version, text: document.getText() });
+    pending.delete(document.uri);
+    if (context.configuration?.isReady && context.analyzer.tryReuseOpenDocument?.({
+      uri: document.uri, version: document.version, text: document.getText()
+    })) { return; }
     invalidateRequests();
-    pending.delete(event.document.uri);
-    void indexDocument(context, event.document).then(refreshInlayHints);
+    void indexDocument(context, document).then(refreshInlayHints);
   });
 
   context.documents.onDidChangeContent((event) => {
+    // TextDocuments also emits this event for didOpen; it is not a second source change.
+    const openedVersion = openedVersions.get(event.document.uri);
+    openedVersions.delete(event.document.uri);
+    if (openedVersion?.version === event.document.version && openedVersion.text === event.document.getText()) { return; }
     invalidateRequests();
     context.analyzer.updateOpenDocument?.({ uri: event.document.uri, version: event.document.version, text: event.document.getText() });
     pending.set(event.document.uri, event.document);
@@ -823,8 +835,10 @@ function registerDocumentLifecycleHandlers(context: HandlerRegistrationContext, 
   });
 
   context.documents.onDidClose((event) => {
-    invalidateRequests();
+    openedVersions.delete(event.document.uri);
     pending.delete(event.document.uri);
+    if (context.analyzer.tryCloseUnchangedDocument?.(event.document.uri)) { return; }
+    invalidateRequests();
     if (pending.size === 0) { clearTimeout(timer); timer = undefined; }
     context.analyzer.deleteDocument?.(event.document.uri);
     refreshInlayHints();
@@ -895,10 +909,11 @@ function getErrorMessage(error: unknown): string {
 }
 
 function registerBackgroundRefreshHandlers(context: HandlerRegistrationContext, refreshInlayHints: () => void): void {
-  context.analyzer.onBackgroundIndexingComplete?.(() => {
+  context.analyzer.onBackgroundIndexingComplete?.((changed = true) => {
     if (!context.configuration?.isReady) { return; }
-    refreshInlayHints();
     sendLoginDependencies(context);
+    if (!changed) { return; }
+    refreshInlayHints();
     refreshLanguageFeature(context, 'semanticTokens');
     refreshLanguageFeature(context, 'diagnostics');
   });
@@ -920,7 +935,7 @@ async function analyzeRequestDocument(
   await cancellationCheckpoint(token);
   validate();
   const analysis = context.analyzer.analyzeRequestDocument
-    ? await context.analyzer.analyzeRequestDocument(input, token)
+    ? await context.analyzer.analyzeRequestDocument(input, token, diagnostic)
     : diagnostic ? (context.analyzer.analyzeDiagnosticDocument?.(input)
       ?? context.analyzer.analyzeForegroundDocument?.(input) ?? context.analyzer.analyzeDocument(input))
       : (context.analyzer.analyzeForegroundDocument?.(input) ?? context.analyzer.analyzeDocument(input));
