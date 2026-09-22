@@ -14,11 +14,11 @@
 		"node": "*"
 	},
 	"dependencies": {
-		"vscode-languageserver": "^9.0.1",
-		"vscode-languageserver-textdocument": "^1.0.11",
 		"tree-sitter": "^0.22.4",
-		"tree-sitter-axel": "git+https://github.com/jdt-watanabe-jin/tree-sitter-axel.git#v0.1.0",
-		"tree-sitter-cli": "^0.24.5"
+		"tree-sitter-axel": "git+https://github.com/jdt-watanabe-jin/tree-sitter-axel.git#b2c9475838574231b401b2bd8ba1f4535288315e",
+		"tree-sitter-cli": "^0.24.5",
+		"vscode-languageserver": "^9.0.1",
+		"vscode-languageserver-textdocument": "^1.0.11"
 	},
 	"scripts": {
 		"build": "tsc",
@@ -43,6 +43,7 @@
 		"@types/node": "^22",
 		"eslint": "^9.13.0",
 		"mocha": "^10.3.0",
+		"node-gyp": "^13.0.2",
 		"typescript": "^5.9.2",
 		"typescript-eslint": "^8.39.0"
 	}

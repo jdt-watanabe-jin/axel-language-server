@@ -140,6 +140,8 @@ node out/server.js --stdio
 
 ## 開発・検証
 
+CI の対応環境とパーサー依存の更新手順は [CI と依存関係の検証](docs/developer/ci.md) を参照してください。
+
 ```sh
 npm test                  # unit・integration・LSP の E2E（ビルドを含む）
 npm run test:ci           # lint と上記テスト、性能回帰テスト

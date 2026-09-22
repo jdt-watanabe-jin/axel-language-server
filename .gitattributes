@@ -1,0 +1,2 @@
+# Preserve the exact source bytes recorded in the compiler evidence manifest.
+src/test/integration/fixtures/type-checking/**/*.axl text eol=crlf
