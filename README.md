@@ -51,6 +51,23 @@ AXEL ソース向けの Language Server Protocol（LSP）サーバーです。[V
 
 Doxygen 形式の先行コメント（`/** */`、`/*! */`、`///`、`//!`）から説明・引数・戻り値などを Hover、補完詳細、Signature Help に表示します。Doxygen の実行や文書生成は行いません。診断などの表示言語は `initialize.locale` が `ja` / `ja-*` なら日本語、それ以外は英語です。
 
+### 未実装・保留中の機能
+
+以下の機能は現在のサーバーでは提供していません。この一覧は現在の対応状況を示すもので、実装予定や対応時期を保証するものではありません。
+
+| 機能 | 現在の対応状況 |
+| --- | --- |
+| Text Document Content | サーバーから文書内容を提供する機能は未対応 |
+| Inline Value / Inline Value Refresh | インライン値の提供と、その再取得要求は未対応。実装済みの Inlay Hint とは別機能 |
+| Publish Diagnostics | `textDocument/publishDiagnostics` による診断のプッシュ配信は未対応。診断は実装済みの Pull Diagnostics（`textDocument/diagnostic`）で取得 |
+| Folding Range Refresh | `workspace/foldingRange/refresh` による再取得要求は未対応。Folding Range 自体は実装済み |
+| Linked Editing Range | 連動編集する範囲の提供は未対応 |
+| Moniker | 他のプロジェクトやツールとのシンボル照合に使う識別子の提供は未対応 |
+| Send Telemetry | `telemetry/event` によるテレメトリ送信は未対応 |
+| Document Color / Color Presentation | 文書内の色の検出と、色の表記・編集候補の提供は未対応 |
+| Will Save Document / Will Save Document Wait Until | 保存前通知を利用した処理と、保存前に適用する編集の提供は未対応 |
+| Did Open Notebook Document / Did Change Notebook Document / Did Save Notebook Document / Did Close Notebook Document | `notebookDocument/*` による Notebook 文書・セルの同期は未対応 |
+
 ### 解析範囲と制約
 
 - include、強制 include、条件付きコンパイル、オブジェクト形式・関数形式のマクロを解析します。`tool`・`targetPlatform` に応じたシステムマクロも提供し、非アクティブ範囲は `axel/inactiveRanges` で通知します。
